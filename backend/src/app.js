@@ -2,7 +2,7 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
-const supabase = require("backend/src/config/supabase.js");
+const supabase = require("./supabase");
 
 const app = express();
 
