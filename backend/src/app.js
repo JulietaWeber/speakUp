@@ -1,4 +1,4 @@
-NODE_TLS_REJECT_UNAUTHORIZED = "0"
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 require("dotenv").config();
 
@@ -11,34 +11,29 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Ruta principal
 app.get("/", (req, res) => {
   res.send("SpeakUp backend funcionando");
 });
 
-// test-db (usuario)
-
+// Test tabla usuarios
 app.get("/test-db", async (req, res) => {
-    const { data, error } = await supabase.from("usuarios").select("*");
-  
+  try {
+    const { data, error } = await supabase
+      .from("usuarios")
+      .select("*");
+
     res.json({ data, error });
-  });
 
-app.listen(3000, () => {
-  console.log("Servidor corriendo en puerto 3000");
-});
-
-app.get("/test-db", async (req, res) => {
-  const { data, error } = await supabase
-    .from("users")
-    .select("*");
-
-  if (error) {
-    return res.status(500).json({ error });
+  } catch (err) {
+    res.json({
+      mensaje: "ERROR CAPTURADO",
+      error: err.message
+    });
   }
-
-  res.json(data);
 });
 
+// Crear usuario
 app.post("/register", async (req, res) => {
 
   const {
@@ -71,5 +66,8 @@ app.post("/register", async (req, res) => {
     message: "Usuario creado correctamente",
     data
   });
+});
 
+app.listen(3000, () => {
+  console.log("Servidor corriendo en puerto 3000");
 });
