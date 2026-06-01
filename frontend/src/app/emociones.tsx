@@ -1,30 +1,25 @@
 import { View, Text, TouchableOpacity } from "react-native";
-import { router } from "expo-router";
 
 export default function Categories() {
-  const categories: { name: string; route: "/comida" | "/emociones" | "/escuela" }[] = [
-    { name: "Comida", route: "/comida" },
-    { name: "Emociones", route: "/emociones" },
-    { name: "Escuela", route: "/escuela" },
-  ];
+  const comidas = ["Triste", "Feliz", "Enojado"];
 
   return (
     <View style={{ flex: 1, padding: 20 }}>
       <Text style={{ fontSize: 28, marginBottom: 20, fontWeight: "bold" }}>
+
       </Text>
 
-      {categories.map((cat) => (
+      {comidas.map((cat) => (
         <TouchableOpacity
-          key={cat.name}
-          onPress={() => router.push(cat.route)}
+          key={cat}
           style={{
             backgroundColor: "#ffb703",
             padding: 20,
             borderRadius: 15,
-            marginBottom: 15,
+            marginBottom: 10,
           }}
         >
-          <Text style={{ fontSize: 18 }}>{cat.name}</Text>
+          <Text style={{ fontSize: 18 }}>{cat}</Text>
         </TouchableOpacity>
       ))}
     </View>
