@@ -1,5 +1,7 @@
 import { View, Text, TouchableOpacity } from "react-native";
 
+//Importo componentes de React Native
+
 export default function Categories() {
   const categories = ["Comida", "Emociones", "Escuela"];
 
@@ -15,7 +17,7 @@ export default function Categories() {
         Categorías
       </Text>
 
-      {categories.map((cat) => (
+      {categories.map((cat) => (  
         <TouchableOpacity
           key={cat}
           style={{
@@ -31,3 +33,5 @@ export default function Categories() {
     </View>
   );
 }
+
+//para cada categoria en categories
