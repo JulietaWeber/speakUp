@@ -35,10 +35,20 @@ def procesar_frase(frase):
 
 
 # Pruebas con datos simulados
+"""
 procesar_frase(["yo", "quiero", "agua"])
 procesar_frase(["yo", "quiero", "ir", "baño"])
 procesar_frase(["yo", "quiero", "comida"])
+"""
+historial_simulado = [
+    ["yo", "quiero", "agua"],
+    ["yo", "quiero", "ir", "baño"],
+    ["quiero", "comida"],
+    ["yo", "quiero", "jugar"]
+]
 
+for frase in historial_simulado:
+    procesar_frase(frase)
 
 print("Frecuencia de palabras:")
 print(frecuencia_palabras)
