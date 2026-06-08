@@ -7,12 +7,15 @@ const {
   crearUsuario,
   obtenerUsuarioPorId,
   actualizarUsuario,
-  eliminarUsuario
+  eliminarUsuario,
+  obtenerTablerosDeUsuario
 } = require("../controllers/usuarios.controller");
 
 router.get("/", obtenerUsuarios);
 
 router.post("/", crearUsuario);
+
+router.get("/:id/tableros", obtenerTablerosDeUsuario);
 
 router.get("/:id", obtenerUsuarioPorId);
 
