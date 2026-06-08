@@ -7,6 +7,7 @@ const cors = require("cors");
 
 const usuariosRoutes = require("./routes/usuarios.routes");
 const tablerosRoutes = require("./routes/tableros.routes");
+const pictogramasRoutes = require("./routes/pictogramas.routes");
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.get("/", (req, res) => {
 
 app.use("/usuarios", usuariosRoutes);
 app.use("/tableros", tablerosRoutes);
+app.use("/pictogramas", pictogramasRoutes);
 
 app.listen(3000, () => {
   console.log("Servidor corriendo en puerto 3000");
