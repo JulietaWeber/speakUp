@@ -95,10 +95,27 @@ const eliminarUsuario = async (req, res) => {
   res.json({ data, error });
 };
 
+const obtenerTablerosDeUsuario = async (req, res) => {
+
+  const { id } = req.params;
+
+  const { data, error } = await supabase
+    .from("tableros")
+    .select("*")
+    .eq("id_usuario", id);
+
+  res.json({
+    data,
+    error
+  });
+
+};
+
 module.exports = {
   obtenerUsuarios,
   crearUsuario,
   obtenerUsuarioPorId,
   actualizarUsuario,
-  eliminarUsuario
+  eliminarUsuario,
+  obtenerTablerosDeUsuario
 };
