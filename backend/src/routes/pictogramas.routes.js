@@ -7,12 +7,24 @@ const {
   crearPictograma,
   obtenerPictogramaPorId,
   actualizarPictograma,
-  eliminarPictograma
+  eliminarPictograma,
+  obtenerPictogramasPorCategoria,
+  obtenerPictogramasPersonalizados
 } = require("../controllers/pictogramas.controller");
 
 router.get("/", obtenerPictogramas);
 
 router.post("/", crearPictograma);
+
+router.get(
+  "/personalizados",
+  obtenerPictogramasPersonalizados
+);
+
+router.get(
+  "/categoria/:id",
+  obtenerPictogramasPorCategoria
+);
 
 router.get("/:id", obtenerPictogramaPorId);
 
