@@ -101,10 +101,42 @@ const crearPictograma = async (req, res) => {
   
   };
 
+  const obtenerPictogramasPorCategoria = async (req, res) => {
+
+  const { id } = req.params;
+
+  const { data, error } = await supabase
+    .from("pictogramas")
+    .select("*")
+    .eq("id_categorias", id);
+
+  res.json({
+    data,
+    error
+  });
+
+};
+
+const obtenerPictogramasPersonalizados = async (req, res) => {
+
+  const { data, error } = await supabase
+    .from("pictogramas")
+    .select("*")
+    .eq("es_personalizado", true);
+
+  res.json({
+    data,
+    error
+  });
+
+};
+
   module.exports = {
     obtenerPictogramas,
     crearPictograma,
     obtenerPictogramaPorId,
     actualizarPictograma,
-    eliminarPictograma
+    eliminarPictograma,
+    obtenerPictogramasPorCategoria,
+    obtenerPictogramasPersonalizados
   };

@@ -104,15 +104,6 @@ encoder_palabra.fit(
     palabras_actuales + palabras_siguientes
 )
 
-categorias = [dato[0] for dato in datos_entrenamiento]
-palabras_actuales = [dato[1] for dato in datos_entrenamiento]
-palabras_siguientes = [dato[2] for dato in datos_entrenamiento]
-
-encoder_categoria.fit(categorias)
-encoder_palabra.fit(
-    palabras_actuales + palabras_siguientes
-)
-
 X = []
 y = []
 
@@ -134,21 +125,37 @@ modelo = RandomForestClassifier(
 
 modelo.fit(X, y)
 
-joblib.dump(modelo, "modelo_base.pkl")
-joblib.dump(encoder_categoria, "encoder_categoria.pkl")
-joblib.dump(encoder_palabra, "encoder_palabra.pkl")
+# joblib.dump(modelo, "modelo_base.pkl")
+# joblib.dump(encoder_categoria, "encoder_categoria.pkl")
+# joblib.dump(encoder_palabra, "encoder_palabra.pkl")
 
 print("Modelo guardado correctamente")
 
+# Entrada de prueba
 entrada = [[
     encoder_categoria.transform(["Casa"])[0],
     encoder_palabra.transform(["quiero"])[0]
 ]]
 
-prediccion = modelo.predict(entrada)
+# Obtener probabilidades
+probabilidades = modelo.predict_proba(entrada)[0]
 
-resultado = encoder_palabra.inverse_transform(prediccion)
+# Top 3 posiciones con mayor probabilidad
+top3_indices = probabilidades.argsort()[-3:][::-1]
 
 print()
-print("Predicción:")
-print(resultado[0])
+print("Top 3 recomendaciones:")
+
+for i, indice in enumerate(top3_indices):
+
+    # Obtener la clase REAL asociada a esa posición
+    clase_real = modelo.classes_[indice]
+
+    # Convertir la clase a palabra
+    palabra = encoder_palabra.inverse_transform([clase_real])[0]
+
+    probabilidad = probabilidades[indice] * 100
+
+    print(
+        f"{i + 1}. {palabra} ({probabilidad:.2f}%)"
+    )
