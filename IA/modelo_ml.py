@@ -1,5 +1,6 @@
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder
+import joblib
 
 historial = [
 
@@ -132,6 +133,12 @@ modelo = RandomForestClassifier(
 )
 
 modelo.fit(X, y)
+
+joblib.dump(modelo, "modelo_base.pkl")
+joblib.dump(encoder_categoria, "encoder_categoria.pkl")
+joblib.dump(encoder_palabra, "encoder_palabra.pkl")
+
+print("Modelo guardado correctamente")
 
 entrada = [[
     encoder_categoria.transform(["Casa"])[0],
