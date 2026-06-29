@@ -187,9 +187,9 @@ modelo = RandomForestClassifier(
 
 modelo.fit(X, y)
 
-joblib.dump(modelo, "modelo_base.pkl")
-joblib.dump(encoder_categoria, "encoder_categoria.pkl")
-joblib.dump(encoder_palabra, "encoder_palabra.pkl")
+#joblib.dump(modelo, "modelo_base.pkl")
+#joblib.dump(encoder_categoria, "encoder_categoria.pkl")
+#joblib.dump(encoder_palabra, "encoder_palabra.pkl")
 
 print("Modelo guardado correctamente")
 
@@ -221,3 +221,6 @@ for i, indice in enumerate(top3_indices):
     print(
         f"{i + 1}. {palabra} ({probabilidad:.2f}%)"
     )
+
+modelo = joblib.load("modelo_base.pkl")
+print(modelo)
