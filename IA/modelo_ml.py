@@ -4,73 +4,135 @@ import joblib
 
 historial = [
 
+    # ================= CASA =================
+
+    {"categoria": "Casa", "fecha": "2026-06-01 08:00", "frase": ["quiero", "ver", "televisión"]},
+    {"categoria": "Casa", "fecha": "2026-06-01 08:05", "frase": ["quiero", "ver", "televisión"]},
+    {"categoria": "Casa", "fecha": "2026-06-01 08:10", "frase": ["quiero", "ver", "televisión"]},
+    {"categoria": "Casa", "fecha": "2026-06-01 08:15", "frase": ["quiero", "ver", "televisión"]},
+    {"categoria": "Casa", "fecha": "2026-06-01 08:20", "frase": ["quiero", "ver", "televisión"]},
+
+    {"categoria": "Casa", "fecha": "2026-06-01 08:30", "frase": ["quiero", "comer"]},
+    {"categoria": "Casa", "fecha": "2026-06-01 08:35", "frase": ["quiero", "comer"]},
+    {"categoria": "Casa", "fecha": "2026-06-01 08:40", "frase": ["quiero", "comer"]},
+
+    {"categoria": "Casa", "fecha": "2026-06-01 08:50", "frase": ["quiero", "tomar", "agua"]},
+    {"categoria": "Casa", "fecha": "2026-06-01 08:55", "frase": ["quiero", "tomar", "agua"]},
+    {"categoria": "Casa", "fecha": "2026-06-01 09:00", "frase": ["quiero", "tomar", "agua"]},
+
+    {"categoria": "Casa", "fecha": "2026-06-01 09:10", "frase": ["quiero", "descansar"]},
+    {"categoria": "Casa", "fecha": "2026-06-01 09:20", "frase": ["quiero", "descansar"]},
+
+    {"categoria": "Casa", "fecha": "2026-06-01 09:30", "frase": ["quiero", "jugar"]},
+    {"categoria": "Casa", "fecha": "2026-06-01 09:40", "frase": ["quiero", "jugar"]},
+
+    {"categoria": "Casa", "fecha": "2026-06-01 09:50", "frase": ["necesito", "ayuda"]},
+
+    # ================= ESCUELA =================
+
+    {"categoria": "Escuela", "fecha": "2026-06-02 08:00", "frase": ["quiero", "leer"]},
+    {"categoria": "Escuela", "fecha": "2026-06-02 08:05", "frase": ["quiero", "leer"]},
+    {"categoria": "Escuela", "fecha": "2026-06-02 08:10", "frase": ["quiero", "leer"]},
+    {"categoria": "Escuela", "fecha": "2026-06-02 08:15", "frase": ["quiero", "leer"]},
+
+    {"categoria": "Escuela", "fecha": "2026-06-02 08:25", "frase": ["quiero", "escribir"]},
+    {"categoria": "Escuela", "fecha": "2026-06-02 08:30", "frase": ["quiero", "escribir"]},
+    {"categoria": "Escuela", "fecha": "2026-06-02 08:35", "frase": ["quiero", "escribir"]},
+
+    {"categoria": "Escuela", "fecha": "2026-06-02 08:45", "frase": ["necesito", "ayuda"]},
+    {"categoria": "Escuela", "fecha": "2026-06-02 08:50", "frase": ["necesito", "ayuda"]},
+
+    {"categoria": "Escuela", "fecha": "2026-06-02 09:00", "frase": ["quiero", "participar"]},
+    {"categoria": "Escuela", "fecha": "2026-06-02 09:10", "frase": ["quiero", "participar"]},
+
+    {"categoria": "Escuela", "fecha": "2026-06-02 09:20", "frase": ["no", "entiendo"]},
+    {"categoria": "Escuela", "fecha": "2026-06-02 09:30", "frase": ["quiero", "hacer", "la", "tarea"]},
+    {"categoria": "Escuela", "fecha": "2026-06-02 09:40", "frase": ["terminé", "la", "tarea"]},
+    {"categoria": "Escuela", "fecha": "2026-06-02 09:50", "frase": ["me", "gusta", "la", "escuela"]},
+
+    # ================= MÉDICO =================
+
+    {"categoria": "Médico", "fecha": "2026-06-03 09:00", "frase": ["me", "duele", "la", "cabeza"]},
+    {"categoria": "Médico", "fecha": "2026-06-03 09:05", "frase": ["me", "duele", "la", "cabeza"]},
+    {"categoria": "Médico", "fecha": "2026-06-03 09:10", "frase": ["me", "duele", "la", "cabeza"]},
+    {"categoria": "Médico", "fecha": "2026-06-03 09:15", "frase": ["me", "duele", "la", "cabeza"]},
+
+    {"categoria": "Médico", "fecha": "2026-06-03 09:25", "frase": ["me", "duele", "el", "estómago"]},
+    {"categoria": "Médico", "fecha": "2026-06-03 09:30", "frase": ["me", "duele", "el", "estómago"]},
+    {"categoria": "Médico", "fecha": "2026-06-03 09:35", "frase": ["me", "duele", "el", "estómago"]},
+
+    {"categoria": "Médico", "fecha": "2026-06-03 09:45", "frase": ["tengo", "fiebre"]},
+    {"categoria": "Médico", "fecha": "2026-06-03 09:50", "frase": ["tengo", "fiebre"]},
+
+    {"categoria": "Médico", "fecha": "2026-06-03 10:00", "frase": ["necesito", "medicamento"]},
+    {"categoria": "Médico", "fecha": "2026-06-03 10:05", "frase": ["necesito", "medicamento"]},
+
+    {"categoria": "Médico", "fecha": "2026-06-03 10:15", "frase": ["me", "siento", "mejor"]},
+    {"categoria": "Médico", "fecha": "2026-06-03 10:25", "frase": ["me", "siento", "mal"]},
+
+    {"categoria": "Médico", "fecha": "2026-06-03 10:35", "frase": ["quiero", "descansar"]},
+    {"categoria": "Médico", "fecha": "2026-06-03 10:45", "frase": ["necesito", "ayuda"]},
+    {"categoria": "Médico", "fecha": "2026-06-03 10:55", "frase": ["quiero", "volver", "a", "casa"]},
+
     # CASA
-    {"categoria": "Casa", "fecha": "2026-06-01 08:00", "frase": ["quiero", "ver", "televisión"]},
-    {"categoria": "Casa", "fecha": "2026-06-01 08:15", "frase": ["quiero", "jugar", "videojuegos"]},
-    {"categoria": "Casa", "fecha": "2026-06-01 12:00", "frase": ["tengo", "mucha", "hambre"]},
-    {"categoria": "Casa", "fecha": "2026-06-01 21:00", "frase": ["tengo", "mucho", "sueño"]},
-    {"categoria": "Casa", "fecha": "2026-06-02 17:00", "frase": ["quiero", "ayudar", "mamá"]},
-    {"categoria": "Casa", "fecha": "2026-06-02 20:00", "frase": ["quiero", "descansar"]},
-    {"categoria": "Casa", "fecha": "2026-06-01 08:00", "frase": ["quiero", "ver", "televisión"]},
-    {"categoria": "Casa", "fecha": "2026-06-01 08:00", "frase": ["quiero", "ver", "televisión"]},
-    {"categoria": "Casa", "fecha": "2026-06-01 08:00", "frase": ["quiero", "ver", "televisión"]},
-    {"categoria": "Casa", "fecha": "2026-06-01 08:00", "frase": ["quiero", "ver", "televisión"]},
+    {"categoria": "Casa", "fecha": "2026-06-09 08:00", "frase": ["quiero", "ver", "televisión"]},
+    {"categoria": "Casa", "fecha": "2026-06-09 10:00", "frase": ["quiero", "comer"]},
+    {"categoria": "Casa", "fecha": "2026-06-09 14:00", "frase": ["quiero", "descansar"]},
+    {"categoria": "Casa", "fecha": "2026-06-09 18:00", "frase": ["tengo", "hambre"]},
+    {"categoria": "Casa", "fecha": "2026-06-10 08:00", "frase": ["quiero", "ver", "televisión"]},
+    {"categoria": "Casa", "fecha": "2026-06-10 13:00", "frase": ["quiero", "ayudar", "mamá"]},
+    {"categoria": "Casa", "fecha": "2026-06-10 20:00", "frase": ["tengo", "sueño"]},
+    {"categoria": "Casa", "fecha": "2026-06-10 21:00", "frase": ["quiero", "ver", "televisión"]},
 
     # ESCUELA
-    {"categoria": "Escuela", "fecha": "2026-06-01 09:00", "frase": ["necesito", "ayuda"]},
-    {"categoria": "Escuela", "fecha": "2026-06-01 09:30", "frase": ["quiero", "leer", "un", "libro"]},
-    {"categoria": "Escuela", "fecha": "2026-06-01 10:00", "frase": ["quiero", "escribir"]},
-    {"categoria": "Escuela", "fecha": "2026-06-01 11:00", "frase": ["no", "entiendo"]},
-    {"categoria": "Escuela", "fecha": "2026-06-02 09:00", "frase": ["quiero", "participar"]},
-    {"categoria": "Escuela", "fecha": "2026-06-02 12:00", "frase": ["terminé", "la", "tarea"]},
+    {"categoria": "Escuela", "fecha": "2026-06-09 08:00", "frase": ["quiero", "leer"]},
+    {"categoria": "Escuela", "fecha": "2026-06-09 09:00", "frase": ["necesito", "ayuda"]},
+    {"categoria": "Escuela", "fecha": "2026-06-09 10:00", "frase": ["quiero", "escribir"]},
+    {"categoria": "Escuela", "fecha": "2026-06-09 11:00", "frase": ["no", "entiendo"]},
+    {"categoria": "Escuela", "fecha": "2026-06-10 08:00", "frase": ["quiero", "leer"]},
+    {"categoria": "Escuela", "fecha": "2026-06-10 09:00", "frase": ["quiero", "participar"]},
+    {"categoria": "Escuela", "fecha": "2026-06-10 11:00", "frase": ["terminé", "la", "tarea"]},
+    {"categoria": "Escuela", "fecha": "2026-06-10 12:00", "frase": ["necesito", "ayuda"]},
 
-    # DEPORTE
-    {"categoria": "Deporte", "fecha": "2026-06-01 16:00", "frase": ["quiero", "jugar", "fútbol"]},
-    {"categoria": "Deporte", "fecha": "2026-06-01 16:30", "frase": ["quiero", "entrenar"]},
-    {"categoria": "Deporte", "fecha": "2026-06-01 17:00", "frase": ["estoy", "cansado"]},
-    {"categoria": "Deporte", "fecha": "2026-06-02 16:00", "frase": ["quiero", "correr"]},
-    {"categoria": "Deporte", "fecha": "2026-06-02 17:00", "frase": ["hice", "un", "gol"]},
-    {"categoria": "Deporte", "fecha": "2026-06-02 18:00", "frase": ["necesito", "agua"]},
-
-    # MÉDICO
-    {"categoria": "Médico", "fecha": "2026-06-01 14:00", "frase": ["me", "duele", "la", "cabeza"]},
-    {"categoria": "Médico", "fecha": "2026-06-01 14:30", "frase": ["me", "duele", "el", "estómago"]},
-    {"categoria": "Médico", "fecha": "2026-06-01 15:00", "frase": ["necesito", "medicamento"]},
-    {"categoria": "Médico", "fecha": "2026-06-02 14:00", "frase": ["me", "siento", "mejor"]},
-    {"categoria": "Médico", "fecha": "2026-06-02 15:00", "frase": ["quiero", "descansar"]},
-    {"categoria": "Médico", "fecha": "2026-06-02 16:00", "frase": ["tengo", "fiebre"]},
+    # MEDICO
+    {"categoria": "Médico", "fecha": "2026-06-09 08:00", "frase": ["me", "duele", "la", "cabeza"]},
+    {"categoria": "Médico", "fecha": "2026-06-09 09:00", "frase": ["me", "duele", "el", "estómago"]},
+    {"categoria": "Médico", "fecha": "2026-06-09 10:00", "frase": ["necesito", "medicamento"]},
+    {"categoria": "Médico", "fecha": "2026-06-09 12:00", "frase": ["tengo", "fiebre"]},
+    {"categoria": "Médico", "fecha": "2026-06-10 08:00", "frase": ["me", "siento", "mejor"]},
+    {"categoria": "Médico", "fecha": "2026-06-10 09:00", "frase": ["quiero", "descansar"]},
+    {"categoria": "Médico", "fecha": "2026-06-10 10:00", "frase": ["me", "duele", "la", "cabeza"]},
+    {"categoria": "Médico", "fecha": "2026-06-10 12:00", "frase": ["necesito", "medicamento"]},
 
     # AMIGOS
-    {"categoria": "Amigos", "fecha": "2026-06-01 18:00", "frase": ["quiero", "jugar"]},
-    {"categoria": "Amigos", "fecha": "2026-06-01 18:30", "frase": ["quiero", "hablar"]},
-    {"categoria": "Amigos", "fecha": "2026-06-01 19:00", "frase": ["extraño", "a", "mis", "amigos"]},
-    {"categoria": "Amigos", "fecha": "2026-06-02 18:00", "frase": ["quiero", "salir"]},
-    {"categoria": "Amigos", "fecha": "2026-06-02 18:30", "frase": ["estoy", "feliz"]},
-    {"categoria": "Amigos", "fecha": "2026-06-02 19:00", "frase": ["quiero", "compartir"]},
-
-    # COMPRAS
-    {"categoria": "Compras", "fecha": "2026-06-01 11:00", "frase": ["quiero", "comprar", "pan"]},
-    {"categoria": "Compras", "fecha": "2026-06-01 11:30", "frase": ["necesito", "leche"]},
-    {"categoria": "Compras", "fecha": "2026-06-01 12:00", "frase": ["cuánto", "cuesta"]},
-    {"categoria": "Compras", "fecha": "2026-06-02 11:00", "frase": ["quiero", "mirar", "juguetes"]},
-    {"categoria": "Compras", "fecha": "2026-06-02 11:30", "frase": ["necesito", "ayuda"]},
-    {"categoria": "Compras", "fecha": "2026-06-02 12:00", "frase": ["quiero", "pagar"]},
+    {"categoria": "Amigos", "fecha": "2026-06-09 15:00", "frase": ["quiero", "jugar"]},
+    {"categoria": "Amigos", "fecha": "2026-06-09 16:00", "frase": ["quiero", "hablar"]},
+    {"categoria": "Amigos", "fecha": "2026-06-09 17:00", "frase": ["quiero", "salir"]},
+    {"categoria": "Amigos", "fecha": "2026-06-09 18:00", "frase": ["estoy", "feliz"]},
+    {"categoria": "Amigos", "fecha": "2026-06-10 15:00", "frase": ["quiero", "jugar"]},
+    {"categoria": "Amigos", "fecha": "2026-06-10 16:00", "frase": ["quiero", "compartir"]},
+    {"categoria": "Amigos", "fecha": "2026-06-10 17:00", "frase": ["extraño", "a", "mis", "amigos"]},
+    {"categoria": "Amigos", "fecha": "2026-06-10 18:00", "frase": ["quiero", "hablar"]},
 
     # TRANSPORTE
-    {"categoria": "Transporte", "fecha": "2026-06-01 07:00", "frase": ["quiero", "ir", "a", "la", "escuela"]},
-    {"categoria": "Transporte", "fecha": "2026-06-01 17:00", "frase": ["quiero", "volver", "a", "casa"]},
-    {"categoria": "Transporte", "fecha": "2026-06-01 17:30", "frase": ["espero", "el", "colectivo"]},
-    {"categoria": "Transporte", "fecha": "2026-06-02 07:00", "frase": ["necesito", "bajar"]},
-    {"categoria": "Transporte", "fecha": "2026-06-02 17:00", "frase": ["llegamos", "al", "destino"]},
-    {"categoria": "Transporte", "fecha": "2026-06-02 18:00", "frase": ["quiero", "viajar"]},
+    {"categoria": "Transporte", "fecha": "2026-06-09 07:00", "frase": ["quiero", "ir", "a", "la", "escuela"]},
+    {"categoria": "Transporte", "fecha": "2026-06-09 08:00", "frase": ["espero", "el", "colectivo"]},
+    {"categoria": "Transporte", "fecha": "2026-06-09 17:00", "frase": ["quiero", "volver", "a", "casa"]},
+    {"categoria": "Transporte", "fecha": "2026-06-09 18:00", "frase": ["necesito", "bajar"]},
+    {"categoria": "Transporte", "fecha": "2026-06-10 07:00", "frase": ["quiero", "viajar"]},
+    {"categoria": "Transporte", "fecha": "2026-06-10 08:00", "frase": ["llegamos", "al", "destino"]},
+    {"categoria": "Transporte", "fecha": "2026-06-10 17:00", "frase": ["quiero", "volver", "a", "casa"]},
+    {"categoria": "Transporte", "fecha": "2026-06-10 18:00", "frase": ["espero", "el", "colectivo"]},
 
     # EMOCIONES
-    {"categoria": "Emociones", "fecha": "2026-06-01 20:00", "frase": ["estoy", "feliz"]},
-    {"categoria": "Emociones", "fecha": "2026-06-01 20:30", "frase": ["estoy", "triste"]},
-    {"categoria": "Emociones", "fecha": "2026-06-01 21:00", "frase": ["tengo", "miedo"]},
-    {"categoria": "Emociones", "fecha": "2026-06-02 20:00", "frase": ["estoy", "enojado"]},
-    {"categoria": "Emociones", "fecha": "2026-06-02 20:30", "frase": ["estoy", "tranquilo"]},
-    {"categoria": "Emociones", "fecha": "2026-06-02 21:00", "frase": ["necesito", "ayuda"]}
+    {"categoria": "Emociones", "fecha": "2026-06-09 20:00", "frase": ["estoy", "feliz"]},
+    {"categoria": "Emociones", "fecha": "2026-06-09 20:30", "frase": ["estoy", "triste"]},
+    {"categoria": "Emociones", "fecha": "2026-06-09 21:00", "frase": ["tengo", "miedo"]},
+    {"categoria": "Emociones", "fecha": "2026-06-09 21:30", "frase": ["estoy", "tranquilo"]},
+    {"categoria": "Emociones", "fecha": "2026-06-10 20:00", "frase": ["estoy", "feliz"]},
+    {"categoria": "Emociones", "fecha": "2026-06-10 20:30", "frase": ["estoy", "enojado"]},
+    {"categoria": "Emociones", "fecha": "2026-06-10 21:00", "frase": ["necesito", "ayuda"]},
+    {"categoria": "Emociones", "fecha": "2026-06-10 21:30", "frase": ["estoy", "feliz"]},
 ]
 
 datos_entrenamiento = []
@@ -89,8 +151,8 @@ for registro in historial:
             (categoria, palabra_actual, palabra_siguiente)
         )
 
-print("Datos de entrenamiento:")
-print(datos_entrenamiento)
+#print("Datos de entrenamiento:")
+#print(datos_entrenamiento)
 
 encoder_categoria = LabelEncoder()
 encoder_palabra = LabelEncoder()
@@ -125,9 +187,9 @@ modelo = RandomForestClassifier(
 
 modelo.fit(X, y)
 
-# joblib.dump(modelo, "modelo_base.pkl")
-# joblib.dump(encoder_categoria, "encoder_categoria.pkl")
-# joblib.dump(encoder_palabra, "encoder_palabra.pkl")
+joblib.dump(modelo, "modelo_base.pkl")
+joblib.dump(encoder_categoria, "encoder_categoria.pkl")
+joblib.dump(encoder_palabra, "encoder_palabra.pkl")
 
 print("Modelo guardado correctamente")
 
