@@ -1,0 +1,300 @@
+{"input": "televisión apagar", "output": "Apagá la televisión, por favor."}
+{"input": "ventana abrir auto", "output": "Abrí la ventana del auto, por favor."}
+{"input": "aeropuerto ir necesitar", "output": "Necesito ir al aeropuerto."}
+{"input": "música calmarme querer", "output": "Quiero escuchar música para calmarme."}
+{"input": "subte querer tomar", "output": "Quiero tomar el subte."}
+{"input": "amigo mejor yo", "output": "Él es mi mejor amigo."}
+{"input": "no puedo caminar bien", "output": "No puedo caminar bien."}
+{"input": "frío casa querer abrigo", "output": "Tengo frío, quiero ponerme abrigo."}
+{"input": "no querer hablar ahora", "output": "No quiero hablar ahora."}
+{"input": "yo celoso", "output": "Estoy celoso."}
+{"input": "querer libro leer", "output": "Quiero leer un libro."}
+{"input": "no querer escuela hoy", "output": "Hoy no quiero ir a la escuela."}
+{"input": "necesitar inhalador", "output": "Necesito el inhalador."}
+{"input": "yo aburrido casa", "output": "Estoy aburrido en casa."}
+{"input": "hoy no escuela", "output": "Hoy no tengo escuela."}
+{"input": "llegar tarde colectivo", "output": "El colectivo llegó tarde."}
+{"input": "necesitar tijeras", "output": "Necesito las tijeras."}
+{"input": "médico miedo", "output": "Le tengo miedo al médico."}
+{"input": "amigo pelea triste", "output": "Me peleé con mi amigo y estoy triste."}
+{"input": "tren querer viajar", "output": "Quiero viajar en tren."}
+{"input": "querer ir colectivo", "output": "Quiero ir en colectivo."}
+{"input": "cansado escuela", "output": "Estoy cansado en la escuela."}
+{"input": "reír querer", "output": "Tengo ganas de reírme."}
+{"input": "náuseas yo sentir", "output": "Siento náuseas."}
+{"input": "necesitar plata colectivo", "output": "Necesito dinero para el colectivo."}
+{"input": "amigo jugar videojuegos", "output": "Quiero jugar videojuegos con mi amigo."}
+{"input": "amigo prestó juguete", "output": "Mi amigo me prestó un juguete."}
+{"input": "no querer matemáticas", "output": "No me gustan las matemáticas."}
+{"input": "sentir mejor querer", "output": "Quiero sentirme mejor."}
+{"input": "internet no funcionar", "output": "El internet no funciona."}
+{"input": "recreo querer salir", "output": "Quiero salir al recreo."}
+{"input": "no escuchar bien clase", "output": "No escucho bien en clase."}
+{"input": "luz apagar querer", "output": "Quiero apagar la luz."}
+{"input": "semáforo rojo parar", "output": "El semáforo está en rojo, hay que parar."}
+{"input": "feliz hoy paseo", "output": "Hoy estoy feliz porque fui de paseo."}
+{"input": "no entender por qué triste", "output": "No entiendo por qué estoy triste."}
+{"input": "amigo escuela jugar", "output": "Quiero jugar con mi amigo en la escuela."}
+{"input": "querer ayudar maestra", "output": "Quiero ayudar a la maestra."}
+{"input": "no querer examen", "output": "No quiero rendir el examen."}
+{"input": "necesitar ayuda computadora", "output": "Necesito ayuda con la computadora."}
+{"input": "amigos salir querer", "output": "Quiero salir con mis amigos."}
+{"input": "amigo molestar yo", "output": "Mi amigo me está molestando."}
+{"input": "parada dónde", "output": "¿Dónde está la parada?"}
+{"input": "querer hablar mamá", "output": "Quiero hablar con mamá."}
+{"input": "parar acá querer", "output": "Quiero bajar acá."}
+{"input": "yo enojado", "output": "Estoy enojado."}
+{"input": "volumen bajo televisión", "output": "Bajá el volumen de la televisión."}
+{"input": "amigo abrazo dar", "output": "Quiero darle un abrazo a mi amigo."}
+{"input": "no entender consigna", "output": "No entiendo la consigna."}
+{"input": "no puedo respirar bien", "output": "No puedo respirar bien."}
+{"input": "querer salir temprano", "output": "Quiero salir temprano hoy."}
+{"input": "querer abrazar", "output": "Quiero un abrazo."}
+{"input": "terminar antes todos", "output": "Terminé antes que todos."}
+{"input": "no tener amigos triste", "output": "No tengo amigos y estoy triste."}
+{"input": "lápiz necesitar", "output": "Necesito un lápiz."}
+{"input": "lluvia paraguas necesitar", "output": "Está lloviendo y necesito un paraguas."}
+{"input": "yo mal", "output": "Estoy mal."}
+{"input": "yo orgulloso", "output": "Estoy orgulloso."}
+{"input": "amigos foto sacar", "output": "Quiero sacarme una foto con mis amigos."}
+{"input": "pedir perdón amigo", "output": "Quiero pedirle perdón a mi amigo."}
+{"input": "llorar querer", "output": "Tengo ganas de llorar."}
+{"input": "celular cargar auto", "output": "Quiero cargar el celular en el auto."}
+{"input": "yo cansado", "output": "Estoy cansado."}
+{"input": "triste amigo pelea", "output": "Estoy triste porque me peleé con un amigo."}
+{"input": "extrañar amigo", "output": "Extraño a mi amigo."}
+{"input": "calentura bajar necesitar", "output": "Necesito algo para bajar la fiebre."}
+{"input": "mojado lluvia", "output": "Me mojé con la lluvia."}
+{"input": "escuchar mal audio auto", "output": "No escucho bien, ¿podés subir el volumen?"}
+{"input": "rodilla doler caída", "output": "Me duele la rodilla porque me caí."}
+{"input": "inyección no querer", "output": "No quiero que me pongan una inyección."}
+{"input": "brazo doler", "output": "Me duele el brazo."}
+{"input": "caminar ir querer", "output": "Quiero ir caminando."}
+{"input": "hoy aprender mucho", "output": "Hoy aprendí mucho."}
+{"input": "baño avión necesitar", "output": "Necesito ir al baño en el avión."}
+{"input": "garganta doler", "output": "Me duele la garganta."}
+{"input": "querer sentar adelante", "output": "Quiero sentarme adelante."}
+{"input": "ojo rojo picar", "output": "Tengo el ojo rojo y me pica."}
+{"input": "no saber respuesta", "output": "No sé la respuesta."}
+{"input": "gritar querer enojado", "output": "Estoy enojado y quiero gritar."}
+{"input": "demorar mucho tráfico", "output": "Hay mucho tráfico y voy a demorar."}
+{"input": "yo aburrido", "output": "Estoy aburrido."}
+{"input": "querer escuchar cuento", "output": "Quiero escuchar un cuento."}
+{"input": "medicina mal gusto", "output": "La medicina tiene mal gusto."}
+{"input": "querer trabajar grupo", "output": "Quiero trabajar en grupo."}
+{"input": "bien hoy sentir", "output": "Hoy me siento bien."}
+{"input": "abrazo necesitar triste", "output": "Estoy triste y necesito un abrazo."}
+{"input": "mamá ayuda necesitar", "output": "Necesito la ayuda de mamá."}
+{"input": "labio hinchado", "output": "Tengo el labio hinchado."}
+{"input": "yo confundido", "output": "Estoy confundido."}
+{"input": "amigo apodo molestar", "output": "Mi amigo me pone apodos y me molesta."}
+{"input": "yo entender ahora", "output": "Ahora entiendo."}
+{"input": "turno médico pedir", "output": "Necesito pedir turno con el médico."}
+{"input": "alergia síntomas tener", "output": "Tengo síntomas de alergia."}
+{"input": "operación miedo", "output": "Tengo miedo de la operación."}
+{"input": "cinturón poner", "output": "Hay que ponerse el cinturón."}
+{"input": "marear colectivo", "output": "Me mareo en el colectivo."}
+{"input": "amigo tímido presentar", "output": "Mi amigo es tímido y quiero presentarlo."}
+{"input": "amigos reír juntos", "output": "Me río mucho con mis amigos."}
+{"input": "pie lastimar", "output": "Me lastimé el pie."}
+{"input": "querer ropa cómoda", "output": "Quiero ponerme ropa cómoda."}
+{"input": "amigo lejos vivir", "output": "Mi amigo vive lejos y lo extraño."}
+{"input": "amigo enojado conmigo", "output": "Mi amigo está enojado conmigo."}
+{"input": "amigo deporte jugar", "output": "Quiero jugar al deporte con mi amigo."}
+{"input": "miedo oscuridad", "output": "Le tengo miedo a la oscuridad."}
+{"input": "análisis sangre miedo", "output": "Tengo miedo del análisis de sangre."}
+{"input": "mareo sentir", "output": "Me estoy mareando."}
+{"input": "golpe cabeza", "output": "Me golpeé la cabeza."}
+{"input": "parar necesitar urgente", "output": "Necesito que pares urgente."}
+{"input": "querer cocinar", "output": "Quiero ayudar a cocinar."}
+{"input": "pasaje olvidar", "output": "Olvidé el pasaje."}
+{"input": "miedo estar solo", "output": "Le tengo miedo a estar solo."}
+{"input": "pecho doler", "output": "Me duele el pecho."}
+{"input": "tiempo necesitar calmarme", "output": "Necesito tiempo para calmarme."}
+{"input": "necesitar pastilla medicina", "output": "Necesito tomar la pastilla."}
+{"input": "amigo ignorar yo", "output": "Siento que mi amigo me está ignorando."}
+{"input": "necesitar descansar", "output": "Necesito descansar."}
+{"input": "amigo jugar querer", "output": "Quiero jugar con mi amigo."}
+{"input": "amigos reir chiste", "output": "Cuento chistes y mis amigos se ríen."}
+{"input": "calor aula", "output": "Hace calor en el aula."}
+{"input": "querer agua pastilla", "output": "Quiero agua para tomar la pastilla."}
+{"input": "mamá acompañar médico", "output": "Quiero que mamá me acompañe al médico."}
+{"input": "frío escalofríos", "output": "Tengo frío y escalofríos."}
+{"input": "amigo cumpleaños felicitar", "output": "Es el cumpleaños de mi amigo y quiero felicitarlo."}
+{"input": "hambre viaje", "output": "Tengo hambre durante el viaje."}
+{"input": "basura tirar", "output": "Voy a tirar la basura."}
+{"input": "querer bañarme", "output": "Quiero bañarme."}
+{"input": "mi cuarto ordenar", "output": "Voy a ordenar mi cuarto."}
+{"input": "valija pesar mucho", "output": "La valija pesa demasiado."}
+{"input": "devolver cosa amigo", "output": "Tengo que devolverle algo a mi amigo."}
+{"input": "sed viaje", "output": "Tengo sed durante el viaje."}
+{"input": "ayuda emocional necesitar", "output": "Necesito ayuda, no me siento bien emocionalmente."}
+{"input": "necesitar ayuda cocina", "output": "Necesito ayuda en la cocina."}
+{"input": "ayuda necesitar llegar", "output": "Necesito ayuda para llegar."}
+{"input": "querer dormir solo no", "output": "No quiero dormir solo."}
+{"input": "luz prender necesitar", "output": "Necesito prender la luz."}
+{"input": "querer mostrar trabajo", "output": "Quiero mostrar mi trabajo."}
+{"input": "querer ir baño escuela", "output": "Quiero ir al baño."}
+{"input": "auto mamá esperar", "output": "Estoy esperando el auto de mamá."}
+{"input": "querer salir afuera", "output": "Quiero salir afuera."}
+{"input": "conductor preguntar querer", "output": "Quiero preguntarle al conductor."}
+{"input": "amigo hablar necesitar", "output": "Necesito hablar con mi amigo."}
+{"input": "amigo secreto contar", "output": "Le quiero contar un secreto a mi amigo."}
+{"input": "sentir raro no sé", "output": "Me siento raro y no sé por qué."}
+{"input": "terminar tarea", "output": "Terminé la tarea."}
+{"input": "panza doler", "output": "Me duele la panza."}
+{"input": "amigo gracias decir", "output": "Quiero darle las gracias a mi amigo."}
+{"input": "maestra enojada yo", "output": "La maestra está enojada conmigo."}
+{"input": "calor auto", "output": "Hace calor en el auto."}
+{"input": "necesitar toalla", "output": "Necesito una toalla."}
+{"input": "querer música escuchar", "output": "Quiero escuchar música."}
+{"input": "amigo dormir casa", "output": "Quiero que mi amigo duerma en casa."}
+{"input": "llegué aviso", "output": "Llegué, te aviso."}
+{"input": "amigo diferente yo igual", "output": "Mi amigo es diferente a mí pero igual somos amigos."}
+{"input": "yo bien", "output": "Estoy bien."}
+{"input": "querer jugar videojuegos", "output": "Quiero jugar videojuegos."}
+{"input": "yo triste", "output": "Estoy triste."}
+{"input": "yo avergonzado", "output": "Estoy avergonzado."}
+{"input": "música auto querer", "output": "Quiero escuchar música en el auto."}
+{"input": "cariño necesitar", "output": "Necesito cariño."}
+{"input": "feliz familia", "output": "Soy feliz cuando estoy con mi familia."}
+{"input": "amigo parque ir", "output": "Quiero ir al parque con mis amigos."}
+{"input": "extrañar abuela", "output": "Extraño a la abuela."}
+{"input": "querer vomitar", "output": "Siento ganas de vomitar."}
+{"input": "necesitar borrador", "output": "Necesito un borrador."}
+{"input": "yo emocionado", "output": "Estoy emocionado."}
+{"input": "curita necesitar", "output": "Necesito una curita."}
+{"input": "quemadura doler", "output": "Me quemé y me duele."}
+{"input": "no querer sentarme ahí", "output": "No quiero sentarme ahí."}
+{"input": "dirección no saber", "output": "No sé la dirección."}
+{"input": "amigo no contestar mensajes", "output": "Mi amigo no me contesta los mensajes."}
+{"input": "amigo llamar querer", "output": "Quiero llamar a mi amigo."}
+{"input": "perdido estoy", "output": "Estoy perdido."}
+{"input": "no dormir bien noche", "output": "No dormí bien anoche."}
+{"input": "yo preocupado", "output": "Estoy preocupado."}
+{"input": "olvidar cuaderno casa", "output": "Olvidé el cuaderno en casa."}
+{"input": "querer ver televisión", "output": "Quiero ver televisión."}
+{"input": "llegar cuándo", "output": "¿Cuándo llegamos?"}
+{"input": "sube cargar necesitar", "output": "Necesito cargar la SUBE."}
+{"input": "tranquilo necesitar espacio", "output": "Necesito mi espacio para tranquilizarme."}
+{"input": "yo mejor sentir", "output": "Me estoy sintiendo mejor."}
+{"input": "querer jugar casa", "output": "Quiero jugar en casa."}
+{"input": "perdí colectivo", "output": "Perdí el colectivo."}
+{"input": "amigo enfermo visitar", "output": "Mi amigo está enfermo y quiero visitarlo."}
+{"input": "amiga mejor yo", "output": "Ella es mi mejor amiga."}
+{"input": "cansado mucho dormir querer", "output": "Estoy muy cansado, quiero dormir."}
+{"input": "yo frustrado", "output": "Estoy frustrado."}
+{"input": "remis pedir necesitar", "output": "Necesito pedir un remis."}
+{"input": "querer descansar", "output": "Quiero descansar un momento."}
+{"input": "amigo compartir", "output": "Quiero compartir con mis amigos."}
+{"input": "no querer comer enfermo", "output": "No tengo ganas de comer porque estoy enfermo."}
+{"input": "cuánto falta llegar", "output": "¿Cuánto falta para llegar?"}
+{"input": "amigo ver fin semana", "output": "Quiero ver a mi amigo el fin de semana."}
+{"input": "espejo necesitar", "output": "Necesito usar el espejo."}
+{"input": "amigo regalo hacer", "output": "Quiero hacerle un regalo a mi amigo."}
+{"input": "mochila pesada", "output": "La mochila me pesa mucho."}
+{"input": "bicicleta ir querer", "output": "Quiero ir en bicicleta."}
+{"input": "enojado contigo", "output": "Estoy enojado contigo."}
+{"input": "avión viajar querer", "output": "Quiero viajar en avión."}
+{"input": "sola no querer estar", "output": "No quiero estar sola."}
+{"input": "sangre dedo", "output": "Me sangra el dedo."}
+{"input": "tarea ayuda necesitar", "output": "Necesito ayuda con la tarea."}
+{"input": "frío auto calefacción", "output": "Tengo frío, ¿podés poner la calefacción?"}
+{"input": "enfermo no escuela", "output": "Estoy enfermo y no puedo ir a la escuela."}
+{"input": "ojo doler", "output": "Me duele el ojo."}
+{"input": "yo cansado casa", "output": "Estoy cansado."}
+{"input": "sentarme colectivo querer", "output": "Quiero sentarme en el colectivo."}
+{"input": "mesa poner", "output": "Voy a poner la mesa."}
+{"input": "platos lavar", "output": "Voy a lavar los platos."}
+{"input": "yo contento", "output": "Estoy contento."}
+{"input": "yo querer dormir", "output": "Quiero dormir."}
+{"input": "no querer leer", "output": "No quiero leer ahora."}
+{"input": "querer hablar maestra", "output": "Quiero hablar con la maestra."}
+{"input": "amigo feliz verlo", "output": "Me pone feliz ver a mi amigo."}
+{"input": "querer ver película", "output": "Quiero ver una película."}
+{"input": "amigo problema ayudar", "output": "Mi amigo tiene un problema y quiero ayudarlo."}
+{"input": "yo feliz", "output": "Estoy feliz."}
+{"input": "yo peor sentir", "output": "Me estoy sintiendo peor."}
+{"input": "yo tranquilo", "output": "Estoy tranquilo."}
+{"input": "hoy prueba miedo", "output": "Hoy hay prueba y tengo miedo."}
+{"input": "no querer solo", "output": "No quiero estar solo."}
+{"input": "frío aula", "output": "Hace frío en el aula."}
+{"input": "yo sorprendido", "output": "Estoy sorprendido."}
+{"input": "amigo nuevo escuela", "output": "Hice un amigo nuevo en la escuela."}
+{"input": "cabeza doler", "output": "Me duele la cabeza."}
+{"input": "asiento ventana querer", "output": "Quiero el asiento de la ventana."}
+{"input": "amigos grupo chatear", "output": "Quiero chatear en el grupo de amigos."}
+{"input": "yo querer ir escuela", "output": "Quiero ir a la escuela."}
+{"input": "compañero molestar yo", "output": "Un compañero me está molestando."}
+{"input": "amigo volver ver querer", "output": "Quiero volver a ver a mi amigo."}
+{"input": "necesitar médico", "output": "Necesito ir al médico."}
+{"input": "auto papá venir", "output": "Papá viene a buscarme en auto."}
+{"input": "no querer bañarme", "output": "No quiero bañarme ahora."}
+{"input": "amigo nueva ciudad mudó", "output": "Mi amigo se mudó a otra ciudad."}
+{"input": "equipaje pesado", "output": "El equipaje está muy pesado."}
+{"input": "mascotas alimentar", "output": "Hay que alimentar a las mascotas."}
+{"input": "querer computadora", "output": "Quiero usar la computadora."}
+{"input": "necesitar cargador celular", "output": "Necesito el cargador del celular."}
+{"input": "calor casa", "output": "Hace calor en casa."}
+{"input": "necesitar ayuda tarea casa", "output": "Necesito ayuda con la tarea en casa."}
+{"input": "profe explicar otra vez", "output": "Profe, ¿podés explicarlo de nuevo?"}
+{"input": "diente muela doler", "output": "Me duele una muela."}
+{"input": "amigo divertido", "output": "Mi amigo es muy divertido."}
+{"input": "amigo extrañar mucho", "output": "Extraño mucho a mi amigo."}
+{"input": "pastilla tomar necesitar", "output": "Necesito tomar la pastilla."}
+{"input": "necesitar jabón", "output": "Necesito jabón."}
+{"input": "cama hacer", "output": "Voy a hacer la cama."}
+{"input": "papá llamar necesitar", "output": "Necesito llamar a papá."}
+{"input": "amigo extrañar", "output": "Extraño a mi amigo."}
+{"input": "yo no faltar escuela", "output": "Yo no falté a la escuela."}
+{"input": "bicicleta pinchó", "output": "Se pinchó la bicicleta."}
+{"input": "querer comer algo", "output": "Quiero comer algo."}
+{"input": "amigo mentira decir", "output": "Mi amigo me dijo una mentira."}
+{"input": "perdí regla", "output": "Perdí la regla."}
+{"input": "perdonar querer", "output": "Quiero pedirte perdón."}
+{"input": "yo solo sentir", "output": "Me siento solo."}
+{"input": "hospital querer salir", "output": "Quiero salir del hospital."}
+{"input": "yo nervioso", "output": "Estoy nervioso."}
+{"input": "perro pasear querer", "output": "Quiero pasear al perro."}
+{"input": "nervioso mañana prueba", "output": "Estoy nervioso porque mañana tengo una prueba."}
+{"input": "amigo nuevo conocer", "output": "Quiero conocer amigos nuevos."}
+{"input": "fiebre yo tengo", "output": "Tengo fiebre."}
+{"input": "querer dibujar", "output": "Quiero dibujar."}
+{"input": "amigo mismo gusto música", "output": "A mi amigo y a mí nos gusta la misma música."}
+{"input": "herida limpiar", "output": "Hay que limpiar la herida."}
+{"input": "oído doler", "output": "Me duele el oído."}
+{"input": "ruido molesta yo", "output": "El ruido me molesta."}
+{"input": "necesitar lentes", "output": "Necesito mis lentes."}
+{"input": "libro olvidar", "output": "Olvidé el libro."}
+{"input": "reír amigos", "output": "Me río cuando estoy con mis amigos."}
+{"input": "querer hablar papá", "output": "Quiero hablar con papá."}
+{"input": "hablar querer alguien", "output": "Quiero hablar con alguien."}
+{"input": "querer música clase", "output": "Quiero ir a la clase de música."}
+{"input": "querer jugar patio", "output": "Quiero jugar en el patio."}
+{"input": "amigo confianza tengo", "output": "Le tengo mucha confianza a mi amigo."}
+{"input": "necesitar silencio", "output": "Necesito silencio."}
+{"input": "querer llamar abuela", "output": "Quiero llamar a la abuela."}
+{"input": "no entender maestra", "output": "No entiendo lo que dice la maestra."}
+{"input": "picadura insecto picar", "output": "Me picó un insecto y me pica."}
+{"input": "querer mostrar dibujo", "output": "Quiero mostrar mi dibujo."}
+{"input": "querer pintar dibujar", "output": "Quiero pintar y dibujar."}
+{"input": "doctor explicar no entender", "output": "No entendí lo que dijo el doctor."}
+{"input": "puerta cerrar", "output": "Cerrá la puerta, por favor."}
+{"input": "amigo compartir comida", "output": "Comparto la comida con mis amigos."}
+{"input": "querer ir biblioteca", "output": "Quiero ir a la biblioteca."}
+{"input": "necesitar silla ruedas", "output": "Necesito la silla de ruedas."}
+{"input": "pegar hoja", "output": "Necesito pegar la hoja."}
+{"input": "emocionado cumpleaños", "output": "Estoy emocionado por mi cumpleaños."}
+{"input": "yo asustado", "output": "Estoy asustado."}
+{"input": "enojado no sé por qué", "output": "Estoy enojado y no sé por qué."}
+{"input": "ruta larga cansado", "output": "El viaje es largo y estoy cansado."}
+{"input": "dormir viaje querer", "output": "Quiero dormir durante el viaje."}
+{"input": "yo querer ser querido", "output": "Quiero sentirme querido."}
+{"input": "colectivo lleno", "output": "El colectivo está lleno."}
+{"input": "espalda doler", "output": "Me duele la espalda."}
+{"input": "querer agua escuela", "output": "Quiero tomar agua."}
+{"input": "amigo invitar cumpleaños", "output": "Quiero invitar a mi amigo a mi cumpleaños."}
+{"input": "querer ir taxi", "output": "Quiero ir en taxi."}
+{"input": "amigo ayudar querer", "output": "Quiero ayudar a mi amigo."}
+{"input": "auto roto ayuda", "output": "El auto se rompió, necesito ayuda."}
+{"input": "oscuro miedo", "output": "Tengo miedo de la oscuridad."}
