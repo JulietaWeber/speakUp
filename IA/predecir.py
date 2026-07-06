@@ -6,7 +6,7 @@ encoder_categoria = joblib.load("encoder_categoria.pkl")
 encoder_palabra = joblib.load("encoder_palabra.pkl")
 
 # Datos de entrada (después vendrán del backend)
-categoria = "Escuela"
+categoria = "Casa"
 palabra = "quiero"
 
 entrada = [[
