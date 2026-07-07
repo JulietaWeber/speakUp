@@ -1,16 +1,16 @@
-import fasttext
+from gensim.models import KeyedVectors
 import numpy as np
 import joblib
 from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
-# ── Cargar fastText en español ────────────────────────────────────────────────
+# ── Cargar embeddings en español ──────────────────────────────────────────────
 
-print("Cargando fastText... (puede tardar unos segundos)")
-embeddings = fasttext.load_model("cc.es.300.bin")
+print("Cargando embeddings... (puede tardar unos minutos la primera vez)")
+embeddings = KeyedVectors.load_word2vec_format("SBW-vectors-300-min5.txt", binary=False)
 DIMENSION = 300
-print("fastText cargado\n")
+print("Embeddings cargados\n")
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
 
@@ -348,10 +348,12 @@ historial = [
 # ── Funciones de vectorización ────────────────────────────────────────────────
 
 def palabra_a_vector(palabra):
-    """Convierte una palabra a su vector fastText de 300 dimensiones.
-    A diferencia de GloVe, fastText puede generar vectores para palabras
-    que nunca vio descomponiéndolas en subpalabras."""
-    return embeddings.get_word_vector(palabra.lower())
+    """Convierte una palabra a su vector de 300 dimensiones.
+    Si la palabra no existe en el vocabulario devuelve ceros."""
+    try:
+        return embeddings[palabra.lower()]
+    except KeyError:
+        return np.zeros(DIMENSION)
 
 def categoria_a_vector(categoria, encoder_cat):
     """Convierte una categoría a one-hot vector."""
@@ -412,9 +414,6 @@ print("Entrenamiento completo\n")
 
 # ── Métricas ──────────────────────────────────────────────────────────────────
 
-accuracy = modelo.score(X_test, y_test)
-print(f"Accuracy clásica:  {accuracy * 100:.2f}%")
-
 def hit_rate_at_k(modelo, X_test, y_test, k=3):
     hits = 0
     probs = modelo.predict_proba(X_test)
@@ -424,8 +423,7 @@ def hit_rate_at_k(modelo, X_test, y_test, k=3):
             hits += 1
     return hits / len(y_test)
 
-hit_rate = hit_rate_at_k(modelo, X_test, y_test, k=3)
-print(f"Hit Rate@3:        {hit_rate * 100:.2f}%\n")
+print(f"Hit Rate@3: {hit_rate_at_k(modelo, X_test, y_test, k=3) * 100:.2f}%\n")
 
 # ── Guardar modelo ────────────────────────────────────────────────────────────
 
@@ -436,18 +434,18 @@ print("Modelo guardado: modelo_base.pkl\n")
 
 # ── Función de predicción Top 3 ───────────────────────────────────────────────
 
-def predecir_top3(categoria, palabra):
+def predecir_top3(user_id, categoria, palabra):
     entrada = np.concatenate([
         categoria_a_vector(categoria, encoder_categoria),
         palabra_a_vector(palabra)
     ]).reshape(1, -1)
 
     probs = modelo.predict_proba(entrada)[0]
-    top3 = probs.argsort()[-3:][::-1]
+    top3  = probs.argsort()[-3:][::-1]
 
     return [
         {
-            "palabra": encoder_salida.inverse_transform([modelo.classes_[i]])[0],
+            "palabra":      encoder_salida.inverse_transform([modelo.classes_[i]])[0],
             "probabilidad": round(probs[i] * 100, 2)
         }
         for i in top3
@@ -455,4 +453,18 @@ def predecir_top3(categoria, palabra):
 
 # ── Prueba ────────────────────────────────────────────────────────────────────
 
-print(f"Hit Rate@3: {hit_rate_at_k(modelo, X_test, y_test, k=3) * 100:.2f}%")
+print("── Prueba de predicciones ──")
+ejemplos = [
+    ("Casa",       "quiero"),
+    ("Escuela",    "necesito"),
+    ("Médico",     "me"),
+    ("Emociones",  "estoy"),
+    ("Transporte", "quiero"),
+    ("Amigos",     "extraño"),
+]
+
+for categoria, palabra in ejemplos:
+    resultados = predecir_top3("test", categoria, palabra)
+    print(f"\n'{palabra}' en {categoria}:")
+    for i, r in enumerate(resultados):
+        print(f"  {i+1}. {r['palabra']} ({r['probabilidad']}%)")

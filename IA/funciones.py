@@ -1,14 +1,15 @@
-import fasttext
+from gensim.models import KeyedVectors
 import numpy as np
 import joblib
 import os
 from sklearn.neural_network import MLPClassifier
 
-# ── Cargar fastText (una sola vez al arrancar) ────────────────────────────────
+# ── Cargar embeddings (una sola vez al arrancar) ──────────────────────────────
 
-print("Cargando fastText...")
-embeddings = fasttext.load_model("cc.es.300.bin")
-print("fastText cargado\n")
+print("Cargando embeddings...")
+embeddings = KeyedVectors.load_word2vec_format("SBW-vectors-300-min5.txt", binary=False)
+DIMENSION = 300
+print("Embeddings cargados\n")
 
 # ── Cargar modelo base y encoders ─────────────────────────────────────────────
 
@@ -19,9 +20,15 @@ modelo_base       = joblib.load("modelo_base.pkl")
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def palabra_a_vector(palabra):
-    return embeddings.get_word_vector(palabra.lower())
+    """Convierte una palabra a su vector de 300 dimensiones.
+    Si la palabra no existe devuelve ceros."""
+    try:
+        return embeddings[palabra.lower()]
+    except KeyError:
+        return np.zeros(DIMENSION)
 
 def categoria_a_vector(categoria):
+    """Convierte una categoría a one-hot vector."""
     n = len(encoder_categoria.classes_)
     vector = np.zeros(n)
     vector[encoder_categoria.transform([categoria])[0]] = 1
@@ -92,7 +99,6 @@ def reentrenar(user_id, datos):
             palabra_actual    = frase[i]
             palabra_siguiente = frase[i + 1]
 
-            # Si la palabra de salida no está en el vocabulario, se omite
             if palabra_siguiente not in encoder_salida.classes_:
                 print(f"'{palabra_siguiente}' no está en el vocabulario, se omite.")
                 continue
@@ -110,14 +116,10 @@ def reentrenar(user_id, datos):
     nuevos_X = np.array(nuevos_X)
     nuevos_y = np.array(nuevos_y)
 
-    # Cargar modelo del usuario (o el base si es la primera vez)
     modelo = cargar_modelo_usuario(user_id)
-
-    # Reentrenar desde donde quedó
     modelo.set_params(warm_start=True, max_iter=100)
     modelo.fit(nuevos_X, nuevos_y)
 
-    # Guardar modelo personalizado del usuario
     os.makedirs("modelos", exist_ok=True)
     joblib.dump(modelo, f"modelos/modelo_{user_id}.pkl")
 
