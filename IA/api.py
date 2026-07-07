@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from funciones import predecir_top3, reentrenar
+from funciones2 import predecir_top3, reentrenar
 
 # ── Crear la app ──────────────────────────────────────────────────────────────
 # "app" es la variable que Railway busca cuando ejecuta "uvicorn api:app"
