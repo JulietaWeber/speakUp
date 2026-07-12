@@ -63,10 +63,11 @@ const registrarUsuario = async (req, res) => {
         {
           nombre,
           email: emailNormalizado,
-          password: passwordHash
+          password: passwordHash,
+          rol: "usuario"
         }
       ])
-      .select("id_usuario, nombre, email")
+      .select("id_usuario, nombre, email, rol")
       .single();
 
     if (errorInsertar) {
@@ -109,7 +110,7 @@ const loginUsuario = async (req, res) => {
 
     const { data: usuario, error: errorBuscar } = await supabase
       .from("usuarios")
-      .select("id_usuario, nombre, email, password")
+      .select("id_usuario, nombre, email, password, rol")
       .eq("email", emailNormalizado)
       .maybeSingle();
 
@@ -139,7 +140,8 @@ const loginUsuario = async (req, res) => {
     const usuarioSeguro = {
       id_usuario: usuario.id_usuario,
       nombre: usuario.nombre,
-      email: usuario.email
+      email: usuario.email,
+      rol: usuario.rol
     };
 
     const token = generarToken(usuarioSeguro);
