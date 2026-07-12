@@ -2,7 +2,8 @@ const supabase = require("../config/Supabase");
 
 const armarFrase = async (req, res) => {
   try {
-    const { id_usuario, pictogramas } = req.body;
+    const { pictogramas } = req.body;
+    const id_usuario = req.usuario.id_usuario;
 
     if (!id_usuario) {
       return res.status(400).json({

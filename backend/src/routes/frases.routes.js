@@ -5,6 +5,8 @@ const {
   armarFrase
 } = require("../controllers/frases.controller");
 
-router.post("/armar", armarFrase);
+const verificarToken = require("../middlewares/auth.middleware");
+
+router.post("/armar", verificarToken, armarFrase);
 
 module.exports = router;
