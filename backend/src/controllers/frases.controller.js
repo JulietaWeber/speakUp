@@ -5,13 +5,6 @@ const armarFrase = async (req, res) => {
     const { pictogramas } = req.body;
     const id_usuario = req.usuario.id_usuario;
 
-    if (!id_usuario) {
-      return res.status(400).json({
-        data: null,
-        error: "Falta id_usuario"
-      });
-    }
-
     if (!Array.isArray(pictogramas) || pictogramas.length === 0) {
       return res.status(400).json({
         data: null,
@@ -32,14 +25,17 @@ const armarFrase = async (req, res) => {
     }
 
     const pictogramasOrdenados = pictogramas
-      .map((id) =>
-        pictogramasData.find((p) => p.id_pictogramas === id)
-      )
+      .map((id) => pictogramasData.find((p) => p.id_pictogramas === id))
       .filter(Boolean);
 
-    const texto = pictogramasOrdenados
-      .map((p) => p.nombre)
-      .join(" ");
+    if (pictogramasOrdenados.length === 0) {
+      return res.status(404).json({
+        data: null,
+        error: "No se encontraron pictogramas válidos"
+      });
+    }
+
+    const texto = pictogramasOrdenados.map((p) => p.nombre).join(" ");
 
     const { data: fraseCreada, error: fraseError } = await supabase
       .from("frases")
@@ -59,7 +55,43 @@ const armarFrase = async (req, res) => {
       });
     }
 
-    res.json({
+    const registrosFrasePictogramas = pictogramasOrdenados.map(
+      (pictograma, index) => ({
+        id_frase: fraseCreada.id_frase,
+        id_pictogramas: pictograma.id_pictogramas,
+        orden: index + 1
+      })
+    );
+
+    const { error: frasePictogramasError } = await supabase
+      .from("frase_pictogramas")
+      .insert(registrosFrasePictogramas);
+
+    if (frasePictogramasError) {
+      return res.status(500).json({
+        data: null,
+        error: frasePictogramasError.message
+      });
+    }
+
+    const { error: historialError } = await supabase
+    .from("historial_uso")
+    .insert([
+    {
+      id_usuario,
+      accion: "armar_frase",
+      detalle: texto
+    }
+  ]);
+
+    if (historialError) {
+    return res.status(500).json({
+    data: null,
+    error: historialError.message
+  });
+ }
+
+    return res.json({
       data: {
         id_frase: fraseCreada.id_frase,
         id_usuario,
@@ -68,9 +100,59 @@ const armarFrase = async (req, res) => {
       },
       error: null
     });
-
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
+      data: null,
+      error: error.message
+    });
+  }
+};
+
+const obtenerMisFrases = async (req, res) => {
+  try {
+    const id_usuario = req.usuario.id_usuario;
+
+    const { data: frases, error } = await supabase
+      .from("frases")
+      .select(`
+        id_frase,
+        id_usuario,
+        texto,
+        fecha_creacion,
+        frase_pictogramas (
+          id_frase_pictogramas,
+          orden,
+          pictogramas (
+            id_pictogramas,
+            nombre,
+            imagen_url,
+            audio_url
+          )
+        )
+      `)
+      .eq("id_usuario", id_usuario)
+      .order("fecha_creacion", { ascending: false });
+
+    if (error) {
+      return res.status(500).json({
+        data: null,
+        error: error.message
+      });
+    }
+
+    const frasesOrdenadas = frases.map((frase) => ({
+      ...frase,
+      frase_pictogramas: frase.frase_pictogramas
+        ? frase.frase_pictogramas.sort((a, b) => a.orden - b.orden)
+        : []
+    }));
+
+    return res.json({
+      data: frasesOrdenadas,
+      error: null
+    });
+  } catch (error) {
+    return res.status(500).json({
       data: null,
       error: error.message
     });
@@ -78,5 +160,6 @@ const armarFrase = async (req, res) => {
 };
 
 module.exports = {
-  armarFrase
+  armarFrase,
+  obtenerMisFrases
 };

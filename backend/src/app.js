@@ -11,6 +11,7 @@ const pictogramasRoutes = require("./routes/pictogramas.routes");
 const categoriasRoutes = require("./routes/categorias.routes");
 const frasesRoutes = require("./routes/frases.routes");
 const authRoutes = require("./routes/auth.routes");
+const historialUsoRoutes = require("./routes/historialUso.routes");
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.use("/pictogramas", pictogramasRoutes);
 app.use("/categorias", categoriasRoutes);
 app.use("/frases", frasesRoutes);
 app.use("/auth", authRoutes);
+app.use("/historial-uso", historialUsoRoutes);
 
 
 app.listen(3000, () => {
