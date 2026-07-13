@@ -116,12 +116,25 @@ def reentrenar(user_id, datos):
     nuevos_X = np.array(nuevos_X)
     nuevos_y = np.array(nuevos_y)
 
-    modelo = cargar_modelo_usuario(user_id)
-    modelo.set_params(warm_start=True, max_iter=100)
-    modelo.fit(nuevos_X, nuevos_y)
+    # Intentar reentrenar el modelo existente
+    # Si el usuario es nuevo usa el base, si ya tiene uno propio lo actualiza
+    path = f"modelos/modelo_{user_id}.pkl"
+    if os.path.exists(path):
+        modelo = joblib.load(path)
+        modelo.set_params(warm_start=True, max_iter=100)
+        modelo.fit(nuevos_X, nuevos_y)
+    else:
+        # Usuario nuevo: crear modelo propio desde cero
+        modelo = MLPClassifier(
+            hidden_layer_sizes=(128, 64),
+            activation='relu',
+            max_iter=500,
+            random_state=42
+        )
+        modelo.fit(nuevos_X, nuevos_y)
 
     os.makedirs("modelos", exist_ok=True)
-    joblib.dump(modelo, f"modelos/modelo_{user_id}.pkl")
+    joblib.dump(modelo, path)
 
     print(f"Modelo del usuario '{user_id}' actualizado con {len(nuevos_X)} pares nuevos.")
     return {"status": "ok", "pares_entrenados": len(nuevos_X)}
