@@ -6,12 +6,10 @@ export default function ConstructionBar() {
 
   return (
     <View style={styles.container}>
-
       <View style={styles.topRow}>
-
         <View style={styles.wordsContainer}>
           <Text style={styles.text}>
-            {palabras.join(" ")}
+            {palabras.map((p) => p.nombre).join(" ")}
           </Text>
         </View>
 
@@ -21,18 +19,13 @@ export default function ConstructionBar() {
         >
           <Text style={styles.deleteText}>✕</Text>
         </TouchableOpacity>
-
       </View>
 
       {palabras.length > 0 && (
-        <TouchableOpacity
-          onPress={limpiar}
-          style={styles.clearButton}
-        >
+        <TouchableOpacity onPress={limpiar} style={styles.clearButton}>
           <Text style={styles.clearText}>Reiniciar oración</Text>
         </TouchableOpacity>
       )}
-
     </View>
   );
 }

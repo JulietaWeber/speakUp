@@ -48,22 +48,34 @@ export default function CategoryScreen({
         {titulo}
       </Text>
 
-      {pictogramas.map((pictograma) => (
-        <TouchableOpacity
-          key={pictograma.id_pictogramas}
-          onPress={() => agregarPalabra(pictograma.nombre)}
+      {pictogramas.length === 0 ? (
+        <Text
           style={{
-            backgroundColor: color,
-            padding: 20,
-            borderRadius: 15,
-            marginBottom: 10,
+            fontSize: 18,
+            textAlign: "center",
+            marginTop: 20,
           }}
         >
-          <Text style={{ fontSize: 18 }}>
-            {pictograma.nombre}
-          </Text>
-        </TouchableOpacity>
-      ))}
+          No hay pictogramas disponibles.
+        </Text>
+      ) : (
+        pictogramas.map((pictograma) => (
+          <TouchableOpacity
+            key={pictograma.id_pictogramas}
+            onPress={() => agregarPalabra(pictograma)}
+            style={{
+              backgroundColor: color,
+              padding: 20,
+              borderRadius: 15,
+              marginBottom: 10,
+            }}
+          >
+            <Text style={{ fontSize: 18 }}>
+              {pictograma.nombre}
+            </Text>
+          </TouchableOpacity>
+        ))
+      )}
     </View>
   );
 }

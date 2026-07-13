@@ -5,11 +5,18 @@ import ConstructionBar from "../components/ConstructionBar";
 export default function Categories() {
   const categories: {
     name: string;
-    route: "/comida" | "/emociones" | "/escuela";
+    route:
+      | "/comida"
+      | "/bebidas"
+      | "/escuela"
+      | "/pronombres"
+      | "/verbos";
   }[] = [
     { name: "Comida", route: "/comida" },
-    { name: "Emociones", route: "/emociones" },
+    { name: "Bebidas", route: "/bebidas" },
     { name: "Escuela", route: "/escuela" },
+    { name: "Pronombres", route: "/pronombres" },
+    { name: "Verbos", route: "/verbos" },
   ];
 
   return (

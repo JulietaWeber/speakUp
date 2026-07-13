@@ -1,19 +1,26 @@
 import React, { createContext, useContext, useState } from "react";
+import { Pictograma } from "../services/api";
 
 type ConstructionContextType = {
-  palabras: string[];
-  agregarPalabra: (palabra: string) => void;
+  palabras: Pictograma[];
+  agregarPalabra: (palabra: Pictograma) => void;
   eliminarPalabra: (index: number) => void;
   borrarUltimaPalabra: () => void;
   limpiar: () => void;
 };
 
-const ConstructionContext = createContext<ConstructionContextType | undefined>(undefined);
+const ConstructionContext = createContext<ConstructionContextType | undefined>(
+  undefined
+);
 
-export function ConstructionProvider({ children }: { children: React.ReactNode }) {
-  const [palabras, setPalabras] = useState<string[]>([]);
+export function ConstructionProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const [palabras, setPalabras] = useState<Pictograma[]>([]);
 
-  const agregarPalabra = (palabra: string) => {
+  const agregarPalabra = (palabra: Pictograma) => {
     setPalabras((prev) => [...prev, palabra]);
   };
 
@@ -48,7 +55,9 @@ export function useConstruction() {
   const context = useContext(ConstructionContext);
 
   if (!context) {
-    throw new Error("useConstruction debe usarse dentro de ConstructionProvider");
+    throw new Error(
+      "useConstruction debe usarse dentro de ConstructionProvider"
+    );
   }
 
   return context;

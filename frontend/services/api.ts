@@ -27,16 +27,49 @@ export const obtenerPictogramasPorCategoria = async (
   const response = await axios.get(
     `${API_URL}/pictogramas/categoria/${idCategoria}`
   );
+
   return response.data.data;
 };
 
 export const armarFrase = async (
   idUsuario: number,
-  pictogramas: number[]
+  pictogramas: number[],
+  token: string
 ) => {
-  const response = await axios.post(`${API_URL}/frases/armar`, {
-    id_usuario: idUsuario,
-    pictogramas,
+  const response = await axios.post(
+    `${API_URL}/frases/armar`,
+    {
+      id_usuario: idUsuario,
+      pictogramas,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  return response.data.data;
+};
+
+export const login = async (email: string, password: string) => {
+  const response = await axios.post(`${API_URL}/auth/login`, {
+    email,
+    password,
+  });
+
+  return response.data.data;
+};
+
+export const register = async (
+  nombre: string,
+  email: string,
+  password: string
+) => {
+  const response = await axios.post(`${API_URL}/auth/register`, {
+    nombre,
+    email,
+    password,
   });
 
   return response.data.data;

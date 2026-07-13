@@ -6,15 +6,16 @@ import {
   TouchableOpacity,
   Alert,
 } from "react-native";
-
 import { router } from "expo-router";
+import { register } from "../services/api";
 
 export default function Register() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (!name.trim()) {
       Alert.alert("Error", "Ingresá tu nombre");
       return;
@@ -30,7 +31,32 @@ export default function Register() {
       return;
     }
 
-    router.push("/categories");
+    try {
+      setLoading(true);
+
+      const data = await register(name, email, password);
+
+      console.log("Usuario registrado:", data);
+
+      Alert.alert(
+        "Éxito",
+        "Usuario registrado correctamente."
+      );
+
+      router.replace("/login");
+    } catch (error: any) {
+      console.log("ERROR REGISTER:");
+      console.log(error);
+      console.log(error.response);
+      console.log(error.response?.data);
+
+      Alert.alert(
+        "Error",
+        JSON.stringify(error.response?.data || error.message)
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -70,6 +96,7 @@ export default function Register() {
         placeholder="Email"
         value={email}
         onChangeText={setEmail}
+        autoCapitalize="none"
         style={{
           backgroundColor: "white",
           padding: 18,
@@ -93,11 +120,13 @@ export default function Register() {
 
       <TouchableOpacity
         onPress={handleRegister}
+        disabled={loading}
         style={{
           backgroundColor: "#219ebc",
           padding: 20,
           borderRadius: 18,
           alignItems: "center",
+          opacity: loading ? 0.7 : 1,
         }}
       >
         <Text
@@ -107,7 +136,7 @@ export default function Register() {
             fontSize: 18,
           }}
         >
-          Registrarse
+          {loading ? "Registrando..." : "Registrarse"}
         </Text>
       </TouchableOpacity>
 

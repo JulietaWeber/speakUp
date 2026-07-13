@@ -6,14 +6,15 @@ import {
   TouchableOpacity,
   Alert,
 } from "react-native";
-
 import { router } from "expo-router";
+import { login } from "../services/api";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!email.trim()) {
       Alert.alert("Error", "Ingresá tu usuario o email");
       return;
@@ -24,7 +25,24 @@ export default function Login() {
       return;
     }
 
-    router.push("/categories");
+    try {
+      setLoading(true);
+
+      const data = await login(email, password);
+
+      console.log("Login exitoso:", data);
+
+      Alert.alert("Éxito", `¡Bienvenido ${data.usuario.nombre}!`);
+
+      router.push("/categories");
+    } catch (error: any) {
+      Alert.alert(
+        "Error",
+        error?.response?.data?.error || "No se pudo iniciar sesión"
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -74,6 +92,7 @@ export default function Login() {
         value={email}
         onChangeText={setEmail}
         placeholderTextColor="#999"
+        autoCapitalize="none"
         style={{
           backgroundColor: "white",
           padding: 18,
@@ -110,12 +129,14 @@ export default function Login() {
 
       <TouchableOpacity
         onPress={handleLogin}
+        disabled={loading}
         style={{
           backgroundColor: "#219ebc",
           padding: 20,
           borderRadius: 18,
           alignItems: "center",
           marginBottom: 20,
+          opacity: loading ? 0.7 : 1,
         }}
       >
         <Text
@@ -125,7 +146,7 @@ export default function Login() {
             fontWeight: "bold",
           }}
         >
-          Iniciar Sesión
+          {loading ? "Ingresando..." : "Iniciar Sesión"}
         </Text>
       </TouchableOpacity>
 
