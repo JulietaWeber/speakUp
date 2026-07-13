@@ -12,6 +12,7 @@ const categoriasRoutes = require("./routes/categorias.routes");
 const frasesRoutes = require("./routes/frases.routes");
 const authRoutes = require("./routes/auth.routes");
 const historialUsoRoutes = require("./routes/historialUso.routes");
+const sugerenciasRoutes = require("./routes/sugerencias.routes");
 
 const app = express();
 
@@ -29,6 +30,7 @@ app.use("/categorias", categoriasRoutes);
 app.use("/frases", frasesRoutes);
 app.use("/auth", authRoutes);
 app.use("/historial-uso", historialUsoRoutes);
+app.use("/sugerencias", sugerenciasRoutes);
 
 
 app.listen(3000, () => {
