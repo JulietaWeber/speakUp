@@ -74,13 +74,22 @@ const armarFrase = async (req, res) => {
       });
     }
 
-    await supabase.from("historial_uso").insert([
-      {
-        id_usuario,
-        accion: "armar_frase",
-        detalle: texto
-      }
-    ]);
+    const { error: historialError } = await supabase
+    .from("historial_uso")
+    .insert([
+    {
+      id_usuario,
+      accion: "armar_frase",
+      detalle: texto
+    }
+  ]);
+
+    if (historialError) {
+    return res.status(500).json({
+    data: null,
+    error: historialError.message
+  });
+ }
 
     return res.json({
       data: {
