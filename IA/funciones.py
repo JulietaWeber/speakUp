@@ -1,16 +1,14 @@
-from gensim.models import KeyedVectors
+import spacy
 import numpy as np
 import joblib
 import os
 from sklearn.neural_network import MLPClassifier
-import descargar_embeddings
 
-# ── Cargar embeddings (una sola vez al arrancar) ──────────────────────────────
+# ── Cargar spaCy (una sola vez al arrancar) ───────────────────────────────────
 
-print("Cargando embeddings...")
-embeddings = KeyedVectors.load_word2vec_format("SBW-vectors-300-min5.txt", binary=False)
-DIMENSION = 300
-print("Embeddings cargados\n")
+print("Cargando spaCy...")
+nlp = spacy.load("es_core_news_md")
+print("spaCy cargado\n")
 
 # ── Cargar modelo base y encoders ─────────────────────────────────────────────
 
@@ -21,12 +19,8 @@ modelo_base       = joblib.load("modelo_base.pkl")
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def palabra_a_vector(palabra):
-    """Convierte una palabra a su vector de 300 dimensiones.
-    Si la palabra no existe devuelve ceros."""
-    try:
-        return embeddings[palabra.lower()]
-    except KeyError:
-        return np.zeros(DIMENSION)
+    """Convierte una palabra a su vector spaCy de 96 dimensiones."""
+    return nlp(palabra.lower()).vector
 
 def categoria_a_vector(categoria):
     """Convierte una categoría a one-hot vector."""
@@ -45,18 +39,6 @@ def cargar_modelo_usuario(user_id):
 # ── Función 1: Predecir Top 3 ─────────────────────────────────────────────────
 
 def predecir_top3(user_id, categoria, palabra):
-    """
-    Recibe un user_id, una categoría y una palabra.
-    Devuelve las 3 palabras más probables para ese usuario.
-
-    Ejemplo:
-        predecir_top3("001", "Casa", "quiero")
-        → [
-            {"palabra": "comer",      "probabilidad": 45.2},
-            {"palabra": "dormir",     "probabilidad": 30.1},
-            {"palabra": "televisión", "probabilidad": 24.7}
-          ]
-    """
     modelo = cargar_modelo_usuario(user_id)
 
     entrada = np.concatenate([
@@ -78,17 +60,6 @@ def predecir_top3(user_id, categoria, palabra):
 # ── Función 2: Reentrenar ─────────────────────────────────────────────────────
 
 def reentrenar(user_id, datos):
-    """
-    Recibe un user_id y una lista de frases de la semana.
-    Reentrena el modelo del usuario con todos esos datos.
-
-    Parámetro datos — lista de dicts con categoria y frase:
-        [
-            {"categoria": "Casa",    "frase": ["quiero", "ver", "televisión"]},
-            {"categoria": "Escuela", "frase": ["necesito", "ayuda"]},
-            {"categoria": "Médico",  "frase": ["me", "duele", "cabeza"]},
-        ]
-    """
     nuevos_X = []
     nuevos_y = []
 
@@ -111,21 +82,17 @@ def reentrenar(user_id, datos):
             nuevos_y.append(encoder_salida.transform([palabra_siguiente])[0])
 
     if not nuevos_X:
-        print(f"No hay datos válidos para reentrenar al usuario '{user_id}'.")
         return {"status": "sin_datos"}
 
     nuevos_X = np.array(nuevos_X)
     nuevos_y = np.array(nuevos_y)
 
-    # Intentar reentrenar el modelo existente
-    # Si el usuario es nuevo usa el base, si ya tiene uno propio lo actualiza
     path = f"modelos/modelo_{user_id}.pkl"
     if os.path.exists(path):
         modelo = joblib.load(path)
         modelo.set_params(warm_start=True, max_iter=100)
         modelo.fit(nuevos_X, nuevos_y)
     else:
-        # Usuario nuevo: crear modelo propio desde cero
         modelo = MLPClassifier(
             hidden_layer_sizes=(128, 64),
             activation='relu',
@@ -137,5 +104,5 @@ def reentrenar(user_id, datos):
     os.makedirs("modelos", exist_ok=True)
     joblib.dump(modelo, path)
 
-    print(f"Modelo del usuario '{user_id}' actualizado con {len(nuevos_X)} pares nuevos.")
+    print(f"Modelo del usuario '{user_id}' actualizado con {len(nuevos_X)} pares.")
     return {"status": "ok", "pares_entrenados": len(nuevos_X)}

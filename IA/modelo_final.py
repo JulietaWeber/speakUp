@@ -1,16 +1,15 @@
-from gensim.models import KeyedVectors
+import spacy
 import numpy as np
 import joblib
 from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
-# ── Cargar embeddings en español ──────────────────────────────────────────────
+# ── Cargar modelo spaCy en español ───────────────────────────────────────────
 
-print("Cargando embeddings... (puede tardar unos minutos la primera vez)")
-embeddings = KeyedVectors.load_word2vec_format("SBW-vectors-300-min5.txt", binary=False)
-DIMENSION = 300
-print("Embeddings cargados\n")
+print("Cargando spaCy...")
+nlp = spacy.load("es_core_news_md")
+print("spaCy cargado\n")
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
 
@@ -348,12 +347,8 @@ historial = [
 # ── Funciones de vectorización ────────────────────────────────────────────────
 
 def palabra_a_vector(palabra):
-    """Convierte una palabra a su vector de 300 dimensiones.
-    Si la palabra no existe en el vocabulario devuelve ceros."""
-    try:
-        return embeddings[palabra.lower()]
-    except KeyError:
-        return np.zeros(DIMENSION)
+    """Convierte una palabra a su vector spaCy de 96 dimensiones."""
+    return nlp(palabra.lower()).vector
 
 def categoria_a_vector(categoria, encoder_cat):
     """Convierte una categoría a one-hot vector."""
@@ -432,25 +427,6 @@ joblib.dump(encoder_categoria, "encoder_categoria.pkl")
 joblib.dump(encoder_salida, "encoder_salida.pkl")
 print("Modelo guardado: modelo_base.pkl\n")
 
-# ── Función de predicción Top 3 ───────────────────────────────────────────────
-
-def predecir_top3(user_id, categoria, palabra):
-    entrada = np.concatenate([
-        categoria_a_vector(categoria, encoder_categoria),
-        palabra_a_vector(palabra)
-    ]).reshape(1, -1)
-
-    probs = modelo.predict_proba(entrada)[0]
-    top3  = probs.argsort()[-3:][::-1]
-
-    return [
-        {
-            "palabra":      encoder_salida.inverse_transform([modelo.classes_[i]])[0],
-            "probabilidad": round(probs[i] * 100, 2)
-        }
-        for i in top3
-    ]
-
 # ── Prueba ────────────────────────────────────────────────────────────────────
 
 print("── Prueba de predicciones ──")
@@ -464,7 +440,13 @@ ejemplos = [
 ]
 
 for categoria, palabra in ejemplos:
-    resultados = predecir_top3("test", categoria, palabra)
+    entrada = np.concatenate([
+        categoria_a_vector(categoria, encoder_categoria),
+        palabra_a_vector(palabra)
+    ]).reshape(1, -1)
+    probs = modelo.predict_proba(entrada)[0]
+    top3 = probs.argsort()[-3:][::-1]
     print(f"\n'{palabra}' en {categoria}:")
-    for i, r in enumerate(resultados):
-        print(f"  {i+1}. {r['palabra']} ({r['probabilidad']}%)")
+    for i in top3:
+        p = encoder_salida.inverse_transform([modelo.classes_[i]])[0]
+        print(f"  - {p} ({round(probs[i]*100, 2)}%)")
