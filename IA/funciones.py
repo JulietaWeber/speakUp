@@ -3,6 +3,7 @@ import numpy as np
 import joblib
 import os
 from sklearn.neural_network import MLPClassifier
+import descargar_embeddings
 
 # ── Cargar embeddings (una sola vez al arrancar) ──────────────────────────────
 
