@@ -7,15 +7,10 @@ import descargar_embeddings
 
 # ── Cargar embeddings (una sola vez al arrancar) ──────────────────────────────
 
-embeddings = None
+print("Cargando embeddings...")
+embeddings = KeyedVectors.load_word2vec_format("SBW-vectors-300-min5.txt", binary=False)
 DIMENSION = 300
-
-def cargar_embeddings():
-    global embeddings
-    if embeddings is None:
-        print("Cargando embeddings...")
-        embeddings = KeyedVectors.load_word2vec_format("SBW-vectors-300-min5.txt", binary=False)
-        print("Embeddings cargados")
+print("Embeddings cargados\n")
 
 # ── Cargar modelo base y encoders ─────────────────────────────────────────────
 
@@ -28,7 +23,6 @@ modelo_base       = joblib.load("modelo_base.pkl")
 def palabra_a_vector(palabra):
     """Convierte una palabra a su vector de 300 dimensiones.
     Si la palabra no existe devuelve ceros."""
-    cargar_embeddings()
     try:
         return embeddings[palabra.lower()]
     except KeyError:
