@@ -1,0 +1,50 @@
+URL base
+
+https://speakup-production-b13f.up.railway.app
+
+Endpoint 1 — Predecir palabras
+
+POST /predecir
+
+user_id: identificador único del usuario (string)
+categoria: categoria (string)
+palabra: la última palabra que seleccionó el usuario (string)
+
+Body esperado:
+en json
+{
+  "user_id": string,
+  "categoria": string,
+  "palabra": string
+}
+
+respuesta
+en json
+[
+  {"palabra": string, "probabilidad": float},
+  {"palabra": string, "probabilidad": float},
+  {"palabra": string, "probabilidad": float}
+]
+
+Endpoint 2 — Reentrenar modelo del usuario
+POST /reentrenar
+
+
+user_id: identificador único del usuario (string)
+datos: lista de frases usadas durante la semana. Cada elemento tiene una categoría y la frase como lista de palabras en el orden en que fueron seleccionadas.
+
+Body esperado:
+en json
+{
+  "user_id": string,
+  "datos": [
+    {
+      "categoria": string,
+      "frase": [string, string, ...]
+    }
+  ]
+}
+
+Respuesta
+en json
+{"status": string, "pares_entrenados": int}
