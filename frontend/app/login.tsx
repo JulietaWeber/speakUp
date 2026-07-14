@@ -7,6 +7,7 @@ import {
   Alert,
 } from "react-native";
 import { router } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { login } from "../services/api";
 
 export default function Login() {
@@ -32,9 +33,20 @@ export default function Login() {
 
       console.log("Login exitoso:", data);
 
+      await AsyncStorage.setItem(
+        "token",
+        data.token
+      );
+
+      await AsyncStorage.setItem(
+        "usuario",
+        JSON.stringify(data.usuario)
+      );
+
       Alert.alert("Éxito", `¡Bienvenido ${data.usuario.nombre}!`);
 
       router.push("/categories");
+
     } catch (error: any) {
       Alert.alert(
         "Error",
