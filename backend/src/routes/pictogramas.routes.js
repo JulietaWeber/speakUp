@@ -9,6 +9,7 @@ const {
   eliminarPictograma,
   crearPictogramaPersonalizado,
   obtenerMisPictogramasPersonalizados,
+  actualizarPictogramaPersonalizado,
   eliminarPictogramaPersonalizado
 } = require("../controllers/pictogramas.controller");
 
@@ -24,5 +25,6 @@ router.delete("/personalizado/:id_pictograma", verificarToken, eliminarPictogram
 router.post("/", crearPictograma);
 router.put("/:id_pictograma", actualizarPictograma);
 router.delete("/:id_pictograma", eliminarPictograma);
+router.put("/personalizado/:id_pictograma", verificarToken, actualizarPictogramaPersonalizado);
 
 module.exports = router;
