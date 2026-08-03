@@ -159,7 +159,184 @@ const obtenerMisFrases = async (req, res) => {
   }
 };
 
+const obtenerFrasePorId = async (req, res) => {
+  try {
+    const id_usuario = req.usuario.id_usuario;
+    const { id_frase } = req.params;
+
+    const { data: frase, error: fraseError } = await supabase
+      .from("frases")
+      .select("id_frase, id_usuario, texto, fecha_creacion")
+      .eq("id_frase", id_frase)
+      .maybeSingle();
+
+    if (fraseError) {
+      return res.status(500).json({
+        data: null,
+        error: fraseError.message
+      });
+    }
+
+    if (!frase) {
+      return res.status(404).json({
+        data: null,
+        error: "Frase no encontrada"
+      });
+    }
+
+    if (Number(frase.id_usuario) !== Number(id_usuario)) {
+      return res.status(403).json({
+        data: null,
+        error: "No tenés permiso para ver esta frase"
+      });
+    }
+
+    const { data: pictogramas, error: pictogramasError } = await supabase
+      .from("frase_pictogramas")
+      .select(`
+        id_frase_pictograma,
+        id_frase,
+        id_pictogramas,
+        orden,
+        pictogramas (
+          id_pictogramas,
+          id_categorias,
+          nombre,
+          imagen_url,
+          audio_url,
+          es_personalizado
+        )
+      `)
+      .eq("id_frase", id_frase)
+      .order("orden", { ascending: true });
+
+    if (pictogramasError) {
+      return res.status(500).json({
+        data: null,
+        error: pictogramasError.message
+      });
+    }
+
+    const pictogramasFormateados = pictogramas.map((item) => ({
+      id_frase_pictograma: item.id_frase_pictograma,
+      id_pictogramas: item.id_pictogramas,
+      orden: item.orden,
+      ...item.pictogramas
+    }));
+
+    return res.json({
+      data: {
+        ...frase,
+        pictogramas: pictogramasFormateados
+      },
+      error: null
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      data: null,
+      error: error.message
+    });
+  }
+};
+
+const eliminarFrase = async (req, res) => {
+  try {
+    const id_usuario = req.usuario.id_usuario;
+    const { id_frase } = req.params;
+
+    const { data: frase, error: fraseError } = await supabase
+      .from("frases")
+      .select("id_frase, id_usuario, texto")
+      .eq("id_frase", id_frase)
+      .maybeSingle();
+
+    if (fraseError) {
+      return res.status(500).json({
+        data: null,
+        error: fraseError.message
+      });
+    }
+
+    if (!frase) {
+      return res.status(404).json({
+        data: null,
+        error: "Frase no encontrada"
+      });
+    }
+
+    if (Number(frase.id_usuario) !== Number(id_usuario)) {
+      return res.status(403).json({
+        data: null,
+        error: "No tenés permiso para eliminar esta frase"
+      });
+    }
+
+    // Primero borro audios asociados a la frase
+    const { error: audiosError } = await supabase
+      .from("audios")
+      .delete()
+      .eq("id_frase", id_frase);
+
+    if (audiosError) {
+      return res.status(500).json({
+        data: null,
+        error: audiosError.message
+      });
+    }
+
+    // Después borro la relación frase-pictogramas
+    const { error: relacionError } = await supabase
+      .from("frase_pictogramas")
+      .delete()
+      .eq("id_frase", id_frase);
+
+    if (relacionError) {
+      return res.status(500).json({
+        data: null,
+        error: relacionError.message
+      });
+    }
+
+    // Finalmente borro la frase
+    const { error: borrarFraseError } = await supabase
+      .from("frases")
+      .delete()
+      .eq("id_frase", id_frase);
+
+    if (borrarFraseError) {
+      return res.status(500).json({
+        data: null,
+        error: borrarFraseError.message
+      });
+    }
+
+    await supabase.from("historial_uso").insert([
+      {
+        id_usuario,
+        accion: "eliminar_frase",
+        detalle: `Frase eliminada: ${frase.texto}`
+      }
+    ]);
+
+    return res.json({
+      data: {
+        mensaje: "Frase eliminada correctamente"
+      },
+      error: null
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      data: null,
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   armarFrase,
-  obtenerMisFrases
+  obtenerMisFrases,
+  obtenerFrasePorId,
+  eliminarFrase
 };
