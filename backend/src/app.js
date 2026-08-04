@@ -32,7 +32,12 @@ app.use("/auth", authRoutes);
 app.use("/historial-uso", historialUsoRoutes);
 app.use("/sugerencias", sugerenciasRoutes);
 
+module.exports = app;
 
-app.listen(3000, () => {
-  console.log("Servidor corriendo en puerto 3000");
-});
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+
+  app.listen(PORT, () => {
+    console.log(`Servidor corriendo en puerto ${PORT}`);
+  });
+}  
