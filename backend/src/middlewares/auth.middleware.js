@@ -26,7 +26,8 @@ const verificarToken = (req, res, next) => {
 
     req.usuario = {
       id_usuario: decoded.id_usuario,
-      email: decoded.email
+      email: decoded.email,
+      rol: decoded.rol
     };
 
     next();

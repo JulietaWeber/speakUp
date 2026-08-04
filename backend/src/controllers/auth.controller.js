@@ -6,7 +6,8 @@ const generarToken = (usuario) => {
   return jwt.sign(
     {
       id_usuario: usuario.id_usuario,
-      email: usuario.email
+      email: usuario.email,
+      rol: usuario.rol
     },
     process.env.JWT_SECRET,
     {
@@ -168,7 +169,7 @@ const obtenerMiPerfil = async (req, res) => {
 
     const { data: usuario, error } = await supabase
       .from("usuarios")
-      .select("id_usuario, nombre, email")
+      .select("id_usuario, nombre, email, rol")
       .eq("id_usuario", idUsuario)
       .maybeSingle();
 
