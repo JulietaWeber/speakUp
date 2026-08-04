@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from funciones import predecir_top3, reentrenar
+from funciones import predecir_top3, reentrenar, corregir_frase
 
 # ── Crear la app ──────────────────────────────────────────────────────────────
 # "app" es la variable que Railway busca cuando ejecuta "uvicorn api:app"
@@ -19,6 +19,9 @@ class PredecirRequest(BaseModel):
 class ReentrenarRequest(BaseModel):
     user_id: str
     datos:   list  # lista de {"categoria": "Casa", "frase": ["quiero", "comer"]}
+
+class CorregirRequest(BaseModel):
+    palabras: list  # lista de palabras sueltas, ej: ["mamá", "agua", "querer"]
 
 # ── Endpoint 1: Predecir ──────────────────────────────────────────────────────
 # El back llama a este endpoint con un user_id, categoria y palabra.
@@ -62,7 +65,22 @@ def predecir(request: PredecirRequest):
 def reentrenar_modelo(request: ReentrenarRequest):
     return reentrenar(request.user_id, request.datos)
 
-# ── Endpoint 3: Health check ──────────────────────────────────────────────────
+# ── Endpoint 3: Corregir frase ─────────────────────────────────────────────────
+# El back llama a este endpoint con las palabras sueltas que seleccionó el
+# usuario y recibe la frase natural correspondiente en español.
+#
+# Ejemplo de request:
+#   POST https://tuapp.railway.app/corregir
+#   {"palabras": ["mamá", "agua", "querer"]}
+#
+# Ejemplo de response:
+#   {"frase": "Quiero tomar agua, mamá."}
+
+@app.post("/corregir")
+def corregir(request: CorregirRequest):
+    return {"frase": corregir_frase(request.palabras)}
+
+# ── Endpoint 4: Health check ──────────────────────────────────────────────────
 # Endpoint simple para verificar que la API está corriendo.
 # Railway lo usa para saber si el servidor está vivo.
 # También útil para que tu amiga pruebe que la conexión funciona.
@@ -73,4 +91,16 @@ def reentrenar_modelo(request: ReentrenarRequest):
 
 @app.get("/")
 def health_check():
+    return {"status": "ok"}
+
+# ── Endpoint 5: Ping ───────────────────────────────────────────────────────────
+# Endpoint liviano para que un servicio externo (UptimeRobot) le pegue cada
+# pocos minutos y evite que Render duerma el servidor por inactividad.
+#
+# Ejemplo:
+#   GET https://tuapp.onrender.com/ping
+#   → {"status": "ok"}
+
+@app.get("/ping")
+def ping():
     return {"status": "ok"}

@@ -1,0 +1,115 @@
+SpeakUp — API de IA
+====================
+
+Documentación para el equipo de backend. Esta API expone tres funcionalidades:
+predicción de la siguiente palabra, reentrenamiento del modelo personalizado
+de cada usuario, y corrección de frases armadas con palabras sueltas.
+
+URL BASE
+--------
+https://[PENDIENTE-URL-RENDER].onrender.com
+
+(La URL definitiva se completa una vez finalizado el deploy en Render. Todas
+las rutas de abajo son relativas a esta URL base.)
+
+NOTA SOBRE LA CAPA GRATUITA DE RENDER
+--------------------------------------
+El servidor gratuito de Render se "duerme" después de 15 minutos sin
+recibir tráfico, y la primera request después de eso tarda más (tiene que
+despertar). Por eso existe el endpoint /ping: un servicio externo
+(UptimeRobot) le pega cada pocos minutos para mantenerlo despierto.
+
+
+ENDPOINT: GET /
+----------------
+Descripción:
+Chequeo de salud. Sirve para confirmar que el servidor está levantado y
+respondiendo.
+
+Body:
+No requiere body.
+
+Respuesta:
+Objeto JSON con un campo "status" que vale "ok" si el servidor está
+funcionando correctamente.
+
+
+ENDPOINT: POST /predecir
+--------------------------
+Descripción:
+Dado el usuario, la categoría en la que está navegando y la última palabra
+que seleccionó, devuelve las 3 palabras más probables para que seleccione a
+continuación, junto con su probabilidad. Si el usuario todavía no tiene un
+modelo personalizado propio (no reentrenó todavía), se usa el modelo base
+general.
+
+Body (JSON):
+- user_id (texto): identificador único del usuario.
+- categoria (texto): nombre de la categoría actual (por ejemplo "Casa",
+  "Escuela", "Médico", "Emociones", "Transporte" o "Amigos").
+- palabra (texto): la última palabra que seleccionó el usuario.
+
+Respuesta:
+Una lista de 3 objetos, ordenados de mayor a menor probabilidad. Cada objeto
+tiene:
+- palabra (texto): la palabra sugerida.
+- probabilidad (número): probabilidad estimada, expresada en porcentaje
+  (0 a 100).
+
+
+ENDPOINT: POST /reentrenar
+-----------------------------
+Descripción:
+Reentrena (o crea, si todavía no existe) el modelo personalizado del usuario
+usando el historial de frases que armó durante la semana. Pensado para
+llamarse periódicamente (por ejemplo, una vez por semana) con todas las
+frases nuevas acumuladas desde la última actualización. A partir de ese
+momento, /predecir va a usar este modelo personalizado en lugar del modelo
+base para ese usuario.
+
+Body (JSON):
+- user_id (texto): identificador único del usuario.
+- datos (lista): lista de registros, uno por cada frase que el usuario armó.
+  Cada registro tiene:
+  - categoria (texto): categoría en la que se armó la frase.
+  - frase (lista de texto): las palabras seleccionadas, en el orden en que
+    el usuario las fue tocando.
+
+Respuesta:
+Objeto JSON con:
+- status (texto): "ok" si se entrenó correctamente, o "sin_datos" si no
+  había suficientes palabras válidas para entrenar.
+- pares_entrenados (número, solo si status es "ok"): cantidad de pares
+  palabra-actual/palabra-siguiente usados para el reentrenamiento.
+
+
+ENDPOINT: POST /corregir
+---------------------------
+Descripción:
+Recibe las palabras sueltas que el usuario fue seleccionando en su tablero
+(sin importar el orden ni la conjugación) y devuelve la frase equivalente,
+pero redactada de forma natural y gramaticalmente correcta en español, lista
+para mostrarse o leerse en voz alta.
+
+Body (JSON):
+- palabras (lista de texto): las palabras seleccionadas por el usuario, en
+  el orden en que las fue tocando.
+
+Respuesta:
+Objeto JSON con:
+- frase (texto): la frase corregida y natural en español.
+
+
+ENDPOINT: GET /ping
+---------------------
+Descripción:
+Endpoint liviano pensado para que un servicio externo de monitoreo (por
+ejemplo UptimeRobot) le pegue cada pocos minutos y así evite que Render
+duerma el servidor por inactividad. Cumple la misma función que GET / pero
+se usa exclusivamente para este propósito.
+
+Body:
+No requiere body.
+
+Respuesta:
+Objeto JSON con un campo "status" que vale "ok".

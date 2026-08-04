@@ -1,0 +1,82 @@
+URL base:
+https://speakup-ia.onrender.com
+
+Endpoint 1 — Predecir siguiente palabra
+POST /predecir
+
+vuelve las 3 palabras más probables para que el usuario seleccione a continuación, basándose en su modelo personalizado. Si el usuario no tiene historial propio todavía, usa el modelo base genérico.
+
+Body:
+
+json
+{
+  "user_id": "string",
+  "categoria": "string",
+  "palabra": "string"
+}
+
+Respuesta:
+
+json
+[
+  {"palabra": "string", "probabilidad": float},
+  {"palabra": "string", "probabilidad": float},
+  {"palabra": "string", "probabilidad": float}
+]
+
+Endpoint 2 — Reentrenar modelo del usuario
+POST /reentrenar
+
+Body:
+
+json
+{
+  "user_id": "string",
+  "datos": [
+    {"categoria": "string", "frase": ["string", "string", "..."]},
+    {"categoria": "string", "frase": ["string", "string", "..."]}
+  ]
+}
+
+Respuesta:
+
+json
+{"status": "string", "pares_entrenados": int}
+
+Endpoint 3 — Corregir frase
+POST /corregir
+
+Body:
+
+json
+{
+  "palabras": ["string", "string", "string"]
+}
+
+Respuesta:
+
+json
+{"frase": "string"}
+
+Endpoint 4 — Health check
+GET /ping
+
+Verifica que la API está operativa.
+
+Respuesta:
+
+json
+{"status": "ok"}
+
+Documentación interactiva:
+https://speakup-ia.onrender.com/docs
+
+Endpoint 5 — Ping
+GET /ping
+
+Mantiene el servidor activo. Es llamado automáticamente cada 5 minutos por UptimeRobot para evitar que el servidor entre en modo inactivo. No debe ser usado por el backend.
+
+Respuesta:
+
+json
+{"status": "ok"}

@@ -9,20 +9,23 @@ const {
   eliminarPictograma,
   crearPictogramaPersonalizado,
   obtenerMisPictogramasPersonalizados,
+  actualizarPictogramaPersonalizado,
   eliminarPictogramaPersonalizado
 } = require("../controllers/pictogramas.controller");
 
 const verificarToken = require("../middlewares/auth.middleware");
+const verificarAdmin = require("../middlewares/admin.middleware");
 
 router.get("/", obtenerPictogramas);
 router.get("/categoria/:id_categoria", obtenerPictogramasPorCategoria);
 
 router.post("/personalizado", verificarToken, crearPictogramaPersonalizado);
 router.get("/mis-personalizados", verificarToken, obtenerMisPictogramasPersonalizados);
+router.put("/personalizado/:id_pictograma", verificarToken, actualizarPictogramaPersonalizado);
 router.delete("/personalizado/:id_pictograma", verificarToken, eliminarPictogramaPersonalizado);
 
-router.post("/", crearPictograma);
-router.put("/:id_pictograma", actualizarPictograma);
-router.delete("/:id_pictograma", eliminarPictograma);
+router.post("/", verificarToken, verificarAdmin, crearPictograma);
+router.put("/:id_pictograma", verificarToken, verificarAdmin, actualizarPictograma);
+router.delete("/:id_pictograma", verificarToken, verificarAdmin, eliminarPictograma);
 
 module.exports = router;
