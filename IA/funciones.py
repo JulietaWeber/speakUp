@@ -2,7 +2,14 @@ import spacy
 import numpy as np
 import joblib
 import os
+import torch
 from sklearn.neural_network import MLPClassifier
+from modelo_correccion import (
+    Encoder as EncoderCorreccion,
+    Decoder as DecoderCorreccion,
+    Vocabulario as VocabularioCorreccion,
+    corregir_frase as _corregir_frase_modelo,
+)
 
 # ── Cargar spaCy (una sola vez al arrancar) ───────────────────────────────────
 
@@ -15,6 +22,23 @@ print("spaCy cargado\n")
 encoder_categoria = joblib.load("encoder_categoria.pkl")
 encoder_salida    = joblib.load("encoder_salida.pkl")
 modelo_base       = joblib.load("modelo_base.pkl")
+
+# ── Cargar modelo de corrección de frases ─────────────────────────────────────
+
+print("Cargando modelo de corrección...")
+_checkpoint_correccion = torch.load("modelo_correccion.pt", map_location="cpu", weights_only=False)
+
+_vocab_correccion = VocabularioCorreccion([])
+_vocab_correccion.tok2idx = _checkpoint_correccion["tok2idx"]
+_vocab_correccion.idx2tok = _checkpoint_correccion["idx2tok"]
+
+_encoder_correccion = EncoderCorreccion(_checkpoint_correccion["dim_spacy"], _checkpoint_correccion["hidden_size"])
+_decoder_correccion = DecoderCorreccion(len(_vocab_correccion), _checkpoint_correccion["hidden_size"], _checkpoint_correccion["emb_size"])
+_encoder_correccion.load_state_dict(_checkpoint_correccion["encoder_state"])
+_decoder_correccion.load_state_dict(_checkpoint_correccion["decoder_state"])
+_encoder_correccion.eval()
+_decoder_correccion.eval()
+print("Modelo de corrección cargado\n")
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -106,3 +130,11 @@ def reentrenar(user_id, datos):
 
     print(f"Modelo del usuario '{user_id}' actualizado con {len(nuevos_X)} pares.")
     return {"status": "ok", "pares_entrenados": len(nuevos_X)}
+
+# ── Función 3: Corregir frase ─────────────────────────────────────────────────
+
+def corregir_frase(palabras):
+    """Convierte una lista de palabras sueltas (sin orden ni conjugar) en una
+    frase natural y correcta en español, usando el modelo entrenado en
+    modelo_correccion.py."""
+    return _corregir_frase_modelo(nlp, _encoder_correccion, _decoder_correccion, _vocab_correccion, palabras)
