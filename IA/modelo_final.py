@@ -350,12 +350,10 @@ def palabra_a_vector(palabra):
     """Convierte una palabra a su vector spaCy de 96 dimensiones."""
     return nlp(palabra.lower()).vector
 
-def categoria_a_vector(categoria, encoder_cat):
-    """Convierte una categoría a one-hot vector."""
-    n = len(encoder_cat.classes_)
-    vector = np.zeros(n)
-    vector[encoder_cat.transform([categoria])[0]] = 1
-    return vector
+def categoria_a_vector(categoria):
+    """Convierte una categoría a su vector spaCy, igual que las palabras.
+    Así el modelo acepta cualquier categoría nueva sin necesitar reentrenar."""
+    return nlp(categoria.lower()).vector
 
 # ── Generación de datos de entrenamiento ──────────────────────────────────────
 
@@ -370,9 +368,6 @@ print(f"Pares generados: {len(datos_entrenamiento)}")
 
 # ── Encoders ──────────────────────────────────────────────────────────────────
 
-encoder_categoria = LabelEncoder()
-encoder_categoria.fit([d[0] for d in datos_entrenamiento])
-
 encoder_salida = LabelEncoder()
 encoder_salida.fit([d[2] for d in datos_entrenamiento])
 
@@ -381,7 +376,7 @@ encoder_salida.fit([d[2] for d in datos_entrenamiento])
 X, y = [], []
 for categoria, palabra_actual, palabra_siguiente in datos_entrenamiento:
     X.append(np.concatenate([
-        categoria_a_vector(categoria, encoder_categoria),
+        categoria_a_vector(categoria),
         palabra_a_vector(palabra_actual)
     ]))
     y.append(encoder_salida.transform([palabra_siguiente])[0])
@@ -423,7 +418,6 @@ print(f"Hit Rate@3: {hit_rate_at_k(modelo, X_test, y_test, k=3) * 100:.2f}%\n")
 # ── Guardar modelo ────────────────────────────────────────────────────────────
 
 joblib.dump(modelo, "modelo_base.pkl")
-joblib.dump(encoder_categoria, "encoder_categoria.pkl")
 joblib.dump(encoder_salida, "encoder_salida.pkl")
 print("Modelo guardado: modelo_base.pkl\n")
 
@@ -441,7 +435,7 @@ ejemplos = [
 
 for categoria, palabra in ejemplos:
     entrada = np.concatenate([
-        categoria_a_vector(categoria, encoder_categoria),
+        categoria_a_vector(categoria),
         palabra_a_vector(palabra)
     ]).reshape(1, -1)
     probs = modelo.predict_proba(entrada)[0]

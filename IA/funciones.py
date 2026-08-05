@@ -2,6 +2,7 @@ import spacy
 import numpy as np
 import joblib
 import os
+import copy
 import torch
 from sklearn.neural_network import MLPClassifier
 from modelo_correccion import (
@@ -19,9 +20,8 @@ print("spaCy cargado\n")
 
 # ── Cargar modelo base y encoders ─────────────────────────────────────────────
 
-encoder_categoria = joblib.load("encoder_categoria.pkl")
-encoder_salida    = joblib.load("encoder_salida.pkl")
-modelo_base       = joblib.load("modelo_base.pkl")
+encoder_salida = joblib.load("encoder_salida.pkl")
+modelo_base    = joblib.load("modelo_base.pkl")
 
 # ── Cargar modelo de corrección de frases ─────────────────────────────────────
 
@@ -47,11 +47,9 @@ def palabra_a_vector(palabra):
     return nlp(palabra.lower()).vector
 
 def categoria_a_vector(categoria):
-    """Convierte una categoría a one-hot vector."""
-    n = len(encoder_categoria.classes_)
-    vector = np.zeros(n)
-    vector[encoder_categoria.transform([categoria])[0]] = 1
-    return vector
+    """Convierte una categoría a su vector spaCy, igual que las palabras.
+    Así el modelo acepta cualquier categoría nueva sin necesitar reentrenar."""
+    return nlp(categoria.lower()).vector
 
 def cargar_modelo_usuario(user_id):
     """Carga el modelo del usuario si existe, sino usa el base."""
@@ -112,11 +110,19 @@ def reentrenar(user_id, datos):
     nuevos_y = np.array(nuevos_y)
 
     path = f"modelos/modelo_{user_id}.pkl"
-    if os.path.exists(path):
-        modelo = joblib.load(path)
-        modelo.set_params(warm_start=True, max_iter=100)
-        modelo.fit(nuevos_X, nuevos_y)
-    else:
+    try:
+        # Siempre se parte del modelo base (no del modelo previo del usuario),
+        # así el modelo personalizado conserva el conocimiento general y no se
+        # sesga con las primeras frases que usó. Se usa partial_fit en vez de
+        # fit(warm_start=True): en MLPClassifier, fit() con warm_start exige
+        # que las clases del batch nuevo coincidan EXACTO con las del modelo
+        # previo, algo que casi nunca pasa con un batch semanal chico. partial_fit
+        # sigue entrenando sobre los pesos existentes sin esa restricción.
+        modelo = copy.deepcopy(modelo_base)
+        modelo.partial_fit(nuevos_X, nuevos_y)
+    except ValueError:
+        # Los datos nuevos son incompatibles con el modelo base (p. ej. clases
+        # fuera del vocabulario conocido). Se entrena un modelo nuevo desde cero.
         modelo = MLPClassifier(
             hidden_layer_sizes=(128, 64),
             activation='relu',
