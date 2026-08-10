@@ -9,7 +9,6 @@ export default function Layout() {
         <Stack.Screen name="register" />
         <Stack.Screen name="categories" />
         <Stack.Screen name="comida" />
-        <Stack.Screen name="emociones" />
         <Stack.Screen name="escuela" />
       </Stack>
     </ConstructionProvider>
