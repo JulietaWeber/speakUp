@@ -12,6 +12,7 @@ const authRoutes = require("./routes/auth.routes");
 const historialUsoRoutes = require("./routes/historialUso.routes");
 const sugerenciasRoutes = require("./routes/sugerencias.routes");
 const audiosRoutes = require("./routes/audios.routes");
+const iaRoutes = require("./routes/ia.routes");
 
 const app = express();
 
@@ -55,6 +56,7 @@ app.use("/auth", authRoutes);
 app.use("/historial-uso", historialUsoRoutes);
 app.use("/sugerencias", sugerenciasRoutes);
 app.use("/audios", audiosRoutes);
+app.use("/ia", iaRoutes);
 
 module.exports = app;
 
