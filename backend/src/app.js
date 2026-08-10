@@ -1,5 +1,3 @@
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-
 require("dotenv").config();
 
 const express = require("express");
@@ -17,11 +15,17 @@ const audiosRoutes = require("./routes/audios.routes");
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: "*"
+}));
+
 app.use(express.json());
 
 app.get("/", (req, res) => {
-  res.send("SpeakUp backend funcionando");
+  res.json({
+    data: "SpeakUp backend funcionando",
+    error: null
+  });
 });
 
 app.use("/usuarios", usuariosRoutes);
@@ -32,7 +36,7 @@ app.use("/frases", frasesRoutes);
 app.use("/auth", authRoutes);
 app.use("/historial-uso", historialUsoRoutes);
 app.use("/sugerencias", sugerenciasRoutes);
-app.use("/audios", audiosRoutes)
+app.use("/audios", audiosRoutes);
 
 module.exports = app;
 
@@ -42,4 +46,4 @@ if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`Servidor corriendo en puerto ${PORT}`);
   });
-}  
+}
