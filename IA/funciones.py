@@ -74,7 +74,7 @@ def predecir_top3(user_id, categoria, palabra):
     return [
         {
             "palabra":      encoder_salida.inverse_transform([modelo.classes_[i]])[0],
-            "probabilidad": round(probs[i] * 100, 2)
+            "probabilidad": float(round(probs[i] * 100, 2))
         }
         for i in top3
     ]
