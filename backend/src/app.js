@@ -15,9 +15,27 @@ const audiosRoutes = require("./routes/audios.routes");
 
 const app = express();
 
+const allowedOrigins = [
+  "http://localhost:8081",
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "https://speak-up-two-tau.vercel.app"
+];
+
 app.use(cors({
-  origin: "*"
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: false
 }));
+
+app.options(/.*/, cors());
 
 app.use(express.json());
 
