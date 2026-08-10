@@ -58,6 +58,8 @@ app.use("/audios", audiosRoutes);
 
 module.exports = app;
 
+module.exports = app;
+
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
 
