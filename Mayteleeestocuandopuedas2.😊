@@ -1,0 +1,33 @@
+// Se ejecuta todos los domingos a las 3am
+cron.schedule('0 3 * * 0', async () => {
+  
+  // 1. Busca todos los usuarios con frases guardadas
+  const usuarios = await db.query('SELECT DISTINCT user_id FROM frases');
+  
+  // 2. Para cada usuario
+  for (const usuario of usuarios) {
+    
+    // 3. Busca todo su historial
+    const frases = await db.query(
+      'SELECT categoria, palabras FROM frases WHERE user_id = ?', 
+      [usuario.id]
+    );
+    
+    // 4. Llama a tu API
+    await fetch('https://speakup-ia.onrender.com/reentrenar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: usuario.id,
+        datos: frases
+      })
+    });
+  }
+});
+
+npm install node-cron
+
+Y después lo importa en el archivo donde quiera usarlo:
+
+javascript
+const cron = require('node-cron');

@@ -5,11 +5,9 @@ export default function Layout() {
   return (
     <ConstructionProvider>
       <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="register" />
         <Stack.Screen name="login" />
-        <Stack.Screen name="register" />
         <Stack.Screen name="categories" />
-        <Stack.Screen name="comida" />
-        <Stack.Screen name="escuela" />
       </Stack>
     </ConstructionProvider>
   );

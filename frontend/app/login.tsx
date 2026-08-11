@@ -43,14 +43,21 @@ export default function Login() {
         JSON.stringify(data.usuario)
       );
 
-      Alert.alert("Éxito", `¡Bienvenido ${data.usuario.nombre}!`);
+      Alert.alert(
+        "Éxito",
+        `¡Bienvenido ${data.usuario.nombre}!`
+      );
 
       router.push("/categories");
 
     } catch (error: any) {
+      console.log("ERROR LOGIN:", error);
+      console.log("RESPUESTA ERROR:", error?.response?.data);
+
       Alert.alert(
         "Error",
-        error?.response?.data?.error || "No se pudo iniciar sesión"
+        error?.response?.data?.error ||
+          "No se pudo iniciar sesión"
       );
     } finally {
       setLoading(false);
@@ -162,7 +169,9 @@ export default function Login() {
         </Text>
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => router.push("/register")}>
+      <TouchableOpacity
+        onPress={() => router.push("/register")}
+      >
         <Text
           style={{
             textAlign: "center",

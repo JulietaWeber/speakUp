@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Alert,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { register } from "../services/api";
 
@@ -13,6 +14,7 @@ export default function Register() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
@@ -63,98 +65,228 @@ export default function Register() {
     <View
       style={{
         flex: 1,
-        backgroundColor: "#f4f7fb",
+        backgroundColor: "#AFD4E8",
         justifyContent: "center",
         paddingHorizontal: 30,
       }}
     >
-      <Text
+
+      {/* TÍTULO CENTRADO ARRIBA */}
+      <View
         style={{
-          fontSize: 38,
-          fontWeight: "bold",
-          color: "#219ebc",
-          textAlign: "center",
+          alignItems: "center",
           marginBottom: 40,
         }}
       >
-        Crear Cuenta
-      </Text>
-
-      <TextInput
-        placeholder="Nombre"
-        value={name}
-        onChangeText={setName}
-        style={{
-          backgroundColor: "white",
-          padding: 18,
-          borderRadius: 16,
-          marginBottom: 20,
-        }}
-      />
-
-      <TextInput
-        placeholder="Email"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        style={{
-          backgroundColor: "white",
-          padding: 18,
-          borderRadius: 16,
-          marginBottom: 20,
-        }}
-      />
-
-      <TextInput
-        placeholder="Contraseña"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        style={{
-          backgroundColor: "white",
-          padding: 18,
-          borderRadius: 16,
-          marginBottom: 30,
-        }}
-      />
-
-      <TouchableOpacity
-        onPress={handleRegister}
-        disabled={loading}
-        style={{
-          backgroundColor: "#219ebc",
-          padding: 20,
-          borderRadius: 18,
-          alignItems: "center",
-          opacity: loading ? 0.7 : 1,
-        }}
-      >
         <Text
           style={{
-            color: "white",
+            fontSize: 38,
             fontWeight: "bold",
-            fontSize: 18,
+            color: "white",
+            textAlign: "center",
+            marginTop: 100,
           }}
         >
-          {loading ? "Registrando..." : "Registrarse"}
+          Crea una cuenta
         </Text>
-      </TouchableOpacity>
+      </View>
 
-      <TouchableOpacity
-        onPress={() => router.push("/login")}
+      {/* TODO LO DE GOOGLE HACIA ABAJO */}
+      <View
         style={{
-          marginTop: 20,
+          marginTop: 100,
         }}
       >
-        <Text
+
+        {/* BOTÓN DE GOOGLE */}
+        <TouchableOpacity
           style={{
-            textAlign: "center",
-            color: "#219ebc",
+            backgroundColor: "#CFE6F1",
+            padding: 18,
+            borderRadius: 16,
+            alignItems: "center",
+            marginBottom: 20,
           }}
         >
-          Ya tengo cuenta
-        </Text>
-      </TouchableOpacity>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+            }}
+          >
+            <Ionicons
+              name="logo-google"
+              size={18}
+              color="#356071"
+            />
+
+            <Text
+              style={{
+                color: "#356071",
+                fontWeight: "bold",
+                marginLeft: 10,
+              }}
+            >
+              Continuar con Google
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* SEPARACIÓN CON LA "O" */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            marginBottom: 20,
+          }}
+        >
+          <View
+            style={{
+              flex: 1,
+              height: 1,
+              backgroundColor: "#356071",
+            }}
+          />
+
+          <Text
+            style={{
+              color: "#356071",
+              marginHorizontal: 12,
+              fontSize: 14,
+              fontWeight: "bold",
+            }}
+          >
+            o
+          </Text>
+
+          <View
+            style={{
+              flex: 1,
+              height: 1,
+              backgroundColor: "#356071",
+            }}
+          />
+        </View>
+
+        {/* NOMBRE */}
+        <TextInput
+          placeholder="Nombre"
+          value={name}
+          onChangeText={setName}
+          placeholderTextColor="#356071"
+          style={{
+            backgroundColor: "#CFE6F1",
+            padding: 18,
+            borderRadius: 16,
+            marginBottom: 20,
+          }}
+        />
+
+        {/* EMAIL */}
+        <TextInput
+          placeholder="Email"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          placeholderTextColor="#356071"
+          style={{
+            backgroundColor: "#CFE6F1",
+            padding: 18,
+            borderRadius: 16,
+            marginBottom: 20,
+          }}
+        />
+
+        {/* CONTRASEÑA + CUADRADO DEL OJO */}
+        <View
+          style={{
+            flexDirection: "row",
+            marginBottom: 30,
+          }}
+        >
+          <TextInput
+            placeholder="Contraseña"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword}
+            placeholderTextColor="#356071"
+            style={{
+              flex: 1,
+              backgroundColor: "#CFE6F1",
+              padding: 18,
+              borderTopLeftRadius: 16,
+              borderBottomLeftRadius: 16,
+              borderTopRightRadius: 0,
+              borderBottomRightRadius: 0,
+            }}
+          />
+
+          <TouchableOpacity
+            onPress={() => setShowPassword(!showPassword)}
+            style={{
+              width: 50,
+              backgroundColor: "#CFE6F1",
+              borderLeftWidth: 5,
+              borderLeftColor: "#AFD4E8",
+              borderTopRightRadius: 16,
+              borderBottomRightRadius: 16,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons
+              name={
+                showPassword
+                  ? "eye-outline"
+                  : "eye-off-outline"
+              }
+              size={16}
+              color="#356071"
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* BOTÓN CREAR CUENTA */}
+        <TouchableOpacity
+          onPress={handleRegister}
+          disabled={loading}
+          style={{
+            backgroundColor: "#356071",
+            padding: 20,
+            borderRadius: 18,
+            alignItems: "center",
+            opacity: loading ? 0.7 : 1,
+          }}
+        >
+          <Text
+            style={{
+              color: "white",
+              fontWeight: "bold",
+              fontSize: 18,
+            }}
+          >
+            {loading ? "Registrando..." : "Crear cuenta"}
+          </Text>
+        </TouchableOpacity>
+
+        {/* INICIAR SESIÓN */}
+        <TouchableOpacity
+          onPress={() => router.push("/login")}
+          style={{
+            marginTop: 20,
+          }}
+        >
+          <Text
+            style={{
+              textAlign: "center",
+              color: "#356071",
+            }}
+          >
+            Ya tenes una cuenta? Inicia sesión
+          </Text>
+        </TouchableOpacity>
+
+      </View>
     </View>
   );
 }
