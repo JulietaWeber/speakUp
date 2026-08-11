@@ -3,12 +3,31 @@ const multer = require("multer");
 const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, callback) => {
-  const tiposPermitidos = ["image/jpeg", "image/png", "image/webp"];
+  const tiposMimePermitidos = [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+    "image/pjpeg"
+  ];
 
-  if (tiposPermitidos.includes(file.mimetype)) {
+  const extensionesPermitidas = ["jpg", "jpeg", "jfif", "png", "webp"];
+
+  const extension = file.originalname
+    .split(".")
+    .pop()
+    .toLowerCase();
+
+  const mimePermitido = tiposMimePermitidos.includes(file.mimetype);
+  const extensionPermitida = extensionesPermitidas.includes(extension);
+
+  if (mimePermitido || extensionPermitida) {
     callback(null, true);
   } else {
-    callback(new Error("Solo se permiten imágenes JPG, PNG o WEBP"), false);
+    callback(
+      new Error("Solo se permiten imágenes JPG, JPEG, JFIF, PNG o WEBP"),
+      false
+    );
   }
 };
 

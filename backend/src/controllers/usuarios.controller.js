@@ -122,7 +122,15 @@ const subirFotoPerfil = async (req, res) => {
       });
     }
 
-    const extension = req.file.originalname.split(".").pop();
+    let extension = req.file.originalname
+      .split(".")
+      .pop()
+      .toLowerCase();
+
+    if (extension === "jfif" || extension === "jpeg") {
+      extension = "jpg";
+    }
+
     const nombreArchivo = `usuario-${id_usuario}-${Date.now()}.${extension}`;
     const rutaArchivo = `${id_usuario}/${nombreArchivo}`;
 
