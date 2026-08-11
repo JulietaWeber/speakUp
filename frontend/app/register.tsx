@@ -65,17 +65,17 @@ export default function Register() {
     <View
       style={{
         flex: 1,
-        backgroundColor: "#AFD4E8",
-        justifyContent: "center",
-        paddingHorizontal: 30,
+        backgroundColor: "#356071",
       }}
     >
-
       {/* TÍTULO CENTRADO ARRIBA */}
       <View
         style={{
           alignItems: "center",
-          marginBottom: 40,
+          paddingHorizontal: 30,
+          paddingTop: 150,
+          paddingBottom: 120,
+          backgroundColor: "#356071",
         }}
       >
         <Text
@@ -84,20 +84,24 @@ export default function Register() {
             fontWeight: "bold",
             color: "white",
             textAlign: "center",
-            marginTop: 100,
           }}
         >
           Crea una cuenta
         </Text>
       </View>
 
-      {/* TODO LO DE GOOGLE HACIA ABAJO */}
+      {/* CONTAINER CELESTE DESDE GOOGLE HACIA ABAJO */}
       <View
         style={{
-          marginTop: 100,
+          flex: 1,
+          backgroundColor: "#AFD4E8",
+          borderTopLeftRadius: 30,
+          borderTopRightRadius: 30,
+          paddingHorizontal: 30,
+          paddingTop: 25,
+          overflow: "hidden",
         }}
       >
-
         {/* BOTÓN DE GOOGLE */}
         <TouchableOpacity
           style={{
@@ -282,10 +286,16 @@ export default function Register() {
               color: "#356071",
             }}
           >
-            Ya tenes una cuenta? Inicia sesión
+            Ya tenes una cuenta?{" "}
+            <Text
+              style={{
+                textDecorationLine: "underline",
+              }}
+            >
+              Inicia sesión
+            </Text>
           </Text>
         </TouchableOpacity>
-
       </View>
     </View>
   );
