@@ -11,7 +11,8 @@ const {
   obtenerMisPictogramasPersonalizados,
   actualizarPictogramaPersonalizado,
   eliminarPictogramaPersonalizado,
-  crearPictogramaPersonalizadoConImagen
+  crearPictogramaPersonalizadoConImagen,
+  actualizarImagenPictogramaPersonalizado
 } = require("../controllers/pictogramas.controller");
 
 const verificarToken = require("../middlewares/auth.middleware");
@@ -37,6 +38,12 @@ router.get(
   obtenerMisPictogramasPersonalizados
 );
 
+router.put(
+  "/personalizado/:id_pictograma/imagen",
+  verificarToken,
+  upload.single("imagen"),
+  actualizarImagenPictogramaPersonalizado
+);
 router.put(
   "/personalizado/:id_pictograma",
   verificarToken,

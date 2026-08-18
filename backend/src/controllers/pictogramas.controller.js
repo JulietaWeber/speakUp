@@ -833,6 +833,123 @@ const crearPictogramaPersonalizadoConImagen = async (req, res) => {
   }
 };
 
+const actualizarImagenPictogramaPersonalizado = async (req, res) => {
+  try {
+    const id_usuario = req.usuario.id_usuario;
+    const { id_pictograma } = req.params;
+
+    if (!req.file) {
+      return res.status(400).json({
+        data: null,
+        error: "Tenés que enviar una imagen en el campo imagen"
+      });
+    }
+
+    // Verificar que el pictograma pertenezca al usuario
+    const { data: relacion, error: relacionError } = await supabase
+      .from("usuarios_pictogramas")
+      .select(`
+        id_usuario,
+        id_pictogramas,
+        pictogramas (
+          id_pictogramas,
+          nombre,
+          imagen_url,
+          es_personalizado
+        )
+      `)
+      .eq("id_usuario", id_usuario)
+      .eq("id_pictogramas", id_pictograma)
+      .maybeSingle();
+
+    if (relacionError) {
+      return res.status(500).json({
+        data: null,
+        error: relacionError.message
+      });
+    }
+
+    if (!relacion || !relacion.pictogramas) {
+      return res.status(404).json({
+        data: null,
+        error: "No se encontró un pictograma personalizado propio con ese ID"
+      });
+    }
+
+    if (!relacion.pictogramas.es_personalizado) {
+      return res.status(403).json({
+        data: null,
+        error: "Solo se puede actualizar la imagen de pictogramas personalizados"
+      });
+    }
+
+    let extension = req.file.originalname
+      .split(".")
+      .pop()
+      .toLowerCase();
+
+    if (extension === "jfif" || extension === "jpeg") {
+      extension = "jpg";
+    }
+
+    const nombreArchivo = `pictograma-${id_usuario}-${id_pictograma}-${Date.now()}.${extension}`;
+    const rutaArchivo = `${id_usuario}/${nombreArchivo}`;
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from("pictogramas-imagenes")
+      .upload(rutaArchivo, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: true
+      });
+
+    if (uploadError) {
+      return res.status(500).json({
+        data: null,
+        error: uploadError.message
+      });
+    }
+
+    const { data: publicUrlData } = supabaseAdmin.storage
+      .from("pictogramas-imagenes")
+      .getPublicUrl(rutaArchivo);
+
+    const imagen_url = publicUrlData.publicUrl;
+
+    const { data: pictogramaActualizado, error: updateError } = await supabase
+      .from("pictogramas")
+      .update({ imagen_url })
+      .eq("id_pictogramas", id_pictograma)
+      .select("id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado")
+      .single();
+
+    if (updateError) {
+      return res.status(500).json({
+        data: null,
+        error: updateError.message
+      });
+    }
+
+    await supabase.from("historial_uso").insert([
+      {
+        id_usuario,
+        accion: "actualizar_imagen_pictograma",
+        detalle: `Imagen actualizada para pictograma: ${pictogramaActualizado.nombre}`
+      }
+    ]);
+
+    return res.json({
+      data: pictogramaActualizado,
+      error: null
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      data: null,
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   obtenerPictogramas,
   obtenerPictogramasPorCategoria,
@@ -843,5 +960,6 @@ module.exports = {
   obtenerMisPictogramasPersonalizados,
   actualizarPictogramaPersonalizado,
   eliminarPictogramaPersonalizado,
-  crearPictogramaPersonalizadoConImagen
+  crearPictogramaPersonalizadoConImagen,
+  actualizarImagenPictogramaPersonalizado
 };
