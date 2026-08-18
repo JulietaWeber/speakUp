@@ -1,4 +1,5 @@
 const supabase = require("../config/Supabase");
+const upload = require("../middlewares/upload.middleware");
 
 // GET /pictogramas
 const obtenerPictogramas = async (req, res) => {
@@ -669,6 +670,158 @@ const eliminarPictogramaPersonalizado = async (req, res) => {
       data: {
         mensaje: "Pictograma personalizado eliminado correctamente"
       },
+      error: null
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      data: null,
+      error: error.message
+    });
+  }
+};
+
+const crearPictogramaPersonalizadoConImagen = async (req, res) => {
+  try {
+    const id_usuario = req.usuario.id_usuario;
+
+    const {
+      id_categorias,
+      nombre,
+      audio_url
+    } = req.body;
+
+    if (!id_categorias || !nombre) {
+      return res.status(400).json({
+        data: null,
+        error: "Faltan datos obligatorios: id_categorias y nombre"
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        data: null,
+        error: "Tenés que enviar una imagen en el campo imagen"
+      });
+    }
+
+    // Validar que la categoría exista
+    const { data: categoria, error: categoriaError } = await supabase
+      .from("categorias")
+      .select("id_categorias, nombre, id_usuario, es_personalizada")
+      .eq("id_categorias", id_categorias)
+      .maybeSingle();
+
+    if (categoriaError) {
+      return res.status(500).json({
+        data: null,
+        error: categoriaError.message
+      });
+    }
+
+    if (!categoria) {
+      return res.status(404).json({
+        data: null,
+        error: "Categoría no encontrada"
+      });
+    }
+
+    const categoriaEsDefault =
+      categoria.id_usuario === null || categoria.es_personalizada === false;
+
+    const categoriaEsPropia =
+      Number(categoria.id_usuario) === Number(id_usuario);
+
+    if (!categoriaEsDefault && !categoriaEsPropia) {
+      return res.status(403).json({
+        data: null,
+        error: "No tenés permiso para usar esta categoría"
+      });
+    }
+
+    // Preparar extensión
+    let extension = req.file.originalname
+      .split(".")
+      .pop()
+      .toLowerCase();
+
+    if (extension === "jfif" || extension === "jpeg") {
+      extension = "jpg";
+    }
+
+    const nombreArchivo = `pictograma-${id_usuario}-${Date.now()}.${extension}`;
+    const rutaArchivo = `${id_usuario}/${nombreArchivo}`;
+
+    // Subir imagen a Supabase Storage
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from("pictogramas-imagenes")
+      .upload(rutaArchivo, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: true
+      });
+
+    if (uploadError) {
+      return res.status(500).json({
+        data: null,
+        error: uploadError.message
+      });
+    }
+
+    const { data: publicUrlData } = supabaseAdmin.storage
+      .from("pictogramas-imagenes")
+      .getPublicUrl(rutaArchivo);
+
+    const imagen_url = publicUrlData.publicUrl;
+
+    // Crear pictograma personalizado
+    const { data: pictogramaCreado, error: pictogramaError } = await supabase
+      .from("pictogramas")
+      .insert([
+        {
+          id_categorias,
+          nombre,
+          imagen_url,
+          audio_url: audio_url || null,
+          es_personalizado: true
+        }
+      ])
+      .select("*")
+      .single();
+
+    if (pictogramaError) {
+      return res.status(500).json({
+        data: null,
+        error: pictogramaError.message
+      });
+    }
+
+    // Relacionar pictograma con usuario
+    const { error: relacionError } = await supabase
+      .from("usuarios_pictogramas")
+      .insert([
+        {
+          id_usuario,
+          id_pictogramas: pictogramaCreado.id_pictogramas
+        }
+      ]);
+
+    if (relacionError) {
+      return res.status(500).json({
+        data: null,
+        error: relacionError.message
+      });
+    }
+
+    await supabase.from("historial_uso").insert([
+      {
+        id_usuario,
+        accion: "crear_pictograma_con_imagen",
+        detalle: `Pictograma personalizado creado con imagen: ${nombre}`
+      }
+    ]);
+
+    return res.status(201).json({
+      data: pictogramaCreado,
       error: null
     });
 
