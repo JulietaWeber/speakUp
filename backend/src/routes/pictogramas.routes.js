@@ -51,8 +51,18 @@ router.delete(
 
 router.post("/", verificarToken, verificarAdmin, crearPictograma);
 
-router.put("/:id_pictograma", verificarToken, verificarAdmin, actualizarPictograma);
+router.put(
+  "/:id_pictograma",
+  verificarToken,
+  verificarAdmin,
+  actualizarPictograma
+);
 
-router.delete("/:id_pictograma", verificarToken, verificarAdmin, eliminarPictograma);
+router.delete(
+  "/:id_pictograma",
+  verificarToken,
+  verificarAdmin,
+  eliminarPictograma
+);
 
 module.exports = router;

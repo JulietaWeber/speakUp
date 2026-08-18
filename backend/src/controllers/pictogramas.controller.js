@@ -1,5 +1,5 @@
 const supabase = require("../config/Supabase");
-const upload = require("../middlewares/upload.middleware");
+const supabaseAdmin = require("../config/SupabaseAdmin");
 
 // GET /pictogramas
 const obtenerPictogramas = async (req, res) => {
@@ -842,5 +842,6 @@ module.exports = {
   crearPictogramaPersonalizado,
   obtenerMisPictogramasPersonalizados,
   actualizarPictogramaPersonalizado,
-  eliminarPictogramaPersonalizado
+  eliminarPictogramaPersonalizado,
+  crearPictogramaPersonalizadoConImagen
 };
