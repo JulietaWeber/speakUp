@@ -11,8 +11,16 @@ export type Pictograma = {
   es_personalizado?: boolean;
 };
 
-export const obtenerCategorias = async () => {
-  const response = await axios.get(`${API_URL}/categorias`);
+export const obtenerCategorias = async (token: string) => {
+  const response = await axios.get(
+    `${API_URL}/categorias/mis-categorias`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
   return response.data.data;
 };
 
@@ -71,6 +79,27 @@ export const register = async (
     email,
     password,
   });
+
+  return response.data.data;
+};
+
+export const crearPictogramaPersonalizado = async (
+  idCategorias: number,
+  nombre: string,
+  token: string
+) => {
+  const response = await axios.post(
+    `${API_URL}/pictogramas/personalizado`,
+    {
+      id_categorias: idCategorias,
+      nombre,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
 
   return response.data.data;
 };
