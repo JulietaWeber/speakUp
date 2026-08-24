@@ -43,8 +43,7 @@ export default function ConstructionBar() {
 
       console.log("Frase creada:", respuesta);
 
-      // Ya NO limpiamos la oración
-
+      // No limpiamos la oración después de confirmar
     } catch (error) {
       console.log("Error enviando frase:", error);
     } finally {
@@ -65,21 +64,34 @@ export default function ConstructionBar() {
         style={styles.wordsArea}
       >
         <View style={styles.topRow}>
+
+          {/* Texto de ayuda o palabras */}
           <View style={styles.wordsContainer}>
-            <Text style={styles.text}>
-              {palabras.map((p) => p.nombre).join(" ")}
-            </Text>
+            {palabras.length === 0 ? (
+              <Text style={styles.placeholderText}>
+                Seleccioná una categoría para poder agregar palabras a tu frase.
+              </Text>
+            ) : (
+              <Text style={styles.text}>
+                {palabras.map((p) => p.nombre).join(" ")}
+              </Text>
+            )}
           </View>
 
-          <TouchableOpacity
-            onPress={borrarUltimaPalabra}
-            style={styles.deleteButton}
-          >
-            <Text style={styles.deleteText}>✕</Text>
-          </TouchableOpacity>
+          {/* Cruz: solamente aparece si hay pictogramas */}
+          {palabras.length > 0 && (
+            <TouchableOpacity
+              onPress={borrarUltimaPalabra}
+              style={styles.deleteButton}
+            >
+              <Text style={styles.deleteText}>✕</Text>
+            </TouchableOpacity>
+          )}
+
         </View>
       </TouchableOpacity>
 
+      {/* Reiniciar oración: solamente aparece si hay pictogramas */}
       {palabras.length > 0 && (
         <TouchableOpacity
           onPress={limpiar}
@@ -96,7 +108,7 @@ export default function ConstructionBar() {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#fff",
+    backgroundColor: "#FFFFFF",
     padding: 10,
     borderRadius: 15,
     marginBottom: 20,
@@ -104,7 +116,7 @@ const styles = StyleSheet.create({
   },
 
   containerSeleccionado: {
-    backgroundColor: "#bdbdbd",
+    backgroundColor: "#BDBDBD",
   },
 
   wordsArea: {
@@ -118,16 +130,29 @@ const styles = StyleSheet.create({
 
   wordsContainer: {
     flex: 1,
+    justifyContent: "center",
+    minHeight: 45,
   },
 
+  // Mensaje cuando no hay pictogramas
+  placeholderText: {
+    fontSize: 14,
+    color: "#8A969A",
+    textAlign: "center",
+    paddingHorizontal: 8,
+  },
+
+  // Palabras de la oración
   text: {
     fontSize: 22,
+    color: "#356879",
   },
 
+  // Botón para borrar la última palabra
   deleteButton: {
     width: 40,
     height: 40,
-    backgroundColor: "#8c8c8c",
+    backgroundColor: "#8C8C8C",
     justifyContent: "center",
     alignItems: "center",
     borderRadius: 8,
@@ -135,21 +160,22 @@ const styles = StyleSheet.create({
   },
 
   deleteText: {
-    color: "white",
+    color: "#FFFFFF",
     fontSize: 24,
     fontWeight: "bold",
   },
 
+  // Botón reiniciar
   clearButton: {
     marginTop: 15,
-    backgroundColor: "#ef4444",
+    backgroundColor: "#EF4444",
     borderRadius: 10,
     padding: 10,
     alignItems: "center",
   },
 
   clearText: {
-    color: "white",
+    color: "#FFFFFF",
     fontWeight: "bold",
     fontSize: 16,
   },
