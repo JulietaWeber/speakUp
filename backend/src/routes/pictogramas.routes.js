@@ -12,17 +12,21 @@ const {
   actualizarPictogramaPersonalizado,
   eliminarPictogramaPersonalizado,
   crearPictogramaPersonalizadoConImagen,
-  actualizarImagenPictogramaPersonalizado
+  actualizarImagenPictogramaPersonalizado,
+  crearPictogramaConImagen,
+  actualizarImagenPictogramaGeneral
 } = require("../controllers/pictogramas.controller");
 
 const verificarToken = require("../middlewares/auth.middleware");
 const verificarAdmin = require("../middlewares/admin.middleware");
 const upload = require("../middlewares/upload.middleware");
 
+// Públicas
 router.get("/", obtenerPictogramas);
 
 router.get("/categoria/:id_categoria", obtenerPictogramasPorCategoria);
 
+// Personalizados del usuario
 router.post("/personalizado", verificarToken, crearPictogramaPersonalizado);
 
 router.post(
@@ -44,6 +48,7 @@ router.put(
   upload.single("imagen"),
   actualizarImagenPictogramaPersonalizado
 );
+
 router.put(
   "/personalizado/:id_pictograma",
   verificarToken,
@@ -56,7 +61,29 @@ router.delete(
   eliminarPictogramaPersonalizado
 );
 
-router.post("/", verificarToken, verificarAdmin, crearPictograma);
+// Generales / default, solo admin
+router.post(
+  "/con-imagen",
+  verificarToken,
+  verificarAdmin,
+  upload.single("imagen"),
+  crearPictogramaConImagen
+);
+
+router.post(
+  "/",
+  verificarToken,
+  verificarAdmin,
+  crearPictograma
+);
+
+router.put(
+  "/:id_pictograma/imagen",
+  verificarToken,
+  verificarAdmin,
+  upload.single("imagen"),
+  actualizarImagenPictogramaGeneral
+);
 
 router.put(
   "/:id_pictograma",
