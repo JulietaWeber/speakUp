@@ -33,11 +33,17 @@ const getAuthHeaders = (token?: string) => {
 // AUTENTICACIÓN
 // =========================
 
-export const login = async (email: string, password: string) => {
-  const response = await axios.post(`${API_URL}/auth/login`, {
-    email,
-    password,
-  });
+export const login = async (
+  email: string,
+  password: string
+) => {
+  const response = await axios.post(
+    `${API_URL}/auth/login`,
+    {
+      email,
+      password,
+    }
+  );
 
   return response.data.data;
 };
@@ -47,11 +53,14 @@ export const register = async (
   email: string,
   password: string
 ) => {
-  const response = await axios.post(`${API_URL}/auth/register`, {
-    nombre,
-    email,
-    password,
-  });
+  const response = await axios.post(
+    `${API_URL}/auth/register`,
+    {
+      nombre,
+      email,
+      password,
+    }
+  );
 
   return response.data.data;
 };
@@ -60,10 +69,35 @@ export const register = async (
 // CATEGORÍAS
 // =========================
 
-export const obtenerCategorias = async (token: string) => {
-  const response = await axios.get(`${API_URL}/categorias/mis-categorias`, {
-    headers: getAuthHeaders(token),
-  });
+export const obtenerCategorias = async (
+  token: string
+) => {
+  const response = await axios.get(
+    `${API_URL}/categorias/mis-categorias`,
+    {
+      headers: getAuthHeaders(token),
+    }
+  );
+
+  return response.data.data;
+};
+
+// Crear una categoría personalizada
+export const crearCategoria = async (
+  nombre: string,
+  color: string,
+  token: string
+) => {
+  const response = await axios.post(
+    `${API_URL}/categorias`,
+    {
+      nombre,
+      color,
+    },
+    {
+      headers: getAuthHeaders(token),
+    }
+  );
 
   return response.data.data;
 };
@@ -72,13 +106,15 @@ export const obtenerCategorias = async (token: string) => {
 // PICTOGRAMAS
 // =========================
 
-
 export const obtenerPictogramas = async (
   token?: string
 ): Promise<Pictograma[]> => {
-  const response = await axios.get(`${API_URL}/pictogramas`, {
-    headers: getAuthHeaders(token),
-  });
+  const response = await axios.get(
+    `${API_URL}/pictogramas`,
+    {
+      headers: getAuthHeaders(token),
+    }
+  );
 
   return response.data.data;
 };
@@ -152,18 +188,31 @@ export const crearPictogramaPersonalizadoConImagen = async (
 ) => {
   const formData = new FormData();
 
-  formData.append("id_categorias", String(idCategorias));
-  formData.append("nombre", nombre);
+  formData.append(
+    "id_categorias",
+    String(idCategorias)
+  );
+
+  formData.append(
+    "nombre",
+    nombre
+  );
 
   if (audioUrl) {
-    formData.append("audio_url", audioUrl);
+    formData.append(
+      "audio_url",
+      audioUrl
+    );
   }
 
-  formData.append("imagen", {
-    uri: imagen.uri,
-    name: imagen.name,
-    type: imagen.type,
-  } as any);
+  formData.append(
+    "imagen",
+    {
+      uri: imagen.uri,
+      name: imagen.name,
+      type: imagen.type,
+    } as any
+  );
 
   const response = await axios.post(
     `${API_URL}/pictogramas/personalizado-con-imagen`,
@@ -176,26 +225,34 @@ export const crearPictogramaPersonalizadoConImagen = async (
   return response.data.data;
 };
 
-export const actualizarImagenPictogramaPersonalizado = async (
-  idPictograma: number,
-  imagen: ImagenExpo,
-  token: string
-) => {
-  const formData = new FormData();
+// =========================
+// ACTUALIZAR IMAGEN
+// =========================
 
-  formData.append("imagen", {
-    uri: imagen.uri,
-    name: imagen.name,
-    type: imagen.type,
-  } as any);
+export const actualizarImagenPictogramaPersonalizado =
+  async (
+    idPictograma: number,
+    imagen: ImagenExpo,
+    token: string
+  ) => {
+    const formData = new FormData();
 
-  const response = await axios.put(
-    `${API_URL}/pictogramas/personalizado/${idPictograma}/imagen`,
-    formData,
-    {
-      headers: getAuthHeaders(token),
-    }
-  );
+    formData.append(
+      "imagen",
+      {
+        uri: imagen.uri,
+        name: imagen.name,
+        type: imagen.type,
+      } as any
+    );
 
-  return response.data.data;
-};
+    const response = await axios.put(
+      `${API_URL}/pictogramas/personalizado/${idPictograma}/imagen`,
+      formData,
+      {
+        headers: getAuthHeaders(token),
+      }
+    );
+
+    return response.data.data;
+  };
