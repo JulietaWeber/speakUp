@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { View, Text, TouchableOpacity } from "react-native";
+import { router, useFocusEffect } from "expo-router";
 import ConstructionBar from "./ConstructionBar";
 import { useConstruction } from "../context/ConstructionContext";
 import {
@@ -21,22 +22,52 @@ export default function CategoryScreen({
   const [pictogramas, setPictogramas] = useState<Pictograma[]>([]);
   const { agregarPalabra } = useConstruction();
 
-  useEffect(() => {
-    const cargarPictogramas = async () => {
-      try {
-        const data = await obtenerPictogramasPorCategoria(idCategoria);
-        setPictogramas(data);
-      } catch (error) {
-        console.error("Error al cargar pictogramas:", error);
-      }
-    };
+  useFocusEffect(
+    useCallback(() => {
+      const cargarPictogramas = async () => {
+        try {
+          const data = await obtenerPictogramasPorCategoria(idCategoria);
+          setPictogramas(data);
+        } catch (error) {
+          console.error("Error al cargar pictogramas:", error);
+        }
+      };
 
-    cargarPictogramas();
-  }, [idCategoria]);
+      cargarPictogramas();
+    }, [idCategoria])
+  );
 
   return (
     <View style={{ flex: 1, padding: 20 }}>
       <ConstructionBar />
+
+      <TouchableOpacity
+        onPress={() =>
+          router.push({
+            pathname: "/agregar-pictograma",
+            params: {
+              idCategoria: idCategoria.toString(),
+            },
+          })
+        }
+        style={{
+          backgroundColor: color,
+          padding: 15,
+          borderRadius: 15,
+          marginTop: 15,
+          marginBottom: 20,
+          alignItems: "center",
+        }}
+      >
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: "bold",
+          }}
+        >
+          + Agregar pictograma
+        </Text>
+      </TouchableOpacity>
 
       <Text
         style={{
