@@ -950,6 +950,230 @@ const actualizarImagenPictogramaPersonalizado = async (req, res) => {
   }
 };
 
+const crearPictogramaConImagen = async (req, res) => {
+  try {
+    const id_usuario = req.usuario.id_usuario;
+
+    const {
+      id_categorias,
+      nombre,
+      audio_url
+    } = req.body;
+
+    if (!id_categorias || !nombre) {
+      return res.status(400).json({
+        data: null,
+        error: "Faltan datos obligatorios: id_categorias y nombre"
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        data: null,
+        error: "Tenés que enviar una imagen en el campo imagen"
+      });
+    }
+
+    const { data: categoria, error: categoriaError } = await supabase
+      .from("categorias")
+      .select("id_categorias, nombre")
+      .eq("id_categorias", id_categorias)
+      .maybeSingle();
+
+    if (categoriaError) {
+      return res.status(500).json({
+        data: null,
+        error: categoriaError.message
+      });
+    }
+
+    if (!categoria) {
+      return res.status(404).json({
+        data: null,
+        error: "Categoría no encontrada"
+      });
+    }
+
+    let extension = req.file.originalname
+      .split(".")
+      .pop()
+      .toLowerCase();
+
+    if (extension === "jfif" || extension === "jpeg") {
+      extension = "jpg";
+    }
+
+    const nombreArchivo = `general-${Date.now()}.${extension}`;
+    const rutaArchivo = `generales/${nombreArchivo}`;
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from("pictogramas-imagenes")
+      .upload(rutaArchivo, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: true
+      });
+
+    if (uploadError) {
+      return res.status(500).json({
+        data: null,
+        error: uploadError.message
+      });
+    }
+
+    const { data: publicUrlData } = supabaseAdmin.storage
+      .from("pictogramas-imagenes")
+      .getPublicUrl(rutaArchivo);
+
+    const imagen_url = publicUrlData.publicUrl;
+
+    const { data: pictogramaCreado, error: pictogramaError } = await supabase
+      .from("pictogramas")
+      .insert([
+        {
+          id_categorias,
+          nombre,
+          imagen_url,
+          audio_url: audio_url || null,
+          es_personalizado: false
+        }
+      ])
+      .select("id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado")
+      .single();
+
+    if (pictogramaError) {
+      return res.status(500).json({
+        data: null,
+        error: pictogramaError.message
+      });
+    }
+
+    await supabase.from("historial_uso").insert([
+      {
+        id_usuario,
+        accion: "crear_pictograma_general_con_imagen",
+        detalle: `Pictograma general creado con imagen: ${nombre}`
+      }
+    ]);
+
+    return res.status(201).json({
+      data: pictogramaCreado,
+      error: null
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      data: null,
+      error: error.message
+    });
+  }
+};
+
+const actualizarImagenPictogramaGeneral = async (req, res) => {
+  try {
+    const id_usuario = req.usuario.id_usuario;
+    const { id_pictograma } = req.params;
+
+    if (!req.file) {
+      return res.status(400).json({
+        data: null,
+        error: "Tenés que enviar una imagen en el campo imagen"
+      });
+    }
+
+    const { data: pictograma, error: pictogramaError } = await supabase
+      .from("pictogramas")
+      .select("id_pictogramas, nombre, imagen_url, es_personalizado")
+      .eq("id_pictogramas", id_pictograma)
+      .maybeSingle();
+
+    if (pictogramaError) {
+      return res.status(500).json({
+        data: null,
+        error: pictogramaError.message
+      });
+    }
+
+    if (!pictograma) {
+      return res.status(404).json({
+        data: null,
+        error: "Pictograma no encontrado"
+      });
+    }
+
+    if (pictograma.es_personalizado) {
+      return res.status(403).json({
+        data: null,
+        error: "Este endpoint es solo para pictogramas generales"
+      });
+    }
+
+    let extension = req.file.originalname
+      .split(".")
+      .pop()
+      .toLowerCase();
+
+    if (extension === "jfif" || extension === "jpeg") {
+      extension = "jpg";
+    }
+
+    const nombreArchivo = `general-${id_pictograma}-${Date.now()}.${extension}`;
+    const rutaArchivo = `generales/${nombreArchivo}`;
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from("pictogramas-imagenes")
+      .upload(rutaArchivo, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: true
+      });
+
+    if (uploadError) {
+      return res.status(500).json({
+        data: null,
+        error: uploadError.message
+      });
+    }
+
+    const { data: publicUrlData } = supabaseAdmin.storage
+      .from("pictogramas-imagenes")
+      .getPublicUrl(rutaArchivo);
+
+    const imagen_url = publicUrlData.publicUrl;
+
+    const { data: pictogramaActualizado, error: updateError } = await supabase
+      .from("pictogramas")
+      .update({ imagen_url })
+      .eq("id_pictogramas", id_pictograma)
+      .select("id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado")
+      .single();
+
+    if (updateError) {
+      return res.status(500).json({
+        data: null,
+        error: updateError.message
+      });
+    }
+
+    await supabase.from("historial_uso").insert([
+      {
+        id_usuario,
+        accion: "actualizar_imagen_pictograma_general",
+        detalle: `Imagen actualizada para pictograma general: ${pictogramaActualizado.nombre}`
+      }
+    ]);
+
+    return res.json({
+      data: pictogramaActualizado,
+      error: null
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      data: null,
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   obtenerPictogramas,
   obtenerPictogramasPorCategoria,
@@ -961,5 +1185,7 @@ module.exports = {
   actualizarPictogramaPersonalizado,
   eliminarPictogramaPersonalizado,
   crearPictogramaPersonalizadoConImagen,
-  actualizarImagenPictogramaPersonalizado
+  actualizarImagenPictogramaPersonalizado,
+  crearPictogramaConImagen,
+  actualizarImagenPictogramaGeneral
 };
