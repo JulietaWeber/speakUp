@@ -12,6 +12,9 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+
+import * as ImagePicker from "expo-image-picker";
+
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -23,6 +26,7 @@ import {
   obtenerPictogramasPorCategoria,
   crearCategoria,
   crearPictogramaPersonalizado,
+  crearPictogramaPersonalizadoConImagen,
 } from "../services/api";
 
 export default function Categories() {
@@ -52,6 +56,35 @@ export default function Categories() {
 
   const [guardandoCategoria, setGuardandoCategoria] =
     useState(false);
+
+  // =========================
+  // IMAGEN DE NUEVA PALABRA
+  // =========================
+
+  const [imagenNuevaPalabra, setImagenNuevaPalabra] =
+    useState<any | null>(null);
+
+  // =========================
+  // COLORES
+  // =========================
+
+  const coloresDisponibles = [
+    "#FF6B6B",
+    "#FF9F43",
+    "#FFD166",
+    "#6BCB77",
+    "#4ECDC4",
+    "#45B7D1",
+    "#5B8DEF",
+    "#7B61FF",
+    "#C77DFF",
+    "#FF70A6",
+    "#356879",
+    "#8D99AE",
+  ];
+
+  const [colorSeleccionado, setColorSeleccionado] =
+    useState("#356879");
 
   // =========================
   // CARGAR CATEGORÍAS
@@ -182,9 +215,11 @@ export default function Categories() {
 
     setMostrarAgregarPalabra(false);
     setNuevoNombre("");
+    setImagenNuevaPalabra(null);
 
     setMostrarAgregarCategoria(false);
     setNuevoNombreCategoria("");
+    setColorSeleccionado("#356879");
   };
 
   // =========================
@@ -195,6 +230,75 @@ export default function Categories() {
     pictogram: any
   ) => {
     agregarPalabra(pictogram);
+  };
+
+  // =========================
+  // ELEGIR FOTO
+  // =========================
+
+  const elegirFoto = async () => {
+    try {
+      const permiso =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permiso.granted) {
+        Alert.alert(
+          "Permiso necesario",
+          "Necesitamos permiso para acceder a tus fotos y elegir una imagen para la palabra."
+        );
+
+        return;
+      }
+
+      const resultado =
+        await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ["images"],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        });
+
+      if (resultado.canceled) {
+        return;
+      }
+
+      const asset = resultado.assets[0];
+
+      if (!asset) {
+        return;
+      }
+
+      const nombreArchivo =
+        asset.fileName ||
+        `pictograma-${Date.now()}.jpg`;
+
+      const tipoArchivo =
+        asset.mimeType || "image/jpeg";
+
+      setImagenNuevaPalabra({
+        uri: asset.uri,
+        name: nombreArchivo,
+        type: tipoArchivo,
+      });
+    } catch (error) {
+      console.error(
+        "Error seleccionando imagen:",
+        error
+      );
+
+      Alert.alert(
+        "Error",
+        "No se pudo seleccionar la imagen."
+      );
+    }
+  };
+
+  // =========================
+  // QUITAR FOTO
+  // =========================
+
+  const quitarFoto = () => {
+    setImagenNuevaPalabra(null);
   };
 
   // =========================
@@ -235,12 +339,38 @@ export default function Categories() {
         return;
       }
 
-      const nuevaPalabra =
-        await crearPictogramaPersonalizado(
-          selectedCategory.id_categorias,
-          nuevoNombre.trim(),
-          token
-        );
+      let nuevaPalabra;
+
+      // =========================
+      // CON FOTO
+      // =========================
+
+      if (imagenNuevaPalabra) {
+        nuevaPalabra =
+          await crearPictogramaPersonalizadoConImagen(
+            selectedCategory.id_categorias,
+            nuevoNombre.trim(),
+            imagenNuevaPalabra,
+            token
+          );
+      }
+
+      // =========================
+      // SIN FOTO
+      // =========================
+
+      else {
+        nuevaPalabra =
+          await crearPictogramaPersonalizado(
+            selectedCategory.id_categorias,
+            nuevoNombre.trim(),
+            token
+          );
+      }
+
+      // =========================
+      // AGREGAR A LA LISTA
+      // =========================
 
       setPictograms((prev) => [
         ...prev,
@@ -248,6 +378,7 @@ export default function Categories() {
       ]);
 
       setNuevoNombre("");
+      setImagenNuevaPalabra(null);
       setMostrarAgregarPalabra(false);
 
       Alert.alert(
@@ -307,7 +438,7 @@ export default function Categories() {
       const nuevaCategoria =
         await crearCategoria(
           nuevoNombreCategoria.trim(),
-          "#356879",
+          colorSeleccionado,
           token
         );
 
@@ -317,10 +448,10 @@ export default function Categories() {
       ]);
 
       setSelectedCategory(nuevaCategoria);
-
       setPictograms([]);
 
       setNuevoNombreCategoria("");
+      setColorSeleccionado("#356879");
       setMostrarAgregarCategoria(false);
 
       Alert.alert(
@@ -357,7 +488,7 @@ export default function Categories() {
           : "height"
       }
       keyboardVerticalOffset={
-        Platform.OS === "ios" ? 0 : 0
+        Platform.OS === "ios" ? 0 : 35
       }
     >
       <View style={styles.container}>
@@ -391,16 +522,7 @@ export default function Categories() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          keyboardDismissMode={
-            Platform.OS === "ios"
-              ? "interactive"
-              : "on-drag"
-          }
         >
-
-          {/* =========================
-              BARRA DE CONSTRUCCIÓN
-          ========================= */}
 
           <ConstructionBar />
 
@@ -443,7 +565,6 @@ export default function Categories() {
                       backgroundColor: isSelected
                         ? categoryColor
                         : backgroundColor,
-
                       borderColor:
                         categoryColor,
                     },
@@ -474,11 +595,10 @@ export default function Categories() {
             <TouchableOpacity
               style={styles.newCategoryButton}
               activeOpacity={0.75}
-              onPress={() =>
-                setMostrarAgregarCategoria(
-                  true
-                )
-              }
+              onPress={() => {
+                setMostrarAgregarCategoria(true);
+                setColorSeleccionado("#356879");
+              }}
             >
               <Ionicons
                 name="add-circle-outline"
@@ -497,7 +617,7 @@ export default function Categories() {
           )}
 
           {/* =========================
-              FORMULARIO NUEVA CATEGORÍA
+              FORMULARIO CATEGORÍA
           ========================= */}
 
           {mostrarAgregarCategoria && (
@@ -526,8 +646,92 @@ export default function Categories() {
                 style={
                   styles.newCategoryInput
                 }
-                returnKeyType="done"
               />
+
+              <Text style={styles.colorTitle}>
+                Elegí un color
+              </Text>
+
+              <View style={styles.colorsContainer}>
+                {coloresDisponibles.map(
+                  (color) => {
+                    const seleccionado =
+                      colorSeleccionado === color;
+
+                    return (
+                      <TouchableOpacity
+                        key={color}
+                        activeOpacity={0.7}
+                        onPress={() =>
+                          setColorSeleccionado(
+                            color
+                          )
+                        }
+                        style={[
+                          styles.colorCircle,
+                          {
+                            backgroundColor:
+                              color,
+                          },
+                          seleccionado &&
+                            styles.selectedColorCircle,
+                        ]}
+                      >
+                        {seleccionado && (
+                          <Ionicons
+                            name="checkmark"
+                            size={21}
+                            color="#FFFFFF"
+                          />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  }
+                )}
+              </View>
+
+              <View style={styles.previewContainer}>
+                <Text style={styles.previewLabel}>
+                  Vista previa
+                </Text>
+
+                <View
+                  style={[
+                    styles.previewCategory,
+                    {
+                      backgroundColor:
+                        getBackgroundColor(
+                          colorSeleccionado
+                        ),
+                      borderColor:
+                        colorSeleccionado,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.previewDot,
+                      {
+                        backgroundColor:
+                          colorSeleccionado,
+                      },
+                    ]}
+                  />
+
+                  <Text
+                    style={[
+                      styles.previewText,
+                      {
+                        color:
+                          colorSeleccionado,
+                      },
+                    ]}
+                  >
+                    {nuevoNombreCategoria.trim() ||
+                      "Mi categoría"}
+                  </Text>
+                </View>
+              </View>
 
               <View
                 style={
@@ -544,6 +748,10 @@ export default function Categories() {
 
                     setNuevoNombreCategoria(
                       ""
+                    );
+
+                    setColorSeleccionado(
+                      "#356879"
                     );
                   }}
                 >
@@ -703,9 +911,7 @@ export default function Categories() {
                               }
                               numberOfLines={2}
                             >
-                              {
-                                pictogram.nombre
-                              }
+                              {pictogram.nombre}
                             </Text>
                           </TouchableOpacity>
                         )
@@ -752,11 +958,14 @@ export default function Categories() {
                         },
                       ]}
                       activeOpacity={0.75}
-                      onPress={() =>
+                      onPress={() => {
                         setMostrarAgregarPalabra(
                           true
-                        )
-                      }
+                        );
+                        setImagenNuevaPalabra(
+                          null
+                        );
+                      }}
                     >
                       <Ionicons
                         name="add-circle-outline"
@@ -810,8 +1019,102 @@ export default function Categories() {
                         style={
                           styles.newWordInput
                         }
-                        returnKeyType="done"
                       />
+
+                      {/* =========================
+                          AGREGAR FOTO
+                      ========================= */}
+
+                      <TouchableOpacity
+                        style={
+                          styles.imagePickerButton
+                        }
+                        activeOpacity={0.75}
+                        onPress={elegirFoto}
+                      >
+                        {imagenNuevaPalabra ? (
+                          <>
+                            <Image
+                              source={{
+                                uri: imagenNuevaPalabra.uri,
+                              }}
+                              style={
+                                styles.selectedImage
+                              }
+                              resizeMode="cover"
+                            />
+
+                            <View
+                              style={
+                                styles.imageInfo
+                              }
+                            >
+                              <Ionicons
+                                name="checkmark-circle"
+                                size={22}
+                                color="#6BCB77"
+                              />
+
+                              <Text
+                                style={
+                                  styles.imageSelectedText
+                                }
+                                numberOfLines={1}
+                              >
+                                Foto seleccionada
+                              </Text>
+                            </View>
+
+                            <TouchableOpacity
+                              style={
+                                styles.removeImageButton
+                              }
+                              activeOpacity={0.75}
+                              onPress={
+                                quitarFoto
+                              }
+                            >
+                              <Ionicons
+                                name="close-circle"
+                                size={25}
+                                color="#FF6B6B"
+                              />
+                            </TouchableOpacity>
+                          </>
+                        ) : (
+                          <>
+                            <View
+                              style={
+                                styles.imageIconContainer
+                              }
+                            >
+                              <Ionicons
+                                name="image-outline"
+                                size={28}
+                                color="#356879"
+                              />
+                            </View>
+
+                            <View>
+                              <Text
+                                style={
+                                  styles.imagePickerTitle
+                                }
+                              >
+                                Agregar una foto
+                              </Text>
+
+                              <Text
+                                style={
+                                  styles.imagePickerSubtitle
+                                }
+                              >
+                                Elegí una imagen de tu galería
+                              </Text>
+                            </View>
+                          </>
+                        )}
+                      </TouchableOpacity>
 
                       <View
                         style={
@@ -829,6 +1132,10 @@ export default function Categories() {
                             );
 
                             setNuevoNombre("");
+
+                            setImagenNuevaPalabra(
+                              null
+                            );
                           }}
                         >
                           <Text
@@ -907,7 +1214,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 8,
     paddingTop: 10,
-    paddingBottom: 180,
+    paddingBottom: 60,
   },
 
   // =========================
@@ -967,15 +1274,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
 
     shadowColor: "#000",
-
     shadowOffset: {
       width: 0,
       height: 1,
     },
-
     shadowOpacity: 0.08,
     shadowRadius: 2,
-
     elevation: 2,
   },
 
@@ -1016,15 +1320,12 @@ const styles = StyleSheet.create({
     padding: 15,
 
     shadowColor: "#000",
-
     shadowOffset: {
       width: 0,
       height: 1,
     },
-
     shadowOpacity: 0.07,
     shadowRadius: 2,
-
     elevation: 2,
   },
 
@@ -1044,6 +1345,84 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#5F6B70",
     backgroundColor: "#F8FAFB",
+  },
+
+  // =========================
+  // SELECTOR COLOR
+  // =========================
+
+  colorTitle: {
+    fontSize: 13,
+    color: "#356879",
+    fontWeight: "700",
+    marginTop: 16,
+    marginBottom: 10,
+  },
+
+  colorsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    alignItems: "center",
+  },
+
+  colorCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+
+  selectedColorCircle: {
+    borderColor: "#FFFFFF",
+    borderWidth: 3,
+
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+
+  // =========================
+  // VISTA PREVIA COLOR
+  // =========================
+
+  previewContainer: {
+    marginTop: 17,
+  },
+
+  previewLabel: {
+    fontSize: 11,
+    color: "#7A898F",
+    marginBottom: 7,
+  },
+
+  previewCategory: {
+    minHeight: 50,
+    borderRadius: 12,
+    borderWidth: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+  },
+
+  previewDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    marginRight: 9,
+  },
+
+  previewText: {
+    fontSize: 13,
+    fontWeight: "700",
   },
 
   newCategoryButtons: {
@@ -1100,15 +1479,12 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
 
     shadowColor: "#000",
-
     shadowOffset: {
       width: 0,
       height: 1,
     },
-
     shadowOpacity: 0.07,
     shadowRadius: 2,
-
     elevation: 2,
   },
 
@@ -1196,15 +1572,12 @@ const styles = StyleSheet.create({
     padding: 15,
 
     shadowColor: "#000",
-
     shadowOffset: {
       width: 0,
       height: 1,
     },
-
     shadowOpacity: 0.07,
     shadowRadius: 2,
-
     elevation: 2,
   },
 
@@ -1224,6 +1597,71 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#5F6B70",
     backgroundColor: "#F8FAFB",
+  },
+
+  // =========================
+  // ELEGIR IMAGEN
+  // =========================
+
+  imagePickerButton: {
+    minHeight: 75,
+    marginTop: 12,
+    borderWidth: 2,
+    borderStyle: "dashed",
+    borderColor: "#B9C9CE",
+    borderRadius: 12,
+    backgroundColor: "#F8FAFB",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    position: "relative",
+  },
+
+  imageIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: "#E8F1F3",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+
+  imagePickerTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#356879",
+  },
+
+  imagePickerSubtitle: {
+    fontSize: 11,
+    color: "#7A898F",
+    marginTop: 3,
+  },
+
+  selectedImage: {
+    width: 55,
+    height: 55,
+    borderRadius: 10,
+    marginRight: 10,
+  },
+
+  imageInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+
+  imageSelectedText: {
+    fontSize: 12,
+    color: "#5F6B70",
+    fontWeight: "600",
+    marginLeft: 6,
+    flex: 1,
+  },
+
+  removeImageButton: {
+    padding: 3,
   },
 
   newWordButtons: {
