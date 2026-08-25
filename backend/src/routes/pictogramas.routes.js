@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const verificarTokenOpcional = require("../middlewares/authOpcional.middleware");
 
 const {
   obtenerPictogramas,
@@ -22,9 +23,13 @@ const verificarAdmin = require("../middlewares/admin.middleware");
 const upload = require("../middlewares/upload.middleware");
 
 // Públicas
-router.get("/", obtenerPictogramas);
+router.get("/", verificarTokenOpcional, obtenerPictogramas);
 
-router.get("/categoria/:id_categoria", obtenerPictogramasPorCategoria);
+router.get(
+  "/categoria/:id_categoria",
+  verificarTokenOpcional,
+  obtenerPictogramasPorCategoria
+);
 
 // Personalizados del usuario
 router.post("/personalizado", verificarToken, crearPictogramaPersonalizado);

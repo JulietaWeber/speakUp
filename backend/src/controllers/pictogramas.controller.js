@@ -2,24 +2,91 @@ const supabase = require("../config/Supabase");
 const supabaseAdmin = require("../config/SupabaseAdmin");
 
 // GET /pictogramas
+// GET /pictogramas
 const obtenerPictogramas = async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const id_usuario = req.usuario?.id_usuario || null;
+    const rol = req.usuario?.rol || null;
+
+    // Si es admin, puede ver todos los pictogramas
+    if (rol === "admin") {
+      const { data, error } = await supabase
+        .from("pictogramas")
+        .select(
+          "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado"
+        )
+        .order("id_pictogramas", { ascending: true });
+
+      if (error) {
+        return res.status(500).json({
+          data: null,
+          error: error.message
+        });
+      }
+
+      return res.json({
+        data,
+        error: null
+      });
+    }
+
+    // Pictogramas generales/default
+    const { data: pictogramasGenerales, error: generalesError } = await supabase
       .from("pictogramas")
       .select(
         "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado"
       )
+      .eq("es_personalizado", false)
       .order("id_pictogramas", { ascending: true });
 
-    if (error) {
+    if (generalesError) {
       return res.status(500).json({
         data: null,
-        error: error.message
+        error: generalesError.message
       });
     }
 
+    // Si no hay usuario logueado, solo devuelve generales
+    if (!id_usuario) {
+      return res.json({
+        data: pictogramasGenerales,
+        error: null
+      });
+    }
+
+    // Pictogramas personalizados propios
+    const { data: relaciones, error: relacionesError } = await supabase
+      .from("usuarios_pictogramas")
+      .select(`
+        id_usuario,
+        id_pictogramas,
+        pictogramas (
+          id_pictogramas,
+          id_categorias,
+          nombre,
+          imagen_url,
+          audio_url,
+          es_personalizado
+        )
+      `)
+      .eq("id_usuario", id_usuario);
+
+    if (relacionesError) {
+      return res.status(500).json({
+        data: null,
+        error: relacionesError.message
+      });
+    }
+
+    const pictogramasPropios = relaciones
+      .map((item) => item.pictogramas)
+      .filter(Boolean);
+
     return res.json({
-      data,
+      data: [
+        ...pictogramasGenerales,
+        ...pictogramasPropios
+      ],
       error: null
     });
 
@@ -32,27 +99,96 @@ const obtenerPictogramas = async (req, res) => {
 };
 
 // GET /pictogramas/categoria/:id_categoria
+// GET /pictogramas/categoria/:id_categoria
 const obtenerPictogramasPorCategoria = async (req, res) => {
   try {
     const { id_categoria } = req.params;
+    const id_usuario = req.usuario?.id_usuario || null;
+    const rol = req.usuario?.rol || null;
 
-    const { data, error } = await supabase
+    // Admin ve todos los pictogramas de la categoría
+    if (rol === "admin") {
+      const { data, error } = await supabase
+        .from("pictogramas")
+        .select(
+          "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado"
+        )
+        .eq("id_categorias", id_categoria)
+        .order("id_pictogramas", { ascending: true });
+
+      if (error) {
+        return res.status(500).json({
+          data: null,
+          error: error.message
+        });
+      }
+
+      return res.json({
+        data,
+        error: null
+      });
+    }
+
+    // Generales/default de esa categoría
+    const { data: pictogramasGenerales, error: generalesError } = await supabase
       .from("pictogramas")
       .select(
         "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado"
       )
       .eq("id_categorias", id_categoria)
+      .eq("es_personalizado", false)
       .order("id_pictogramas", { ascending: true });
 
-    if (error) {
+    if (generalesError) {
       return res.status(500).json({
         data: null,
-        error: error.message
+        error: generalesError.message
       });
     }
 
+    if (!id_usuario) {
+      return res.json({
+        data: pictogramasGenerales,
+        error: null
+      });
+    }
+
+    // Personalizados propios de esa categoría
+    const { data: relaciones, error: relacionesError } = await supabase
+      .from("usuarios_pictogramas")
+      .select(`
+        id_usuario,
+        id_pictogramas,
+        pictogramas (
+          id_pictogramas,
+          id_categorias,
+          nombre,
+          imagen_url,
+          audio_url,
+          es_personalizado
+        )
+      `)
+      .eq("id_usuario", id_usuario);
+
+    if (relacionesError) {
+      return res.status(500).json({
+        data: null,
+        error: relacionesError.message
+      });
+    }
+
+    const pictogramasPropios = relaciones
+      .map((item) => item.pictogramas)
+      .filter(Boolean)
+      .filter((pictograma) => {
+        return Number(pictograma.id_categorias) === Number(id_categoria);
+      });
+
     return res.json({
-      data,
+      data: [
+        ...pictogramasGenerales,
+        ...pictogramasPropios
+      ],
       error: null
     });
 
