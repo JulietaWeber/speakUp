@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   TextInput,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -68,8 +70,6 @@ export default function Categories() {
         const data = await obtenerCategorias(token);
 
         setCategories(data);
-
-        // NO seleccionar ninguna automáticamente
         setSelectedCategory(null);
         setPictograms([]);
       } catch (error) {
@@ -235,20 +235,12 @@ export default function Categories() {
         return;
       }
 
-      // =========================
-      // GUARDAR EN BACKEND
-      // =========================
-
       const nuevaPalabra =
         await crearPictogramaPersonalizado(
           selectedCategory.id_categorias,
           nuevoNombre.trim(),
           token
         );
-
-      // =========================
-      // AGREGAR A LA LISTA
-      // =========================
 
       setPictograms((prev) => [
         ...prev,
@@ -312,10 +304,6 @@ export default function Categories() {
         return;
       }
 
-      // =========================
-      // GUARDAR EN BACKEND
-      // =========================
-
       const nuevaCategoria =
         await crearCategoria(
           nuevoNombreCategoria.trim(),
@@ -323,17 +311,11 @@ export default function Categories() {
           token
         );
 
-      // =========================
-      // AGREGAR A LA LISTA
-      // =========================
-
       setCategories((prev) => [
         ...prev,
         nuevaCategoria,
       ]);
 
-      // Seleccionar automáticamente
-      // la categoría recién creada
       setSelectedCategory(nuevaCategoria);
 
       setPictograms([]);
@@ -367,528 +349,552 @@ export default function Categories() {
   };
 
   return (
-    <View style={styles.container}>
-
-      {/* =========================
-          HEADER
-      ========================= */}
-
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>
-          Speak Up
-        </Text>
-
-        <TouchableOpacity
-          style={styles.settingsButton}
-        >
-          <Ionicons
-            name="settings-outline"
-            size={25}
-            color="#FFFFFF"
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* =========================
-          CONTENIDO
-      ========================= */}
-
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
+    <KeyboardAvoidingView
+      style={styles.keyboardContainer}
+      behavior={
+        Platform.OS === "ios"
+          ? "padding"
+          : "height"
+      }
+      keyboardVerticalOffset={
+        Platform.OS === "ios" ? 0 : 0
+      }
+    >
+      <View style={styles.container}>
 
         {/* =========================
-            BARRA DE CONSTRUCCIÓN
+            HEADER
         ========================= */}
 
-        <ConstructionBar />
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>
+            Speak Up
+          </Text>
 
-        {/* =========================
-            TÍTULO CATEGORÍAS
-        ========================= */}
-
-        <Text style={styles.categoriesTitle}>
-          Categorías
-        </Text>
-
-        {/* =========================
-            CATEGORÍAS
-        ========================= */}
-
-        <View style={styles.categoriesContainer}>
-          {categories.map((cat) => {
-            const categoryColor =
-              cat.color || "#356879";
-
-            const backgroundColor =
-              getBackgroundColor(
-                categoryColor
-              );
-
-            const isSelected =
-              selectedCategory?.id_categorias ===
-              cat.id_categorias;
-
-            return (
-              <TouchableOpacity
-                key={cat.id_categorias}
-                activeOpacity={0.75}
-                onPress={() =>
-                  seleccionarCategoria(cat)
-                }
-                style={[
-                  styles.categoryButton,
-                  {
-                    backgroundColor: isSelected
-                      ? categoryColor
-                      : backgroundColor,
-
-                    borderColor:
-                      categoryColor,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.categoryText,
-                    {
-                      color: isSelected
-                        ? "#FFFFFF"
-                        : "#5F6B70",
-                    },
-                  ]}
-                >
-                  {cat.nombre}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+          <TouchableOpacity
+            style={styles.settingsButton}
+          >
+            <Ionicons
+              name="settings-outline"
+              size={25}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
         </View>
 
         {/* =========================
-            AGREGAR NUEVA CATEGORÍA
+            CONTENIDO
         ========================= */}
 
-        {!mostrarAgregarCategoria && (
-          <TouchableOpacity
-            style={styles.newCategoryButton}
-            activeOpacity={0.75}
-            onPress={() =>
-              setMostrarAgregarCategoria(
-                true
-              )
-            }
-          >
-            <Ionicons
-              name="add-circle-outline"
-              size={22}
-              color="#356879"
-            />
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={
+            Platform.OS === "ios"
+              ? "interactive"
+              : "on-drag"
+          }
+        >
 
-            <Text
-              style={
-                styles.newCategoryButtonText
-              }
-            >
-              Agregar nueva categoría
-            </Text>
-          </TouchableOpacity>
-        )}
+          {/* =========================
+              BARRA DE CONSTRUCCIÓN
+          ========================= */}
 
-        {/* =========================
-            FORMULARIO NUEVA CATEGORÍA
-        ========================= */}
+          <ConstructionBar />
 
-        {mostrarAgregarCategoria && (
-          <View
-            style={
-              styles.newCategoryContainer
-            }
-          >
-            <Text
-              style={
-                styles.newCategoryTitle
-              }
-            >
-              Nueva categoría
-            </Text>
+          {/* =========================
+              TÍTULO CATEGORÍAS
+          ========================= */}
 
-            <TextInput
-              value={
-                nuevoNombreCategoria
-              }
-              onChangeText={
-                setNuevoNombreCategoria
-              }
-              placeholder="Escribí el nombre de la categoría"
-              placeholderTextColor="#9AA8AD"
-              style={
-                styles.newCategoryInput
-              }
-            />
+          <Text style={styles.categoriesTitle}>
+            Categorías
+          </Text>
 
-            <View
-              style={
-                styles.newCategoryButtons
-              }
-            >
-              <TouchableOpacity
-                style={styles.cancelButton}
-                activeOpacity={0.75}
-                onPress={() => {
-                  setMostrarAgregarCategoria(
-                    false
-                  );
+          {/* =========================
+              CATEGORÍAS
+          ========================= */}
 
-                  setNuevoNombreCategoria(
-                    ""
-                  );
-                }}
-              >
-                <Text
-                  style={
-                    styles.cancelButtonText
+          <View style={styles.categoriesContainer}>
+            {categories.map((cat) => {
+              const categoryColor =
+                cat.color || "#356879";
+
+              const backgroundColor =
+                getBackgroundColor(
+                  categoryColor
+                );
+
+              const isSelected =
+                selectedCategory?.id_categorias ===
+                cat.id_categorias;
+
+              return (
+                <TouchableOpacity
+                  key={cat.id_categorias}
+                  activeOpacity={0.75}
+                  onPress={() =>
+                    seleccionarCategoria(cat)
                   }
+                  style={[
+                    styles.categoryButton,
+                    {
+                      backgroundColor: isSelected
+                        ? categoryColor
+                        : backgroundColor,
+
+                      borderColor:
+                        categoryColor,
+                    },
+                  ]}
                 >
-                  Cancelar
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.saveButton,
-                  guardandoCategoria &&
-                    styles.disabledButton,
-                ]}
-                activeOpacity={0.75}
-                disabled={guardandoCategoria}
-                onPress={
-                  guardarNuevaCategoria
-                }
-              >
-                {guardandoCategoria ? (
-                  <ActivityIndicator
-                    size="small"
-                    color="#FFFFFF"
-                  />
-                ) : (
-                  <>
-                    <Ionicons
-                      name="checkmark"
-                      size={18}
-                      color="#FFFFFF"
-                    />
-
-                    <Text
-                      style={
-                        styles.saveButtonText
-                      }
-                    >
-                      Guardar
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
+                  <Text
+                    style={[
+                      styles.categoryText,
+                      {
+                        color: isSelected
+                          ? "#FFFFFF"
+                          : "#5F6B70",
+                      },
+                    ]}
+                  >
+                    {cat.nombre}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
-        )}
 
-        {/* =========================
-            CATEGORÍA SELECCIONADA
-        ========================= */}
+          {/* =========================
+              AGREGAR NUEVA CATEGORÍA
+          ========================= */}
 
-        {selectedCategory && (
-          <>
-            <View
-              style={
-                styles.selectedCategoryContainer
+          {!mostrarAgregarCategoria && (
+            <TouchableOpacity
+              style={styles.newCategoryButton}
+              activeOpacity={0.75}
+              onPress={() =>
+                setMostrarAgregarCategoria(
+                  true
+                )
               }
             >
-              <View
-                style={[
-                  styles.selectedCategoryLine,
-                  {
-                    backgroundColor:
-                      selectedCategory.color ||
-                      "#356879",
-                  },
-                ]}
+              <Ionicons
+                name="add-circle-outline"
+                size={22}
+                color="#356879"
               />
 
               <Text
                 style={
-                  styles.selectedCategoryTitle
+                  styles.newCategoryButtonText
                 }
               >
-                {selectedCategory.nombre}
+                Agregar nueva categoría
               </Text>
-            </View>
+            </TouchableOpacity>
+          )}
 
-            {/* =========================
-                PICTOGRAMAS
-            ========================= */}
+          {/* =========================
+              FORMULARIO NUEVA CATEGORÍA
+          ========================= */}
 
-            {loadingPictograms ? (
+          {mostrarAgregarCategoria && (
+            <View
+              style={
+                styles.newCategoryContainer
+              }
+            >
+              <Text
+                style={
+                  styles.newCategoryTitle
+                }
+              >
+                Nueva categoría
+              </Text>
+
+              <TextInput
+                value={
+                  nuevoNombreCategoria
+                }
+                onChangeText={
+                  setNuevoNombreCategoria
+                }
+                placeholder="Escribí el nombre de la categoría"
+                placeholderTextColor="#9AA8AD"
+                style={
+                  styles.newCategoryInput
+                }
+                returnKeyType="done"
+              />
+
               <View
                 style={
-                  styles.loadingContainer
+                  styles.newCategoryButtons
                 }
               >
-                <ActivityIndicator
-                  size="large"
-                  color="#356879"
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  activeOpacity={0.75}
+                  onPress={() => {
+                    setMostrarAgregarCategoria(
+                      false
+                    );
+
+                    setNuevoNombreCategoria(
+                      ""
+                    );
+                  }}
+                >
+                  <Text
+                    style={
+                      styles.cancelButtonText
+                    }
+                  >
+                    Cancelar
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.saveButton,
+                    guardandoCategoria &&
+                      styles.disabledButton,
+                  ]}
+                  activeOpacity={0.75}
+                  disabled={guardandoCategoria}
+                  onPress={
+                    guardarNuevaCategoria
+                  }
+                >
+                  {guardandoCategoria ? (
+                    <ActivityIndicator
+                      size="small"
+                      color="#FFFFFF"
+                    />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="checkmark"
+                        size={18}
+                        color="#FFFFFF"
+                      />
+
+                      <Text
+                        style={
+                          styles.saveButtonText
+                        }
+                      >
+                        Guardar
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* =========================
+              CATEGORÍA SELECCIONADA
+          ========================= */}
+
+          {selectedCategory && (
+            <>
+              <View
+                style={
+                  styles.selectedCategoryContainer
+                }
+              >
+                <View
+                  style={[
+                    styles.selectedCategoryLine,
+                    {
+                      backgroundColor:
+                        selectedCategory.color ||
+                        "#356879",
+                    },
+                  ]}
                 />
 
                 <Text
                   style={
-                    styles.loadingText
+                    styles.selectedCategoryTitle
                   }
                 >
-                  Cargando pictogramas...
+                  {selectedCategory.nombre}
                 </Text>
               </View>
-            ) : (
-              <>
-                {pictograms.length > 0 && (
-                  <View
+
+              {/* =========================
+                  PICTOGRAMAS
+              ========================= */}
+
+              {loadingPictograms ? (
+                <View
+                  style={
+                    styles.loadingContainer
+                  }
+                >
+                  <ActivityIndicator
+                    size="large"
+                    color="#356879"
+                  />
+
+                  <Text
                     style={
-                      styles.pictogramsContainer
+                      styles.loadingText
                     }
                   >
-                    {pictograms.map(
-                      (pictogram) => (
-                        <TouchableOpacity
-                          key={
-                            pictogram.id_pictogramas
-                          }
-                          activeOpacity={0.75}
-                          style={
-                            styles.pictogramButton
-                          }
-                          onPress={() =>
-                            agregarPictograma(
-                              pictogram
-                            )
-                          }
-                        >
-                          {pictogram.imagen_url ? (
-                            <Image
-                              source={{
-                                uri: pictogram.imagen_url,
-                              }}
-                              style={
-                                styles.pictogramImage
-                              }
-                              resizeMode="contain"
-                            />
-                          ) : (
-                            <View
-                              style={
-                                styles.noImageContainer
-                              }
-                            >
-                              <Ionicons
-                                name="image-outline"
-                                size={35}
-                                color="#AAB7BC"
-                              />
-                            </View>
-                          )}
-
-                          <Text
-                            style={
-                              styles.pictogramText
-                            }
-                            numberOfLines={2}
-                          >
-                            {
-                              pictogram.nombre
-                            }
-                          </Text>
-                        </TouchableOpacity>
-                      )
-                    )}
-                  </View>
-                )}
-
-                {pictograms.length ===
-                  0 && (
-                  <View
-                    style={
-                      styles.emptyPictogramsContainer
-                    }
-                  >
-                    <Ionicons
-                      name="images-outline"
-                      size={45}
-                      color="#AAB7BC"
-                    />
-
-                    <Text
+                    Cargando pictogramas...
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  {pictograms.length > 0 && (
+                    <View
                       style={
-                        styles.emptyText
+                        styles.pictogramsContainer
                       }
                     >
-                      Esta categoría todavía
-                      no tiene pictogramas
-                    </Text>
-                  </View>
-                )}
+                      {pictograms.map(
+                        (pictogram) => (
+                          <TouchableOpacity
+                            key={
+                              pictogram.id_pictogramas
+                            }
+                            activeOpacity={0.75}
+                            style={
+                              styles.pictogramButton
+                            }
+                            onPress={() =>
+                              agregarPictograma(
+                                pictogram
+                              )
+                            }
+                          >
+                            {pictogram.imagen_url ? (
+                              <Image
+                                source={{
+                                  uri: pictogram.imagen_url,
+                                }}
+                                style={
+                                  styles.pictogramImage
+                                }
+                                resizeMode="contain"
+                              />
+                            ) : (
+                              <View
+                                style={
+                                  styles.noImageContainer
+                                }
+                              >
+                                <Ionicons
+                                  name="image-outline"
+                                  size={35}
+                                  color="#AAB7BC"
+                                />
+                              </View>
+                            )}
 
-                {/* =========================
-                    AGREGAR NUEVA PALABRA
-                ========================= */}
+                            <Text
+                              style={
+                                styles.pictogramText
+                              }
+                              numberOfLines={2}
+                            >
+                              {
+                                pictogram.nombre
+                              }
+                            </Text>
+                          </TouchableOpacity>
+                        )
+                      )}
+                    </View>
+                  )}
 
-                {!mostrarAgregarPalabra && (
-                  <TouchableOpacity
-                    style={[
-                      styles.newWordButton,
-                      {
-                        borderColor:
-                          selectedCategory.color ||
-                          "#356879",
-                      },
-                    ]}
-                    activeOpacity={0.75}
-                    onPress={() =>
-                      setMostrarAgregarPalabra(
-                        true
-                      )
-                    }
-                  >
-                    <Ionicons
-                      name="add-circle-outline"
-                      size={22}
-                      color={
-                        selectedCategory.color ||
-                        "#356879"
+                  {pictograms.length ===
+                    0 && (
+                    <View
+                      style={
+                        styles.emptyPictogramsContainer
                       }
-                    />
+                    >
+                      <Ionicons
+                        name="images-outline"
+                        size={45}
+                        color="#AAB7BC"
+                      />
 
-                    <Text
+                      <Text
+                        style={
+                          styles.emptyText
+                        }
+                      >
+                        Esta categoría todavía
+                        no tiene pictogramas
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* =========================
+                      AGREGAR NUEVA PALABRA
+                  ========================= */}
+
+                  {!mostrarAgregarPalabra && (
+                    <TouchableOpacity
                       style={[
-                        styles.newWordButtonText,
+                        styles.newWordButton,
                         {
-                          color:
+                          borderColor:
                             selectedCategory.color ||
                             "#356879",
                         },
                       ]}
-                    >
-                      Agregar nueva palabra
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* =========================
-                    FORMULARIO NUEVA PALABRA
-                ========================= */}
-
-                {mostrarAgregarPalabra && (
-                  <View
-                    style={
-                      styles.newWordContainer
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.newWordTitle
+                      activeOpacity={0.75}
+                      onPress={() =>
+                        setMostrarAgregarPalabra(
+                          true
+                        )
                       }
                     >
-                      Nueva palabra
-                    </Text>
+                      <Ionicons
+                        name="add-circle-outline"
+                        size={22}
+                        color={
+                          selectedCategory.color ||
+                          "#356879"
+                        }
+                      />
 
-                    <TextInput
-                      value={nuevoNombre}
-                      onChangeText={
-                        setNuevoNombre
-                      }
-                      placeholder="Escribí una palabra"
-                      placeholderTextColor="#9AA8AD"
-                      style={
-                        styles.newWordInput
-                      }
-                    />
+                      <Text
+                        style={[
+                          styles.newWordButtonText,
+                          {
+                            color:
+                              selectedCategory.color ||
+                              "#356879",
+                          },
+                        ]}
+                      >
+                        Agregar nueva palabra
+                      </Text>
+                    </TouchableOpacity>
+                  )}
 
+                  {/* =========================
+                      FORMULARIO NUEVA PALABRA
+                  ========================= */}
+
+                  {mostrarAgregarPalabra && (
                     <View
                       style={
-                        styles.newWordButtons
+                        styles.newWordContainer
                       }
                     >
-                      <TouchableOpacity
+                      <Text
                         style={
-                          styles.cancelButton
+                          styles.newWordTitle
                         }
-                        activeOpacity={0.75}
-                        onPress={() => {
-                          setMostrarAgregarPalabra(
-                            false
-                          );
-
-                          setNuevoNombre("");
-                        }}
                       >
-                        <Text
+                        Nueva palabra
+                      </Text>
+
+                      <TextInput
+                        value={nuevoNombre}
+                        onChangeText={
+                          setNuevoNombre
+                        }
+                        placeholder="Escribí una palabra"
+                        placeholderTextColor="#9AA8AD"
+                        style={
+                          styles.newWordInput
+                        }
+                        returnKeyType="done"
+                      />
+
+                      <View
+                        style={
+                          styles.newWordButtons
+                        }
+                      >
+                        <TouchableOpacity
                           style={
-                            styles.cancelButtonText
+                            styles.cancelButton
+                          }
+                          activeOpacity={0.75}
+                          onPress={() => {
+                            setMostrarAgregarPalabra(
+                              false
+                            );
+
+                            setNuevoNombre("");
+                          }}
+                        >
+                          <Text
+                            style={
+                              styles.cancelButtonText
+                            }
+                          >
+                            Cancelar
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.saveButton,
+                            guardandoPalabra &&
+                              styles.disabledButton,
+                          ]}
+                          activeOpacity={0.75}
+                          disabled={
+                            guardandoPalabra
+                          }
+                          onPress={
+                            guardarNuevaPalabra
                           }
                         >
-                          Cancelar
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          styles.saveButton,
-                          guardandoPalabra &&
-                            styles.disabledButton,
-                        ]}
-                        activeOpacity={0.75}
-                        disabled={
-                          guardandoPalabra
-                        }
-                        onPress={
-                          guardarNuevaPalabra
-                        }
-                      >
-                        {guardandoPalabra ? (
-                          <ActivityIndicator
-                            size="small"
-                            color="#FFFFFF"
-                          />
-                        ) : (
-                          <>
-                            <Ionicons
-                              name="checkmark"
-                              size={18}
+                          {guardandoPalabra ? (
+                            <ActivityIndicator
+                              size="small"
                               color="#FFFFFF"
                             />
+                          ) : (
+                            <>
+                              <Ionicons
+                                name="checkmark"
+                                size={18}
+                                color="#FFFFFF"
+                              />
 
-                            <Text
-                              style={
-                                styles.saveButtonText
-                              }
-                            >
-                              Guardar
-                            </Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
+                              <Text
+                                style={
+                                  styles.saveButtonText
+                                }
+                              >
+                                Guardar
+                              </Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                  </View>
-                )}
-              </>
-            )}
-          </>
-        )}
-      </ScrollView>
-    </View>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </ScrollView>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardContainer: {
+    flex: 1,
+  },
+
   container: {
     flex: 1,
     backgroundColor: "#EEF3F5",
@@ -901,7 +907,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 8,
     paddingTop: 10,
-    paddingBottom: 40,
+    paddingBottom: 180,
   },
 
   // =========================
