@@ -73,7 +73,7 @@ export default function Register() {
       <View
         style={{
           flex: 1,
-          backgroundColor: "#AFD4E8",
+          backgroundColor: "#FFFFFF",
         }}
       >
         {/* TÍTULO AZUL */}
@@ -98,21 +98,22 @@ export default function Register() {
           </Text>
         </View>
 
-        {/* CONTAINER CELESTE */}
+        {/* CONTAINER BLANCO */}
         <View
           style={{
-            backgroundColor: "#AFD4E8",
+            backgroundColor: "#FFFFFF",
             borderTopLeftRadius: 30,
             borderTopRightRadius: 30,
             paddingHorizontal: 30,
             paddingTop: 25,
             paddingBottom: 35,
+            marginTop: -30,
           }}
         >
           {/* BOTÓN DE GOOGLE */}
           <TouchableOpacity
             style={{
-              backgroundColor: "#CFE6F1",
+              backgroundColor: "#F1F6F8",
               padding: 18,
               borderRadius: 16,
               alignItems: "center",
@@ -155,7 +156,7 @@ export default function Register() {
               style={{
                 flex: 1,
                 height: 1,
-                backgroundColor: "#356071",
+                backgroundColor: "#E1E8EB",
               }}
             />
 
@@ -174,7 +175,7 @@ export default function Register() {
               style={{
                 flex: 1,
                 height: 1,
-                backgroundColor: "#356071",
+                backgroundColor: "#E1E8EB",
               }}
             />
           </View>
@@ -184,9 +185,9 @@ export default function Register() {
             placeholder="Nombre"
             value={name}
             onChangeText={setName}
-            placeholderTextColor="#356071"
+            placeholderTextColor="#78909A"
             style={{
-              backgroundColor: "#CFE6F1",
+              backgroundColor: "#F1F6F8",
               padding: 18,
               borderRadius: 16,
               marginBottom: 20,
@@ -200,9 +201,9 @@ export default function Register() {
             onChangeText={setEmail}
             autoCapitalize="none"
             keyboardType="email-address"
-            placeholderTextColor="#356071"
+            placeholderTextColor="#78909A"
             style={{
-              backgroundColor: "#CFE6F1",
+              backgroundColor: "#F1F6F8",
               padding: 18,
               borderRadius: 16,
               marginBottom: 20,
@@ -221,10 +222,10 @@ export default function Register() {
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
-              placeholderTextColor="#356071"
+              placeholderTextColor="#78909A"
               style={{
                 flex: 1,
-                backgroundColor: "#CFE6F1",
+                backgroundColor: "#F1F6F8",
                 padding: 18,
                 borderTopLeftRadius: 16,
                 borderBottomLeftRadius: 16,
@@ -239,9 +240,9 @@ export default function Register() {
               }
               style={{
                 width: 50,
-                backgroundColor: "#CFE6F1",
+                backgroundColor: "#F1F6F8",
                 borderLeftWidth: 5,
-                borderLeftColor: "#AFD4E8",
+                borderLeftColor: "#E1E8EB",
                 borderTopRightRadius: 16,
                 borderBottomRightRadius: 16,
                 alignItems: "center",

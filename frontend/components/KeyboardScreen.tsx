@@ -42,21 +42,22 @@ export default function KeyboardScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#AFD4E8",
+    backgroundColor: "#FFFFFF",
   },
 
   background: {
     flex: 1,
-    backgroundColor: "#AFD4E8",
+    backgroundColor: "#FFFFFF",
   },
 
   scroll: {
     flex: 1,
-    backgroundColor: "#AFD4E8",
+    backgroundColor: "#FFFFFF",
   },
 
   content: {
     flexGrow: 1,
-    backgroundColor: "#AFD4E8",
+    backgroundColor: "#FFFFFF",
+    paddingBottom: 0,
   },
 });

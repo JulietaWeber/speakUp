@@ -74,7 +74,7 @@ export default function Login() {
       <View
         style={{
           flex: 1,
-          backgroundColor: "#AFD4E8",
+          backgroundColor: "#FFFFFF",
         }}
       >
         {/* PARTE AZUL DE ARRIBA */}
@@ -100,21 +100,22 @@ export default function Login() {
           </Text>
         </View>
 
-        {/* CONTAINER CELESTE */}
+        {/* CONTAINER BLANCO */}
         <View
           style={{
-            backgroundColor: "#AFD4E8",
+            backgroundColor: "#FFFFFF",
             borderTopLeftRadius: 30,
             borderTopRightRadius: 30,
             paddingHorizontal: 30,
             paddingTop: 25,
             paddingBottom: 35,
+            marginTop: -30,
           }}
         >
           {/* BOTÓN DE GOOGLE */}
           <TouchableOpacity
             style={{
-              backgroundColor: "#CFE6F1",
+              backgroundColor: "#F1F6F8",
               padding: 18,
               borderRadius: 16,
               alignItems: "center",
@@ -157,7 +158,7 @@ export default function Login() {
               style={{
                 flex: 1,
                 height: 1,
-                backgroundColor: "#356071",
+                backgroundColor: "#E1E8EB",
               }}
             />
 
@@ -176,7 +177,7 @@ export default function Login() {
               style={{
                 flex: 1,
                 height: 1,
-                backgroundColor: "#356071",
+                backgroundColor: "#E1E8EB",
               }}
             />
           </View>
@@ -186,11 +187,11 @@ export default function Login() {
             placeholder="Email"
             value={email}
             onChangeText={setEmail}
-            placeholderTextColor="#356071"
+            placeholderTextColor="#78909A"
             autoCapitalize="none"
             keyboardType="email-address"
             style={{
-              backgroundColor: "#CFE6F1",
+              backgroundColor: "#F1F6F8",
               padding: 18,
               borderRadius: 16,
               marginBottom: 20,
@@ -210,10 +211,10 @@ export default function Login() {
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
-              placeholderTextColor="#356071"
+              placeholderTextColor="#78909A"
               style={{
                 flex: 1,
-                backgroundColor: "#CFE6F1",
+                backgroundColor: "#F1F6F8",
                 padding: 18,
                 borderTopLeftRadius: 16,
                 borderBottomLeftRadius: 16,
@@ -229,9 +230,9 @@ export default function Login() {
               }
               style={{
                 width: 50,
-                backgroundColor: "#CFE6F1",
+                backgroundColor: "#F1F6F8",
                 borderLeftWidth: 5,
-                borderLeftColor: "#AFD4E8",
+                borderLeftColor: "#E1E8EB",
                 borderTopRightRadius: 16,
                 borderBottomRightRadius: 16,
                 alignItems: "center",
