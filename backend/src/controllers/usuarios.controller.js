@@ -336,6 +336,73 @@ const subirFotoPerfil = async (req, res) => {
   }
 };
 
+// DELETE /usuarios/foto-perfil
+const eliminarFotoPerfil = async (req, res) => {
+  try {
+    const id_usuario = req.usuario.id_usuario;
+
+    const { data: usuario, error: buscarError } = await supabase
+      .from("usuarios")
+      .select("id_usuario, nombre, email, rol, foto_perfil")
+      .eq("id_usuario", id_usuario)
+      .single();
+
+    if (buscarError) {
+      return res.status(500).json({
+        data: null,
+        error: buscarError.message
+      });
+    }
+
+    if (!usuario) {
+      return res.status(404).json({
+        data: null,
+        error: "Usuario no encontrado"
+      });
+    }
+
+    if (!usuario.foto_perfil) {
+      return res.json({
+        data: usuario,
+        error: null
+      });
+    }
+
+    const { data: usuarioActualizado, error: updateError } = await supabase
+      .from("usuarios")
+      .update({ foto_perfil: null })
+      .eq("id_usuario", id_usuario)
+      .select("id_usuario, nombre, email, rol, foto_perfil")
+      .single();
+
+    if (updateError) {
+      return res.status(500).json({
+        data: null,
+        error: updateError.message
+      });
+    }
+
+    await supabase.from("historial_uso").insert([
+      {
+        id_usuario,
+        accion: "eliminar_foto_perfil",
+        detalle: "Foto de perfil eliminada"
+      }
+    ]);
+
+    return res.json({
+      data: usuarioActualizado,
+      error: null
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      data: null,
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   obtenerUsuarios,
   crearUsuario,
@@ -344,5 +411,6 @@ module.exports = {
   eliminarUsuario,
   obtenerTablerosDeUsuario,
   subirFotoPerfil,
+  eliminarFotoPerfil,
   obtenerPerfil
 };

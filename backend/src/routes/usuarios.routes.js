@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 
 const verificarToken = require("../middlewares/auth.middleware");
+
 const upload = require("../middlewares/upload.middleware");
 
 const {
@@ -13,6 +14,7 @@ const {
   eliminarUsuario,
   obtenerTablerosDeUsuario,
   subirFotoPerfil,
+  eliminarFotoPerfil,
   obtenerPerfil
 } = require("../controllers/usuarios.controller");
 
@@ -24,6 +26,12 @@ router.post(
   verificarToken,
   upload.single("foto"),
   subirFotoPerfil
+);
+
+router.delete(
+  "/foto-perfil",
+  verificarToken,
+  eliminarFotoPerfil
 );
 
 // Rutas generales
