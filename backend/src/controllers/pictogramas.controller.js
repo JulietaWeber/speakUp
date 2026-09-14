@@ -1,27 +1,231 @@
 const supabase = require("../config/Supabase");
 const supabaseAdmin = require("../config/SupabaseAdmin");
 
-// GET /pictogramas
+const SELECT_PICTOGRAMA =
+  "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado";
+
+const responderError = (res, status, error) => {
+  return res.status(status).json({
+    data: null,
+    error
+  });
+};
+
+const normalizarTexto = (texto) => {
+  return String(texto || "").trim();
+};
+
+const normalizarNombreParaComparar = (nombre) => {
+  return normalizarTexto(nombre).toLowerCase();
+};
+
+const validarNombrePictograma = (nombre) => {
+  const nombreLimpio = normalizarTexto(nombre);
+
+  if (!nombreLimpio) {
+    return "El nombre del pictograma no puede estar vacío";
+  }
+
+  if (nombreLimpio.length < 2) {
+    return "El nombre del pictograma debe tener al menos 2 caracteres";
+  }
+
+  if (nombreLimpio.length > 50) {
+    return "El nombre del pictograma no puede superar los 50 caracteres";
+  }
+
+  const palabrasBloqueadas = [
+    "poronga",
+    "pete"
+  ];
+
+  if (palabrasBloqueadas.includes(nombreLimpio.toLowerCase())) {
+    return "El nombre del pictograma no está permitido";
+  }
+
+  return null;
+};
+
+const normalizarExtensionImagen = (nombreOriginal) => {
+  let extension = nombreOriginal
+    .split(".")
+    .pop()
+    .toLowerCase();
+
+  if (extension === "jfif" || extension === "jpeg") {
+    extension = "jpg";
+  }
+
+  return extension;
+};
+
+const subirImagenPictograma = async ({ archivo, carpeta, nombreBase }) => {
+  const extension = normalizarExtensionImagen(archivo.originalname);
+  const nombreArchivo = `${nombreBase}-${Date.now()}.${extension}`;
+  const rutaArchivo = `${carpeta}/${nombreArchivo}`;
+
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from("pictogramas-imagenes")
+    .upload(rutaArchivo, archivo.buffer, {
+      contentType: archivo.mimetype,
+      upsert: true
+    });
+
+  if (uploadError) {
+    throw new Error(uploadError.message);
+  }
+
+  const { data: publicUrlData } = supabaseAdmin.storage
+    .from("pictogramas-imagenes")
+    .getPublicUrl(rutaArchivo);
+
+  return publicUrlData.publicUrl;
+};
+
+const registrarHistorial = async ({ id_usuario, accion, detalle }) => {
+  await supabase.from("historial_uso").insert([
+    {
+      id_usuario,
+      accion,
+      detalle
+    }
+  ]);
+};
+
+const obtenerCategoria = async (id_categorias) => {
+  const { data, error } = await supabase
+    .from("categorias")
+    .select("id_categorias, nombre, id_usuario, es_personalizada")
+    .eq("id_categorias", id_categorias)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
+};
+
+const usuarioPuedeUsarCategoria = (categoria, id_usuario) => {
+  const categoriaEsDefault =
+    categoria.id_usuario === null || categoria.es_personalizada === false;
+
+  const categoriaEsPropia =
+    Number(categoria.id_usuario) === Number(id_usuario);
+
+  return categoriaEsDefault || categoriaEsPropia;
+};
+
+const verificarPictogramaPropio = async (id_usuario, id_pictograma) => {
+  const { data, error } = await supabase
+    .from("usuarios_pictogramas")
+    .select(`
+      id_usuario,
+      id_pictogramas,
+      pictogramas (
+        id_pictogramas,
+        id_categorias,
+        nombre,
+        imagen_url,
+        audio_url,
+        es_personalizado
+      )
+    `)
+    .eq("id_usuario", id_usuario)
+    .eq("id_pictogramas", id_pictograma)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
+};
+
+const existePictogramaGeneralDuplicado = async ({
+  nombre,
+  id_categorias,
+  excluirId = null
+}) => {
+  let query = supabase
+    .from("pictogramas")
+    .select("id_pictogramas, nombre")
+    .eq("id_categorias", id_categorias)
+    .eq("es_personalizado", false);
+
+  if (excluirId) {
+    query = query.neq("id_pictogramas", excluirId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const nombreComparar = normalizarNombreParaComparar(nombre);
+
+  return data.some((pictograma) => {
+    return normalizarNombreParaComparar(pictograma.nombre) === nombreComparar;
+  });
+};
+
+const existePictogramaPersonalizadoDuplicado = async ({
+  id_usuario,
+  nombre,
+  id_categorias,
+  excluirId = null
+}) => {
+  const { data, error } = await supabase
+    .from("usuarios_pictogramas")
+    .select(`
+      id_pictogramas,
+      pictogramas (
+        id_pictogramas,
+        id_categorias,
+        nombre,
+        es_personalizado
+      )
+    `)
+    .eq("id_usuario", id_usuario);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const nombreComparar = normalizarNombreParaComparar(nombre);
+
+  return data.some((item) => {
+    const pictograma = item.pictogramas;
+
+    if (!pictograma) return false;
+
+    if (excluirId && Number(pictograma.id_pictogramas) === Number(excluirId)) {
+      return false;
+    }
+
+    return (
+      Number(pictograma.id_categorias) === Number(id_categorias) &&
+      pictograma.es_personalizado === true &&
+      normalizarNombreParaComparar(pictograma.nombre) === nombreComparar
+    );
+  });
+};
+
 // GET /pictogramas
 const obtenerPictogramas = async (req, res) => {
   try {
     const id_usuario = req.usuario?.id_usuario || null;
     const rol = req.usuario?.rol || null;
 
-    // Si es admin, puede ver todos los pictogramas
     if (rol === "admin") {
       const { data, error } = await supabase
         .from("pictogramas")
-        .select(
-          "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado"
-        )
+        .select(SELECT_PICTOGRAMA)
         .order("id_pictogramas", { ascending: true });
 
       if (error) {
-        return res.status(500).json({
-          data: null,
-          error: error.message
-        });
+        return responderError(res, 500, error.message);
       }
 
       return res.json({
@@ -30,23 +234,16 @@ const obtenerPictogramas = async (req, res) => {
       });
     }
 
-    // Pictogramas generales/default
     const { data: pictogramasGenerales, error: generalesError } = await supabase
       .from("pictogramas")
-      .select(
-        "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado"
-      )
+      .select(SELECT_PICTOGRAMA)
       .eq("es_personalizado", false)
       .order("id_pictogramas", { ascending: true });
 
     if (generalesError) {
-      return res.status(500).json({
-        data: null,
-        error: generalesError.message
-      });
+      return responderError(res, 500, generalesError.message);
     }
 
-    // Si no hay usuario logueado, solo devuelve generales
     if (!id_usuario) {
       return res.json({
         data: pictogramasGenerales,
@@ -54,7 +251,6 @@ const obtenerPictogramas = async (req, res) => {
       });
     }
 
-    // Pictogramas personalizados propios
     const { data: relaciones, error: relacionesError } = await supabase
       .from("usuarios_pictogramas")
       .select(`
@@ -72,15 +268,13 @@ const obtenerPictogramas = async (req, res) => {
       .eq("id_usuario", id_usuario);
 
     if (relacionesError) {
-      return res.status(500).json({
-        data: null,
-        error: relacionesError.message
-      });
+      return responderError(res, 500, relacionesError.message);
     }
 
     const pictogramasPropios = relaciones
       .map((item) => item.pictogramas)
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter((pictograma) => pictograma.es_personalizado === true);
 
     return res.json({
       data: [
@@ -91,14 +285,10 @@ const obtenerPictogramas = async (req, res) => {
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
 
-// GET /pictogramas/categoria/:id_categoria
 // GET /pictogramas/categoria/:id_categoria
 const obtenerPictogramasPorCategoria = async (req, res) => {
   try {
@@ -106,21 +296,15 @@ const obtenerPictogramasPorCategoria = async (req, res) => {
     const id_usuario = req.usuario?.id_usuario || null;
     const rol = req.usuario?.rol || null;
 
-    // Admin ve todos los pictogramas de la categoría
     if (rol === "admin") {
       const { data, error } = await supabase
         .from("pictogramas")
-        .select(
-          "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado"
-        )
+        .select(SELECT_PICTOGRAMA)
         .eq("id_categorias", id_categoria)
         .order("id_pictogramas", { ascending: true });
 
       if (error) {
-        return res.status(500).json({
-          data: null,
-          error: error.message
-        });
+        return responderError(res, 500, error.message);
       }
 
       return res.json({
@@ -129,21 +313,15 @@ const obtenerPictogramasPorCategoria = async (req, res) => {
       });
     }
 
-    // Generales/default de esa categoría
     const { data: pictogramasGenerales, error: generalesError } = await supabase
       .from("pictogramas")
-      .select(
-        "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado"
-      )
+      .select(SELECT_PICTOGRAMA)
       .eq("id_categorias", id_categoria)
       .eq("es_personalizado", false)
       .order("id_pictogramas", { ascending: true });
 
     if (generalesError) {
-      return res.status(500).json({
-        data: null,
-        error: generalesError.message
-      });
+      return responderError(res, 500, generalesError.message);
     }
 
     if (!id_usuario) {
@@ -153,7 +331,6 @@ const obtenerPictogramasPorCategoria = async (req, res) => {
       });
     }
 
-    // Personalizados propios de esa categoría
     const { data: relaciones, error: relacionesError } = await supabase
       .from("usuarios_pictogramas")
       .select(`
@@ -171,17 +348,17 @@ const obtenerPictogramasPorCategoria = async (req, res) => {
       .eq("id_usuario", id_usuario);
 
     if (relacionesError) {
-      return res.status(500).json({
-        data: null,
-        error: relacionesError.message
-      });
+      return responderError(res, 500, relacionesError.message);
     }
 
     const pictogramasPropios = relaciones
       .map((item) => item.pictogramas)
       .filter(Boolean)
       .filter((pictograma) => {
-        return Number(pictograma.id_categorias) === Number(id_categoria);
+        return (
+          pictograma.es_personalizado === true &&
+          Number(pictograma.id_categorias) === Number(id_categoria)
+        );
       });
 
     return res.json({
@@ -193,50 +370,44 @@ const obtenerPictogramasPorCategoria = async (req, res) => {
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
 
 // POST /pictogramas
-// Pictograma general del sistema. Esta ruta debería estar protegida con verificarAdmin.
 const crearPictograma = async (req, res) => {
   try {
     const {
       id_categorias,
       nombre,
       imagen_url,
-      audio_url,
-      es_personalizado
+      audio_url
     } = req.body;
 
     if (!id_categorias || !nombre) {
-      return res.status(400).json({
-        data: null,
-        error: "Faltan datos obligatorios: id_categorias o nombre"
-      });
+      return responderError(res, 400, "Faltan datos obligatorios: id_categorias o nombre");
     }
 
-    const { data: categoria, error: categoriaError } = await supabase
-      .from("categorias")
-      .select("id_categorias")
-      .eq("id_categorias", id_categorias)
-      .maybeSingle();
+    const nombreLimpio = normalizarTexto(nombre);
+    const errorNombre = validarNombrePictograma(nombreLimpio);
 
-    if (categoriaError) {
-      return res.status(500).json({
-        data: null,
-        error: categoriaError.message
-      });
+    if (errorNombre) {
+      return responderError(res, 400, errorNombre);
     }
+
+    const categoria = await obtenerCategoria(id_categorias);
 
     if (!categoria) {
-      return res.status(404).json({
-        data: null,
-        error: "Categoría no encontrada"
-      });
+      return responderError(res, 404, "Categoría no encontrada");
+    }
+
+    const duplicado = await existePictogramaGeneralDuplicado({
+      nombre: nombreLimpio,
+      id_categorias
+    });
+
+    if (duplicado) {
+      return responderError(res, 400, "Ya existe un pictograma general con ese nombre en esta categoría");
     }
 
     const { data, error } = await supabase
@@ -244,22 +415,17 @@ const crearPictograma = async (req, res) => {
       .insert([
         {
           id_categorias,
-          nombre,
+          nombre: nombreLimpio,
           imagen_url: imagen_url || null,
           audio_url: audio_url || null,
-          es_personalizado: es_personalizado || false
+          es_personalizado: false
         }
       ])
-      .select(
-        "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado"
-      )
+      .select(SELECT_PICTOGRAMA)
       .single();
 
     if (error) {
-      return res.status(500).json({
-        data: null,
-        error: error.message
-      });
+      return responderError(res, 500, error.message);
     }
 
     return res.status(201).json({
@@ -268,15 +434,11 @@ const crearPictograma = async (req, res) => {
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
 
 // PUT /pictogramas/:id_pictograma
-// Pictograma general del sistema. Esta ruta debería estar protegida con verificarAdmin.
 const actualizarPictograma = async (req, res) => {
   try {
     const { id_pictograma } = req.params;
@@ -285,61 +447,79 @@ const actualizarPictograma = async (req, res) => {
       id_categorias,
       nombre,
       imagen_url,
-      audio_url,
-      es_personalizado
+      audio_url
     } = req.body;
+
+    const { data: pictogramaActual, error: pictogramaError } = await supabase
+      .from("pictogramas")
+      .select(SELECT_PICTOGRAMA)
+      .eq("id_pictogramas", id_pictograma)
+      .maybeSingle();
+
+    if (pictogramaError) {
+      return responderError(res, 500, pictogramaError.message);
+    }
+
+    if (!pictogramaActual) {
+      return responderError(res, 404, "Pictograma no encontrado");
+    }
+
+    if (pictogramaActual.es_personalizado) {
+      return responderError(res, 403, "Este endpoint es solo para pictogramas generales");
+    }
 
     const camposActualizar = {};
 
     if (id_categorias !== undefined) camposActualizar.id_categorias = id_categorias;
-    if (nombre !== undefined) camposActualizar.nombre = nombre;
-    if (imagen_url !== undefined) camposActualizar.imagen_url = imagen_url;
-    if (audio_url !== undefined) camposActualizar.audio_url = audio_url;
-    if (es_personalizado !== undefined) camposActualizar.es_personalizado = es_personalizado;
 
-    if (Object.keys(camposActualizar).length === 0) {
-      return res.status(400).json({
-        data: null,
-        error: "No enviaste campos para actualizar"
-      });
+    if (nombre !== undefined) {
+      const nombreLimpio = normalizarTexto(nombre);
+      const errorNombre = validarNombrePictograma(nombreLimpio);
+
+      if (errorNombre) {
+        return responderError(res, 400, errorNombre);
+      }
+
+      camposActualizar.nombre = nombreLimpio;
     }
 
-    if (id_categorias !== undefined) {
-      const { data: categoria, error: categoriaError } = await supabase
-        .from("categorias")
-        .select("id_categorias")
-        .eq("id_categorias", id_categorias)
-        .maybeSingle();
+    if (imagen_url !== undefined) camposActualizar.imagen_url = imagen_url;
+    if (audio_url !== undefined) camposActualizar.audio_url = audio_url;
 
-      if (categoriaError) {
-        return res.status(500).json({
-          data: null,
-          error: categoriaError.message
-        });
-      }
+    if (Object.keys(camposActualizar).length === 0) {
+      return responderError(res, 400, "No enviaste campos para actualizar");
+    }
+
+    const categoriaFinal = id_categorias || pictogramaActual.id_categorias;
+    const nombreFinal = camposActualizar.nombre || pictogramaActual.nombre;
+
+    if (id_categorias !== undefined) {
+      const categoria = await obtenerCategoria(id_categorias);
 
       if (!categoria) {
-        return res.status(404).json({
-          data: null,
-          error: "Categoría no encontrada"
-        });
+        return responderError(res, 404, "Categoría no encontrada");
       }
+    }
+
+    const duplicado = await existePictogramaGeneralDuplicado({
+      nombre: nombreFinal,
+      id_categorias: categoriaFinal,
+      excluirId: id_pictograma
+    });
+
+    if (duplicado) {
+      return responderError(res, 400, "Ya existe un pictograma general con ese nombre en esta categoría");
     }
 
     const { data, error } = await supabase
       .from("pictogramas")
       .update(camposActualizar)
       .eq("id_pictogramas", id_pictograma)
-      .select(
-        "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado"
-      )
+      .select(SELECT_PICTOGRAMA)
       .single();
 
     if (error) {
-      return res.status(500).json({
-        data: null,
-        error: error.message
-      });
+      return responderError(res, 500, error.message);
     }
 
     return res.json({
@@ -348,15 +528,11 @@ const actualizarPictograma = async (req, res) => {
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
 
 // DELETE /pictogramas/:id_pictograma
-// Pictograma general del sistema. Esta ruta debería estar protegida con verificarAdmin.
 const eliminarPictograma = async (req, res) => {
   try {
     const { id_pictograma } = req.params;
@@ -371,16 +547,18 @@ const eliminarPictograma = async (req, res) => {
       .delete()
       .eq("id_pictogramas", id_pictograma);
 
+    await supabase
+      .from("frase_pictogramas")
+      .delete()
+      .eq("id_pictogramas", id_pictograma);
+
     const { error } = await supabase
       .from("pictogramas")
       .delete()
       .eq("id_pictogramas", id_pictograma);
 
     if (error) {
-      return res.status(500).json({
-        data: null,
-        error: error.message
-      });
+      return responderError(res, 500, error.message);
     }
 
     return res.json({
@@ -391,10 +569,7 @@ const eliminarPictograma = async (req, res) => {
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
 
@@ -411,43 +586,34 @@ const crearPictogramaPersonalizado = async (req, res) => {
     } = req.body;
 
     if (!id_categorias || !nombre) {
-      return res.status(400).json({
-        data: null,
-        error: "Faltan datos obligatorios: id_categorias o nombre"
-      });
+      return responderError(res, 400, "Faltan datos obligatorios: id_categorias o nombre");
     }
 
-    const { data: categoria, error: categoriaError } = await supabase
-      .from("categorias")
-      .select("id_categorias, nombre, id_usuario, es_personalizada")
-      .eq("id_categorias", id_categorias)
-      .maybeSingle();
+    const nombreLimpio = normalizarTexto(nombre);
+    const errorNombre = validarNombrePictograma(nombreLimpio);
 
-    if (categoriaError) {
-      return res.status(500).json({
-        data: null,
-        error: categoriaError.message
-      });
+    if (errorNombre) {
+      return responderError(res, 400, errorNombre);
     }
+
+    const categoria = await obtenerCategoria(id_categorias);
 
     if (!categoria) {
-      return res.status(404).json({
-        data: null,
-        error: "Categoría no encontrada"
-      });
+      return responderError(res, 404, "Categoría no encontrada");
     }
 
-    const categoriaEsDefault =
-      categoria.id_usuario === null || categoria.es_personalizada === false;
+    if (!usuarioPuedeUsarCategoria(categoria, id_usuario)) {
+      return responderError(res, 403, "No tenés permiso para usar esta categoría");
+    }
 
-    const categoriaEsPropia =
-      Number(categoria.id_usuario) === Number(id_usuario);
+    const duplicado = await existePictogramaPersonalizadoDuplicado({
+      id_usuario,
+      nombre: nombreLimpio,
+      id_categorias
+    });
 
-    if (!categoriaEsDefault && !categoriaEsPropia) {
-      return res.status(403).json({
-        data: null,
-        error: "No tenés permiso para usar esta categoría"
-      });
+    if (duplicado) {
+      return responderError(res, 400, "Ya tenés un pictograma con ese nombre en esta categoría");
     }
 
     const { data: pictogramaCreado, error: pictogramaError } = await supabase
@@ -455,22 +621,17 @@ const crearPictogramaPersonalizado = async (req, res) => {
       .insert([
         {
           id_categorias,
-          nombre,
+          nombre: nombreLimpio,
           imagen_url: imagen_url || null,
           audio_url: audio_url || null,
           es_personalizado: true
         }
       ])
-      .select(
-        "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado"
-      )
+      .select(SELECT_PICTOGRAMA)
       .single();
 
     if (pictogramaError) {
-      return res.status(500).json({
-        data: null,
-        error: pictogramaError.message
-      });
+      return responderError(res, 500, pictogramaError.message);
     }
 
     const { error: relacionError } = await supabase
@@ -488,19 +649,14 @@ const crearPictogramaPersonalizado = async (req, res) => {
         .delete()
         .eq("id_pictogramas", pictogramaCreado.id_pictogramas);
 
-      return res.status(500).json({
-        data: null,
-        error: relacionError.message
-      });
+      return responderError(res, 500, relacionError.message);
     }
 
-    await supabase.from("historial_uso").insert([
-      {
-        id_usuario,
-        accion: "crear_pictograma_personalizado",
-        detalle: `Pictograma personalizado creado: ${nombre}`
-      }
-    ]);
+    await registrarHistorial({
+      id_usuario,
+      accion: "crear_pictograma_personalizado",
+      detalle: `Pictograma personalizado creado: ${nombreLimpio}`
+    });
 
     return res.status(201).json({
       data: pictogramaCreado,
@@ -508,10 +664,7 @@ const crearPictogramaPersonalizado = async (req, res) => {
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
 
@@ -540,15 +693,13 @@ const obtenerMisPictogramasPersonalizados = async (req, res) => {
       .order("fecha_creacion", { ascending: false });
 
     if (error) {
-      return res.status(500).json({
-        data: null,
-        error: error.message
-      });
+      return responderError(res, 500, error.message);
     }
 
     const pictogramas = data
       .map((item) => item.pictogramas)
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter((pictograma) => pictograma.es_personalizado === true);
 
     return res.json({
       data: pictogramas,
@@ -556,10 +707,7 @@ const obtenerMisPictogramasPersonalizados = async (req, res) => {
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
 
@@ -576,119 +724,82 @@ const actualizarPictogramaPersonalizado = async (req, res) => {
       audio_url
     } = req.body;
 
-    const { data: relacion, error: relacionError } = await supabase
-      .from("usuarios_pictogramas")
-      .select("id_usuario_pictograma, id_usuario, id_pictogramas")
-      .eq("id_usuario", id_usuario)
-      .eq("id_pictogramas", id_pictograma)
-      .maybeSingle();
+    const relacion = await verificarPictogramaPropio(id_usuario, id_pictograma);
 
-    if (relacionError) {
-      return res.status(500).json({
-        data: null,
-        error: relacionError.message
-      });
+    if (!relacion || !relacion.pictogramas) {
+      return responderError(res, 404, "No se encontró un pictograma personalizado propio con ese ID");
     }
 
-    if (!relacion) {
-      return res.status(404).json({
-        data: null,
-        error: "No se encontró un pictograma personalizado propio con ese ID"
-      });
-    }
+    const pictogramaActual = relacion.pictogramas;
 
-    const { data: pictograma, error: pictogramaError } = await supabase
-      .from("pictogramas")
-      .select("id_pictogramas, es_personalizado")
-      .eq("id_pictogramas", id_pictograma)
-      .maybeSingle();
-
-    if (pictogramaError) {
-      return res.status(500).json({
-        data: null,
-        error: pictogramaError.message
-      });
-    }
-
-    if (!pictograma || !pictograma.es_personalizado) {
-      return res.status(400).json({
-        data: null,
-        error: "El pictograma no es personalizado"
-      });
+    if (!pictogramaActual.es_personalizado) {
+      return responderError(res, 400, "El pictograma no es personalizado");
     }
 
     const camposActualizar = {};
 
     if (id_categorias !== undefined) camposActualizar.id_categorias = id_categorias;
-    if (nombre !== undefined) camposActualizar.nombre = nombre;
+
+    if (nombre !== undefined) {
+      const nombreLimpio = normalizarTexto(nombre);
+      const errorNombre = validarNombrePictograma(nombreLimpio);
+
+      if (errorNombre) {
+        return responderError(res, 400, errorNombre);
+      }
+
+      camposActualizar.nombre = nombreLimpio;
+    }
+
     if (imagen_url !== undefined) camposActualizar.imagen_url = imagen_url;
     if (audio_url !== undefined) camposActualizar.audio_url = audio_url;
 
     if (Object.keys(camposActualizar).length === 0) {
-      return res.status(400).json({
-        data: null,
-        error: "No enviaste campos para actualizar"
-      });
+      return responderError(res, 400, "No enviaste campos para actualizar");
     }
 
-    if (id_categorias !== undefined) {
-      const { data: categoria, error: categoriaError } = await supabase
-        .from("categorias")
-        .select("id_categorias, nombre, id_usuario, es_personalizada")
-        .eq("id_categorias", id_categorias)
-        .maybeSingle();
+    const categoriaFinal = id_categorias || pictogramaActual.id_categorias;
+    const nombreFinal = camposActualizar.nombre || pictogramaActual.nombre;
 
-      if (categoriaError) {
-        return res.status(500).json({
-          data: null,
-          error: categoriaError.message
-        });
-      }
+    if (id_categorias !== undefined) {
+      const categoria = await obtenerCategoria(id_categorias);
 
       if (!categoria) {
-        return res.status(404).json({
-          data: null,
-          error: "Categoría no encontrada"
-        });
+        return responderError(res, 404, "Categoría no encontrada");
       }
 
-      const categoriaEsDefault =
-        categoria.id_usuario === null || categoria.es_personalizada === false;
-
-      const categoriaEsPropia =
-        Number(categoria.id_usuario) === Number(id_usuario);
-
-      if (!categoriaEsDefault && !categoriaEsPropia) {
-        return res.status(403).json({
-          data: null,
-          error: "No tenés permiso para usar esta categoría"
-        });
+      if (!usuarioPuedeUsarCategoria(categoria, id_usuario)) {
+        return responderError(res, 403, "No tenés permiso para usar esta categoría");
       }
+    }
+
+    const duplicado = await existePictogramaPersonalizadoDuplicado({
+      id_usuario,
+      nombre: nombreFinal,
+      id_categorias: categoriaFinal,
+      excluirId: id_pictograma
+    });
+
+    if (duplicado) {
+      return responderError(res, 400, "Ya tenés un pictograma con ese nombre en esta categoría");
     }
 
     const { data: pictogramaActualizado, error: actualizarError } = await supabase
       .from("pictogramas")
       .update(camposActualizar)
       .eq("id_pictogramas", id_pictograma)
-      .select(
-        "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado"
-      )
+      .select(SELECT_PICTOGRAMA)
       .single();
 
     if (actualizarError) {
-      return res.status(500).json({
-        data: null,
-        error: actualizarError.message
-      });
+      return responderError(res, 500, actualizarError.message);
     }
 
-    await supabase.from("historial_uso").insert([
-      {
-        id_usuario,
-        accion: "actualizar_pictograma_personalizado",
-        detalle: `Pictograma personalizado actualizado: ${pictogramaActualizado.nombre}`
-      }
-    ]);
+    await registrarHistorial({
+      id_usuario,
+      accion: "actualizar_pictograma_personalizado",
+      detalle: `Pictograma personalizado actualizado: ${pictogramaActualizado.nombre}`
+    });
 
     return res.json({
       data: pictogramaActualizado,
@@ -696,10 +807,7 @@ const actualizarPictogramaPersonalizado = async (req, res) => {
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
 
@@ -709,45 +817,16 @@ const eliminarPictogramaPersonalizado = async (req, res) => {
     const id_usuario = req.usuario.id_usuario;
     const { id_pictograma } = req.params;
 
-    const { data: relacion, error: relacionBuscarError } = await supabase
-      .from("usuarios_pictogramas")
-      .select("id_usuario_pictograma, id_usuario, id_pictogramas")
-      .eq("id_usuario", id_usuario)
-      .eq("id_pictogramas", id_pictograma)
-      .maybeSingle();
+    const relacion = await verificarPictogramaPropio(id_usuario, id_pictograma);
 
-    if (relacionBuscarError) {
-      return res.status(500).json({
-        data: null,
-        error: relacionBuscarError.message
-      });
+    if (!relacion || !relacion.pictogramas) {
+      return responderError(res, 404, "No se encontró un pictograma personalizado propio con ese ID");
     }
 
-    if (!relacion) {
-      return res.status(404).json({
-        data: null,
-        error: "No se encontró un pictograma personalizado propio con ese ID"
-      });
-    }
+    const pictograma = relacion.pictogramas;
 
-    const { data: pictograma, error: pictogramaError } = await supabase
-      .from("pictogramas")
-      .select("id_pictogramas, nombre, es_personalizado")
-      .eq("id_pictogramas", id_pictograma)
-      .maybeSingle();
-
-    if (pictogramaError) {
-      return res.status(500).json({
-        data: null,
-        error: pictogramaError.message
-      });
-    }
-
-    if (!pictograma || !pictograma.es_personalizado) {
-      return res.status(400).json({
-        data: null,
-        error: "El pictograma no es personalizado"
-      });
+    if (!pictograma.es_personalizado) {
+      return responderError(res, 400, "El pictograma no es personalizado");
     }
 
     await supabase
@@ -762,10 +841,7 @@ const eliminarPictogramaPersonalizado = async (req, res) => {
       .eq("id_pictogramas", id_pictograma);
 
     if (borrarRelacionError) {
-      return res.status(500).json({
-        data: null,
-        error: borrarRelacionError.message
-      });
+      return responderError(res, 500, borrarRelacionError.message);
     }
 
     const { data: otrasRelaciones, error: otrasRelacionesError } = await supabase
@@ -774,10 +850,7 @@ const eliminarPictogramaPersonalizado = async (req, res) => {
       .eq("id_pictogramas", id_pictograma);
 
     if (otrasRelacionesError) {
-      return res.status(500).json({
-        data: null,
-        error: otrasRelacionesError.message
-      });
+      return responderError(res, 500, otrasRelacionesError.message);
     }
 
     if (!otrasRelaciones || otrasRelaciones.length === 0) {
@@ -787,20 +860,15 @@ const eliminarPictogramaPersonalizado = async (req, res) => {
         .eq("id_pictogramas", id_pictograma);
 
       if (borrarPictogramaError) {
-        return res.status(500).json({
-          data: null,
-          error: borrarPictogramaError.message
-        });
+        return responderError(res, 500, borrarPictogramaError.message);
       }
     }
 
-    await supabase.from("historial_uso").insert([
-      {
-        id_usuario,
-        accion: "eliminar_pictograma_personalizado",
-        detalle: `Pictograma personalizado eliminado: ${pictograma.nombre}`
-      }
-    ]);
+    await registrarHistorial({
+      id_usuario,
+      accion: "eliminar_pictograma_personalizado",
+      detalle: `Pictograma personalizado eliminado: ${pictograma.nombre}`
+    });
 
     return res.json({
       data: {
@@ -810,10 +878,7 @@ const eliminarPictogramaPersonalizado = async (req, res) => {
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
 
@@ -828,110 +893,64 @@ const crearPictogramaPersonalizadoConImagen = async (req, res) => {
     } = req.body;
 
     if (!id_categorias || !nombre) {
-      return res.status(400).json({
-        data: null,
-        error: "Faltan datos obligatorios: id_categorias y nombre"
-      });
+      return responderError(res, 400, "Faltan datos obligatorios: id_categorias y nombre");
     }
 
     if (!req.file) {
-      return res.status(400).json({
-        data: null,
-        error: "Tenés que enviar una imagen en el campo imagen"
-      });
+      return responderError(res, 400, "Tenés que enviar una imagen en el campo imagen");
     }
 
-    // Validar que la categoría exista
-    const { data: categoria, error: categoriaError } = await supabase
-      .from("categorias")
-      .select("id_categorias, nombre, id_usuario, es_personalizada")
-      .eq("id_categorias", id_categorias)
-      .maybeSingle();
+    const nombreLimpio = normalizarTexto(nombre);
+    const errorNombre = validarNombrePictograma(nombreLimpio);
 
-    if (categoriaError) {
-      return res.status(500).json({
-        data: null,
-        error: categoriaError.message
-      });
+    if (errorNombre) {
+      return responderError(res, 400, errorNombre);
     }
+
+    const categoria = await obtenerCategoria(id_categorias);
 
     if (!categoria) {
-      return res.status(404).json({
-        data: null,
-        error: "Categoría no encontrada"
-      });
+      return responderError(res, 404, "Categoría no encontrada");
     }
 
-    const categoriaEsDefault =
-      categoria.id_usuario === null || categoria.es_personalizada === false;
-
-    const categoriaEsPropia =
-      Number(categoria.id_usuario) === Number(id_usuario);
-
-    if (!categoriaEsDefault && !categoriaEsPropia) {
-      return res.status(403).json({
-        data: null,
-        error: "No tenés permiso para usar esta categoría"
-      });
+    if (!usuarioPuedeUsarCategoria(categoria, id_usuario)) {
+      return responderError(res, 403, "No tenés permiso para usar esta categoría");
     }
 
-    // Preparar extensión
-    let extension = req.file.originalname
-      .split(".")
-      .pop()
-      .toLowerCase();
+    const duplicado = await existePictogramaPersonalizadoDuplicado({
+      id_usuario,
+      nombre: nombreLimpio,
+      id_categorias
+    });
 
-    if (extension === "jfif" || extension === "jpeg") {
-      extension = "jpg";
+    if (duplicado) {
+      return responderError(res, 400, "Ya tenés un pictograma con ese nombre en esta categoría");
     }
 
-    const nombreArchivo = `pictograma-${id_usuario}-${Date.now()}.${extension}`;
-    const rutaArchivo = `${id_usuario}/${nombreArchivo}`;
+    const imagen_url = await subirImagenPictograma({
+      archivo: req.file,
+      carpeta: String(id_usuario),
+      nombreBase: `pictograma-${id_usuario}`
+    });
 
-    // Subir imagen a Supabase Storage
-    const { error: uploadError } = await supabaseAdmin.storage
-      .from("pictogramas-imagenes")
-      .upload(rutaArchivo, req.file.buffer, {
-        contentType: req.file.mimetype,
-        upsert: true
-      });
-
-    if (uploadError) {
-      return res.status(500).json({
-        data: null,
-        error: uploadError.message
-      });
-    }
-
-    const { data: publicUrlData } = supabaseAdmin.storage
-      .from("pictogramas-imagenes")
-      .getPublicUrl(rutaArchivo);
-
-    const imagen_url = publicUrlData.publicUrl;
-
-    // Crear pictograma personalizado
     const { data: pictogramaCreado, error: pictogramaError } = await supabase
       .from("pictogramas")
       .insert([
         {
           id_categorias,
-          nombre,
+          nombre: nombreLimpio,
           imagen_url,
           audio_url: audio_url || null,
           es_personalizado: true
         }
       ])
-      .select("*")
+      .select(SELECT_PICTOGRAMA)
       .single();
 
     if (pictogramaError) {
-      return res.status(500).json({
-        data: null,
-        error: pictogramaError.message
-      });
+      return responderError(res, 500, pictogramaError.message);
     }
 
-    // Relacionar pictograma con usuario
     const { error: relacionError } = await supabase
       .from("usuarios_pictogramas")
       .insert([
@@ -942,19 +961,19 @@ const crearPictogramaPersonalizadoConImagen = async (req, res) => {
       ]);
 
     if (relacionError) {
-      return res.status(500).json({
-        data: null,
-        error: relacionError.message
-      });
+      await supabase
+        .from("pictogramas")
+        .delete()
+        .eq("id_pictogramas", pictogramaCreado.id_pictogramas);
+
+      return responderError(res, 500, relacionError.message);
     }
 
-    await supabase.from("historial_uso").insert([
-      {
-        id_usuario,
-        accion: "crear_pictograma_con_imagen",
-        detalle: `Pictograma personalizado creado con imagen: ${nombre}`
-      }
-    ]);
+    await registrarHistorial({
+      id_usuario,
+      accion: "crear_pictograma_con_imagen",
+      detalle: `Pictograma personalizado creado con imagen: ${nombreLimpio}`
+    });
 
     return res.status(201).json({
       data: pictogramaCreado,
@@ -962,10 +981,7 @@ const crearPictogramaPersonalizadoConImagen = async (req, res) => {
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
 
@@ -975,103 +991,41 @@ const actualizarImagenPictogramaPersonalizado = async (req, res) => {
     const { id_pictograma } = req.params;
 
     if (!req.file) {
-      return res.status(400).json({
-        data: null,
-        error: "Tenés que enviar una imagen en el campo imagen"
-      });
+      return responderError(res, 400, "Tenés que enviar una imagen en el campo imagen");
     }
 
-    // Verificar que el pictograma pertenezca al usuario
-    const { data: relacion, error: relacionError } = await supabase
-      .from("usuarios_pictogramas")
-      .select(`
-        id_usuario,
-        id_pictogramas,
-        pictogramas (
-          id_pictogramas,
-          nombre,
-          imagen_url,
-          es_personalizado
-        )
-      `)
-      .eq("id_usuario", id_usuario)
-      .eq("id_pictogramas", id_pictograma)
-      .maybeSingle();
-
-    if (relacionError) {
-      return res.status(500).json({
-        data: null,
-        error: relacionError.message
-      });
-    }
+    const relacion = await verificarPictogramaPropio(id_usuario, id_pictograma);
 
     if (!relacion || !relacion.pictogramas) {
-      return res.status(404).json({
-        data: null,
-        error: "No se encontró un pictograma personalizado propio con ese ID"
-      });
+      return responderError(res, 404, "No se encontró un pictograma personalizado propio con ese ID");
     }
 
     if (!relacion.pictogramas.es_personalizado) {
-      return res.status(403).json({
-        data: null,
-        error: "Solo se puede actualizar la imagen de pictogramas personalizados"
-      });
+      return responderError(res, 403, "Solo se puede actualizar la imagen de pictogramas personalizados");
     }
 
-    let extension = req.file.originalname
-      .split(".")
-      .pop()
-      .toLowerCase();
-
-    if (extension === "jfif" || extension === "jpeg") {
-      extension = "jpg";
-    }
-
-    const nombreArchivo = `pictograma-${id_usuario}-${id_pictograma}-${Date.now()}.${extension}`;
-    const rutaArchivo = `${id_usuario}/${nombreArchivo}`;
-
-    const { error: uploadError } = await supabaseAdmin.storage
-      .from("pictogramas-imagenes")
-      .upload(rutaArchivo, req.file.buffer, {
-        contentType: req.file.mimetype,
-        upsert: true
-      });
-
-    if (uploadError) {
-      return res.status(500).json({
-        data: null,
-        error: uploadError.message
-      });
-    }
-
-    const { data: publicUrlData } = supabaseAdmin.storage
-      .from("pictogramas-imagenes")
-      .getPublicUrl(rutaArchivo);
-
-    const imagen_url = publicUrlData.publicUrl;
+    const imagen_url = await subirImagenPictograma({
+      archivo: req.file,
+      carpeta: String(id_usuario),
+      nombreBase: `pictograma-${id_usuario}-${id_pictograma}`
+    });
 
     const { data: pictogramaActualizado, error: updateError } = await supabase
       .from("pictogramas")
       .update({ imagen_url })
       .eq("id_pictogramas", id_pictograma)
-      .select("id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado")
+      .select(SELECT_PICTOGRAMA)
       .single();
 
     if (updateError) {
-      return res.status(500).json({
-        data: null,
-        error: updateError.message
-      });
+      return responderError(res, 500, updateError.message);
     }
 
-    await supabase.from("historial_uso").insert([
-      {
-        id_usuario,
-        accion: "actualizar_imagen_pictograma",
-        detalle: `Imagen actualizada para pictograma: ${pictogramaActualizado.nombre}`
-      }
-    ]);
+    await registrarHistorial({
+      id_usuario,
+      accion: "actualizar_imagen_pictograma",
+      detalle: `Imagen actualizada para pictograma: ${pictogramaActualizado.nombre}`
+    });
 
     return res.json({
       data: pictogramaActualizado,
@@ -1079,10 +1033,7 @@ const actualizarImagenPictogramaPersonalizado = async (req, res) => {
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
 
@@ -1097,99 +1048,64 @@ const crearPictogramaConImagen = async (req, res) => {
     } = req.body;
 
     if (!id_categorias || !nombre) {
-      return res.status(400).json({
-        data: null,
-        error: "Faltan datos obligatorios: id_categorias y nombre"
-      });
+      return responderError(res, 400, "Faltan datos obligatorios: id_categorias y nombre");
     }
 
     if (!req.file) {
-      return res.status(400).json({
-        data: null,
-        error: "Tenés que enviar una imagen en el campo imagen"
-      });
+      return responderError(res, 400, "Tenés que enviar una imagen en el campo imagen");
     }
 
-    const { data: categoria, error: categoriaError } = await supabase
-      .from("categorias")
-      .select("id_categorias, nombre")
-      .eq("id_categorias", id_categorias)
-      .maybeSingle();
+    const nombreLimpio = normalizarTexto(nombre);
+    const errorNombre = validarNombrePictograma(nombreLimpio);
 
-    if (categoriaError) {
-      return res.status(500).json({
-        data: null,
-        error: categoriaError.message
-      });
+    if (errorNombre) {
+      return responderError(res, 400, errorNombre);
     }
+
+    const categoria = await obtenerCategoria(id_categorias);
 
     if (!categoria) {
-      return res.status(404).json({
-        data: null,
-        error: "Categoría no encontrada"
-      });
+      return responderError(res, 404, "Categoría no encontrada");
     }
 
-    let extension = req.file.originalname
-      .split(".")
-      .pop()
-      .toLowerCase();
+    const duplicado = await existePictogramaGeneralDuplicado({
+      nombre: nombreLimpio,
+      id_categorias
+    });
 
-    if (extension === "jfif" || extension === "jpeg") {
-      extension = "jpg";
+    if (duplicado) {
+      return responderError(res, 400, "Ya existe un pictograma general con ese nombre en esta categoría");
     }
 
-    const nombreArchivo = `general-${Date.now()}.${extension}`;
-    const rutaArchivo = `generales/${nombreArchivo}`;
-
-    const { error: uploadError } = await supabaseAdmin.storage
-      .from("pictogramas-imagenes")
-      .upload(rutaArchivo, req.file.buffer, {
-        contentType: req.file.mimetype,
-        upsert: true
-      });
-
-    if (uploadError) {
-      return res.status(500).json({
-        data: null,
-        error: uploadError.message
-      });
-    }
-
-    const { data: publicUrlData } = supabaseAdmin.storage
-      .from("pictogramas-imagenes")
-      .getPublicUrl(rutaArchivo);
-
-    const imagen_url = publicUrlData.publicUrl;
+    const imagen_url = await subirImagenPictograma({
+      archivo: req.file,
+      carpeta: "generales",
+      nombreBase: "general"
+    });
 
     const { data: pictogramaCreado, error: pictogramaError } = await supabase
       .from("pictogramas")
       .insert([
         {
           id_categorias,
-          nombre,
+          nombre: nombreLimpio,
           imagen_url,
           audio_url: audio_url || null,
           es_personalizado: false
         }
       ])
-      .select("id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado")
+      .select(SELECT_PICTOGRAMA)
       .single();
 
     if (pictogramaError) {
-      return res.status(500).json({
-        data: null,
-        error: pictogramaError.message
-      });
+      return responderError(res, 500, pictogramaError.message);
     }
 
-    await supabase.from("historial_uso").insert([
-      {
-        id_usuario,
-        accion: "crear_pictograma_general_con_imagen",
-        detalle: `Pictograma general creado con imagen: ${nombre}`
-      }
-    ]);
+    await registrarHistorial({
+      id_usuario,
+      accion: "crear_pictograma_general_con_imagen",
+      detalle: `Pictograma general creado con imagen: ${nombreLimpio}`
+    });
 
     return res.status(201).json({
       data: pictogramaCreado,
@@ -1197,10 +1113,7 @@ const crearPictogramaConImagen = async (req, res) => {
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
 
@@ -1210,92 +1123,49 @@ const actualizarImagenPictogramaGeneral = async (req, res) => {
     const { id_pictograma } = req.params;
 
     if (!req.file) {
-      return res.status(400).json({
-        data: null,
-        error: "Tenés que enviar una imagen en el campo imagen"
-      });
+      return responderError(res, 400, "Tenés que enviar una imagen en el campo imagen");
     }
 
     const { data: pictograma, error: pictogramaError } = await supabase
       .from("pictogramas")
-      .select("id_pictogramas, nombre, imagen_url, es_personalizado")
+      .select(SELECT_PICTOGRAMA)
       .eq("id_pictogramas", id_pictograma)
       .maybeSingle();
 
     if (pictogramaError) {
-      return res.status(500).json({
-        data: null,
-        error: pictogramaError.message
-      });
+      return responderError(res, 500, pictogramaError.message);
     }
 
     if (!pictograma) {
-      return res.status(404).json({
-        data: null,
-        error: "Pictograma no encontrado"
-      });
+      return responderError(res, 404, "Pictograma no encontrado");
     }
 
     if (pictograma.es_personalizado) {
-      return res.status(403).json({
-        data: null,
-        error: "Este endpoint es solo para pictogramas generales"
-      });
+      return responderError(res, 403, "Este endpoint es solo para pictogramas generales");
     }
 
-    let extension = req.file.originalname
-      .split(".")
-      .pop()
-      .toLowerCase();
-
-    if (extension === "jfif" || extension === "jpeg") {
-      extension = "jpg";
-    }
-
-    const nombreArchivo = `general-${id_pictograma}-${Date.now()}.${extension}`;
-    const rutaArchivo = `generales/${nombreArchivo}`;
-
-    const { error: uploadError } = await supabaseAdmin.storage
-      .from("pictogramas-imagenes")
-      .upload(rutaArchivo, req.file.buffer, {
-        contentType: req.file.mimetype,
-        upsert: true
-      });
-
-    if (uploadError) {
-      return res.status(500).json({
-        data: null,
-        error: uploadError.message
-      });
-    }
-
-    const { data: publicUrlData } = supabaseAdmin.storage
-      .from("pictogramas-imagenes")
-      .getPublicUrl(rutaArchivo);
-
-    const imagen_url = publicUrlData.publicUrl;
+    const imagen_url = await subirImagenPictograma({
+      archivo: req.file,
+      carpeta: "generales",
+      nombreBase: `general-${id_pictograma}`
+    });
 
     const { data: pictogramaActualizado, error: updateError } = await supabase
       .from("pictogramas")
       .update({ imagen_url })
       .eq("id_pictogramas", id_pictograma)
-      .select("id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado")
+      .select(SELECT_PICTOGRAMA)
       .single();
 
     if (updateError) {
-      return res.status(500).json({
-        data: null,
-        error: updateError.message
-      });
+      return responderError(res, 500, updateError.message);
     }
 
-    await supabase.from("historial_uso").insert([
-      {
-        id_usuario,
-        accion: "actualizar_imagen_pictograma_general",
-        detalle: `Imagen actualizada para pictograma general: ${pictogramaActualizado.nombre}`
-      }
-    ]);
+    await registrarHistorial({
+      id_usuario,
+      accion: "actualizar_imagen_pictograma_general",
+      detalle: `Imagen actualizada para pictograma general: ${pictogramaActualizado.nombre}`
+    });
 
     return res.json({
       data: pictogramaActualizado,
@@ -1303,10 +1173,7 @@ const actualizarImagenPictogramaGeneral = async (req, res) => {
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
 
