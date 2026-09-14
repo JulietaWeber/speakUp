@@ -69,7 +69,7 @@ export default function ConstructionBar() {
           <View style={styles.wordsContainer}>
             {palabras.length === 0 ? (
               <Text style={styles.placeholderText}>
-                Seleccioná una categoría para poder agregar palabras a tu frase.
+                Selecciona tus palabras para poder reproducir tu frase.
               </Text>
             ) : (
               <Text style={styles.text}>

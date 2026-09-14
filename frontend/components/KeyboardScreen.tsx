@@ -2,7 +2,6 @@ import React from "react";
 import {
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   StyleSheet,
   View,
 } from "react-native";
@@ -15,25 +14,23 @@ export default function KeyboardScreen({
   children,
 }: Props) {
   return (
+    <View style={styles.container}>
+      {children}
+    </View>
+  );
+}
+
+export function KeyboardWhiteContainer({
+  children,
+}: Props) {
+  return (
     <KeyboardAvoidingView
-      style={styles.container}
-      behavior={
-        Platform.OS === "ios"
-          ? "padding"
-          : "height"
-      }
+      style={styles.keyboardContainer}
+      behavior={Platform.OS === "ios" ? "position" : "height"}
       keyboardVerticalOffset={0}
     >
-      <View style={styles.background}>
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          automaticallyAdjustKeyboardInsets
-        >
-          {children}
-        </ScrollView>
+      <View style={styles.whiteContainer}>
+        {children}
       </View>
     </KeyboardAvoidingView>
   );
@@ -45,19 +42,17 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
 
-  background: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
+  keyboardContainer: {
+    backgroundColor: "transparent",
+    marginTop: -30,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
   },
 
-  scroll: {
-    flex: 1,
+  whiteContainer: {
     backgroundColor: "#FFFFFF",
-  },
-
-  content: {
-    flexGrow: 1,
-    backgroundColor: "#FFFFFF",
-    paddingBottom: 0,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    overflow: "hidden",
   },
 });

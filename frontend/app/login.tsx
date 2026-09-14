@@ -9,8 +9,12 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { login } from "../services/api";
-import KeyboardScreen from "../components/KeyboardScreen";
+import {
+  login,
+} from "../services/api";
+import KeyboardScreen, {
+  KeyboardWhiteContainer,
+} from "../components/KeyboardScreen";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -87,7 +91,6 @@ export default function Login() {
             backgroundColor: "#356071",
           }}
         >
-          {/* TÍTULO */}
           <Text
             style={{
               fontSize: 36,
@@ -100,206 +103,205 @@ export default function Login() {
           </Text>
         </View>
 
-        {/* CONTAINER BLANCO */}
-        <View
-          style={{
-            backgroundColor: "#FFFFFF",
-            borderTopLeftRadius: 30,
-            borderTopRightRadius: 30,
-            paddingHorizontal: 30,
-            paddingTop: 25,
-            paddingBottom: 35,
-            marginTop: -30,
-          }}
-        >
-          {/* BOTÓN DE GOOGLE */}
-          <TouchableOpacity
+        {/* BLOQUE BLANCO QUE SE LEVANTA CON EL TECLADO */}
+        <KeyboardWhiteContainer>
+          <View
             style={{
-              backgroundColor: "#F1F6F8",
-              padding: 18,
-              borderRadius: 16,
-              alignItems: "center",
-              marginBottom: 20,
+              paddingHorizontal: 30,
+              paddingTop: 25,
+              paddingBottom: 35,
+              marginTop: 0,
             }}
           >
+            {/* BOTÓN DE GOOGLE */}
+            <TouchableOpacity
+              style={{
+                backgroundColor: "#F1F6F8",
+                padding: 18,
+                borderRadius: 16,
+                alignItems: "center",
+                marginBottom: 20,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                }}
+              >
+                <Ionicons
+                  name="logo-google"
+                  size={18}
+                  color="#356071"
+                />
+
+                <Text
+                  style={{
+                    color: "#356071",
+                    fontWeight: "bold",
+                    marginLeft: 10,
+                  }}
+                >
+                  Continuar con Google
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* SEPARACIÓN */}
             <View
               style={{
                 flexDirection: "row",
                 alignItems: "center",
+                marginBottom: 20,
               }}
             >
-              <Ionicons
-                name="logo-google"
-                size={18}
-                color="#356071"
+              <View
+                style={{
+                  flex: 1,
+                  height: 1,
+                  backgroundColor: "#E1E8EB",
+                }}
               />
 
               <Text
                 style={{
                   color: "#356071",
+                  marginHorizontal: 12,
+                  fontSize: 14,
                   fontWeight: "bold",
-                  marginLeft: 10,
                 }}
               >
-                Continuar con Google
+                o
               </Text>
+
+              <View
+                style={{
+                  flex: 1,
+                  height: 1,
+                  backgroundColor: "#E1E8EB",
+                }}
+              />
             </View>
-          </TouchableOpacity>
 
-          {/* SEPARACIÓN CON LA "O" */}
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              marginBottom: 20,
-            }}
-          >
-            <View
-              style={{
-                flex: 1,
-                height: 1,
-                backgroundColor: "#E1E8EB",
-              }}
-            />
-
-            <Text
-              style={{
-                color: "#356071",
-                marginHorizontal: 12,
-                fontSize: 14,
-                fontWeight: "bold",
-              }}
-            >
-              o
-            </Text>
-
-            <View
-              style={{
-                flex: 1,
-                height: 1,
-                backgroundColor: "#E1E8EB",
-              }}
-            />
-          </View>
-
-          {/* EMAIL */}
-          <TextInput
-            placeholder="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholderTextColor="#78909A"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            style={{
-              backgroundColor: "#F1F6F8",
-              padding: 18,
-              borderRadius: 16,
-              marginBottom: 20,
-              fontSize: 16,
-            }}
-          />
-
-          {/* CONTRASEÑA + OJITO */}
-          <View
-            style={{
-              flexDirection: "row",
-              marginBottom: 30,
-            }}
-          >
+            {/* EMAIL */}
             <TextInput
-              placeholder="Contraseña"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
+              placeholder="Email"
+              value={email}
+              onChangeText={setEmail}
               placeholderTextColor="#78909A"
+              autoCapitalize="none"
+              keyboardType="email-address"
               style={{
-                flex: 1,
                 backgroundColor: "#F1F6F8",
                 padding: 18,
-                borderTopLeftRadius: 16,
-                borderBottomLeftRadius: 16,
-                borderTopRightRadius: 0,
-                borderBottomRightRadius: 0,
+                borderRadius: 16,
+                marginBottom: 20,
                 fontSize: 16,
               }}
             />
 
-            <TouchableOpacity
-              onPress={() =>
-                setShowPassword(!showPassword)
-              }
+            {/* CONTRASEÑA + OJITO */}
+            <View
               style={{
-                width: 50,
-                backgroundColor: "#F1F6F8",
-                borderLeftWidth: 5,
-                borderLeftColor: "#E1E8EB",
-                borderTopRightRadius: 16,
-                borderBottomRightRadius: 16,
-                alignItems: "center",
-                justifyContent: "center",
+                flexDirection: "row",
+                marginBottom: 30,
               }}
             >
-              <Ionicons
-                name={
-                  showPassword
-                    ? "eye-outline"
-                    : "eye-off-outline"
-                }
-                size={16}
-                color="#356071"
-              />
-            </TouchableOpacity>
-          </View>
-
-          {/* BOTÓN INICIAR SESIÓN */}
-          <TouchableOpacity
-            onPress={handleLogin}
-            disabled={loading}
-            style={{
-              backgroundColor: "#356071",
-              padding: 20,
-              borderRadius: 18,
-              alignItems: "center",
-              opacity: loading ? 0.7 : 1,
-            }}
-          >
-            <Text
-              style={{
-                color: "white",
-                fontWeight: "bold",
-                fontSize: 18,
-              }}
-            >
-              {loading
-                ? "Ingresando..."
-                : "Iniciar Sesión"}
-            </Text>
-          </TouchableOpacity>
-
-          {/* CREAR CUENTA */}
-          <TouchableOpacity
-            onPress={() => router.push("/register")}
-            style={{
-              marginTop: 20,
-            }}
-          >
-            <Text
-              style={{
-                textAlign: "center",
-                color: "#356071",
-              }}
-            >
-              No tenés una cuenta?{" "}
-              <Text
+              <TextInput
+                placeholder="Contraseña"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                placeholderTextColor="#78909A"
                 style={{
-                  textDecorationLine: "underline",
+                  flex: 1,
+                  backgroundColor: "#F1F6F8",
+                  padding: 18,
+                  borderTopLeftRadius: 16,
+                  borderBottomLeftRadius: 16,
+                  borderTopRightRadius: 0,
+                  borderBottomRightRadius: 0,
+                  fontSize: 16,
+                }}
+              />
+
+              <TouchableOpacity
+                onPress={() =>
+                  setShowPassword(!showPassword)
+                }
+                style={{
+                  width: 50,
+                  backgroundColor: "#F1F6F8",
+                  borderLeftWidth: 5,
+                  borderLeftColor: "#FFFFFF",
+                  borderTopRightRadius: 16,
+                  borderBottomRightRadius: 16,
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
-                Crea una cuenta
+                <Ionicons
+                  name={
+                    showPassword
+                      ? "eye-outline"
+                      : "eye-off-outline"
+                  }
+                  size={16}
+                  color="#356071"
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* BOTÓN INICIAR SESIÓN */}
+            <TouchableOpacity
+              onPress={handleLogin}
+              disabled={loading}
+              style={{
+                backgroundColor: "#356071",
+                padding: 20,
+                borderRadius: 18,
+                alignItems: "center",
+                opacity: loading ? 0.7 : 1,
+              }}
+            >
+              <Text
+                style={{
+                  color: "white",
+                  fontWeight: "bold",
+                  fontSize: 18,
+                }}
+              >
+                {loading
+                  ? "Ingresando..."
+                  : "Iniciar Sesión"}
               </Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
+            </TouchableOpacity>
+
+            {/* CREAR CUENTA */}
+            <TouchableOpacity
+              onPress={() => router.push("/register")}
+              style={{
+                marginTop: 20,
+              }}
+            >
+              <Text
+                style={{
+                  textAlign: "center",
+                  color: "#356071",
+                }}
+              >
+                No tenés una cuenta?{" "}
+                <Text
+                  style={{
+                    textDecorationLine: "underline",
+                  }}
+                >
+                  Crea una cuenta
+                </Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardWhiteContainer>
       </View>
     </KeyboardScreen>
   );
