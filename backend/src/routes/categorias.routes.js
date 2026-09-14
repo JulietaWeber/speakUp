@@ -1,4 +1,5 @@
 const express = require("express");
+
 const router = express.Router();
 
 const {
@@ -12,16 +13,20 @@ const {
 
 const verificarToken = require("../middlewares/auth.middleware");
 
-// GET público, devuelve categorías generales.
-// Si querés ver generales + personales, usá token opcional más abajo.
+// Categorías generales
 router.get("/", obtenerCategorias);
+
+// Categorías generales + propias del usuario
 router.get("/mis-categorias", verificarToken, obtenerMisCategorias);
+
+// Categoría por ID
 router.get("/:id_categoria", obtenerCategoriaPorId);
 
-
-// Crear, editar y borrar categorías personales requiere login.
+// Crear, editar y borrar categorías personales
 router.post("/", verificarToken, crearCategoria);
+
 router.put("/:id_categoria", verificarToken, actualizarCategoria);
+
 router.delete("/:id_categoria", verificarToken, eliminarCategoria);
 
 module.exports = router;
