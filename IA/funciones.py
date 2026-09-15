@@ -143,7 +143,7 @@ def reentrenar(user_id, datos):
     modelo = MLPClassifier(
         hidden_layer_sizes=(128, 64),
         activation='relu',
-        max_iter=500,
+        max_iter=15,
         random_state=42
     )
     modelo.fit(X_total, y_total)
