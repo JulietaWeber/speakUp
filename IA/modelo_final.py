@@ -419,6 +419,13 @@ print(f"Hit Rate@3: {hit_rate_at_k(modelo, X_test, y_test, k=3) * 100:.2f}%\n")
 
 joblib.dump(modelo, "modelo_base.pkl")
 joblib.dump(encoder_salida, "encoder_salida.pkl")
+# Se guardan también los pares (X, y) originales usados para entrenar el
+# modelo base. funciones.py los usa para el reentrenamiento acumulativo: cada
+# vez que un usuario reentrena, se reentrena un modelo fresco sobre la unión
+# de estos pares base + todo el historial acumulado del usuario, así el
+# modelo final siempre conserva el conocimiento general (A) además de todo lo
+# que el usuario fue enseñando (B, C, ...).
+joblib.dump((X, y), "base_pares.pkl")
 print("Modelo guardado: modelo_base.pkl\n")
 
 # ── Prueba ────────────────────────────────────────────────────────────────────

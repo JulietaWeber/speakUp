@@ -2,7 +2,6 @@ import spacy
 import numpy as np
 import joblib
 import os
-import copy
 import torch
 from sklearn.neural_network import MLPClassifier
 from modelo_correccion import (
@@ -22,6 +21,7 @@ print("spaCy cargado\n")
 
 encoder_salida = joblib.load("encoder_salida.pkl")
 modelo_base    = joblib.load("modelo_base.pkl")
+X_base, y_base = joblib.load("base_pares.pkl")
 
 # ── Cargar modelo de corrección de frases ─────────────────────────────────────
 
@@ -109,32 +109,48 @@ def reentrenar(user_id, datos):
     nuevos_X = np.array(nuevos_X)
     nuevos_y = np.array(nuevos_y)
 
-    path = f"modelos/modelo_{user_id}.pkl"
-    try:
-        # Siempre se parte del modelo base (no del modelo previo del usuario),
-        # así el modelo personalizado conserva el conocimiento general y no se
-        # sesga con las primeras frases que usó. Se usa partial_fit en vez de
-        # fit(warm_start=True): en MLPClassifier, fit() con warm_start exige
-        # que las clases del batch nuevo coincidan EXACTO con las del modelo
-        # previo, algo que casi nunca pasa con un batch semanal chico. partial_fit
-        # sigue entrenando sobre los pesos existentes sin esa restricción.
-        modelo = copy.deepcopy(modelo_base)
-        modelo.partial_fit(nuevos_X, nuevos_y)
-    except ValueError:
-        # Los datos nuevos son incompatibles con el modelo base (p. ej. clases
-        # fuera del vocabulario conocido). Se entrena un modelo nuevo desde cero.
-        modelo = MLPClassifier(
-            hidden_layer_sizes=(128, 64),
-            activation='relu',
-            max_iter=500,
-            random_state=42
-        )
-        modelo.fit(nuevos_X, nuevos_y)
-
     os.makedirs("modelos", exist_ok=True)
-    joblib.dump(modelo, path)
+    modelo_path    = f"modelos/modelo_{user_id}.pkl"
+    historial_path = f"modelos/historial_{user_id}.pkl"
 
-    print(f"Modelo del usuario '{user_id}' actualizado con {len(nuevos_X)} pares.")
+    # Reentrenamiento acumulativo: se guarda el historial completo de pares
+    # (categoría+palabra -> palabra siguiente) de TODOS los reentrenamientos
+    # anteriores del usuario, y en cada llamada se reentrena un modelo FRESCO
+    # sobre la unión de los pares base (A) + histórico del usuario + lote
+    # nuevo. Así, si el usuario reentrena con B y después con C, el modelo
+    # final tiene A+B+C en vez de perder B (que es lo que pasaba al partir
+    # siempre del modelo base con solo el lote nuevo).
+    #
+    # No se usa partial_fit ni fit(warm_start=True): en MLPClassifier ambos
+    # exigen que el conjunto de clases de cada llamada sea EXACTAMENTE igual
+    # al de la llamada anterior (ValueError en caso contrario), algo que no
+    # se puede garantizar de antemano porque cada usuario puede introducir
+    # palabras nuevas en cualquier reentrenamiento. Al incluir siempre los
+    # pares base A en el fit, un modelo fresco por reentrenamiento no pierde
+    # el conocimiento general y evita por completo esa restricción de clases.
+    if os.path.exists(historial_path):
+        hist_X, hist_y = joblib.load(historial_path)
+        hist_X = np.concatenate([hist_X, nuevos_X])
+        hist_y = np.concatenate([hist_y, nuevos_y])
+    else:
+        hist_X, hist_y = nuevos_X, nuevos_y
+
+    joblib.dump((hist_X, hist_y), historial_path)
+
+    X_total = np.concatenate([X_base, hist_X])
+    y_total = np.concatenate([y_base, hist_y])
+
+    modelo = MLPClassifier(
+        hidden_layer_sizes=(128, 64),
+        activation='relu',
+        max_iter=15,
+        random_state=42
+    )
+    modelo.fit(X_total, y_total)
+
+    joblib.dump(modelo, modelo_path)
+
+    print(f"Modelo del usuario '{user_id}' actualizado con {len(nuevos_X)} pares nuevos ({len(hist_X)} acumulados del usuario + {len(X_base)} base).")
     return {"status": "ok", "pares_entrenados": len(nuevos_X)}
 
 # ── Función 3: Corregir frase ─────────────────────────────────────────────────
