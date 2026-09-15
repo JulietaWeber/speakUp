@@ -11,24 +11,62 @@ más nos importa.
 
 import json
 import random
-import itertools
 import os
 
 random.seed(42)
 
-MAX_PERMS_POR_CONCEPTO = 6
+MAX_PERMS_POR_CONCEPTO = 8
+
+RUTA_DATASET_BASE = os.path.join("IA LLM", "dataset_caa.jsonl")
+RUTA_DATASET_GENERADO = "dataset_correccion.jsonl"
+
+
+def reconstruir_conceptos_desde_generado(ruta):
+    """Reconstruye la lista de conceptos (bag de palabras -> frase correcta) a
+    partir de un dataset_correccion.jsonl ya generado en una corrida anterior.
+
+    Se usa como fallback cuando RUTA_DATASET_BASE (el dataset original de 300
+    conceptos) no está disponible en el filesystem actual. Como cada concepto
+    generó varias permutaciones del MISMO multiset de palabras, agrupar las
+    filas por el multiset ordenado de "input" recupera el bag original sin
+    pérdida de información: el orden no importa (es lo que el dataset le
+    enseña a ignorar al modelo), así que cualquier permutación sirve para
+    recuperar el bag."""
+    vistos = {}
+    orden = []
+    with open(ruta, "r", encoding="utf-8") as f:
+        for linea in f:
+            par = json.loads(linea)
+            bag = par["input"].split()
+            clave = tuple(sorted(bag))
+            if clave not in vistos:
+                vistos[clave] = par["output"]
+                orden.append(clave)
+    return [(list(clave), vistos[clave]) for clave in orden]
+
 
 # ── 1) Reusar el dataset ya armado (300 conceptos, 50 por categoría) ───────────
 
-RUTA_DATASET_BASE = os.path.join("IA LLM", "dataset_caa.jsonl")
-
 conceptos = []  # lista de (bag_de_palabras: list[str], frase_correcta: str)
 
-with open(RUTA_DATASET_BASE, "r", encoding="utf-8") as f:
-    for linea in f:
-        par = json.loads(linea)
-        bag = par["input"].split()
-        conceptos.append((bag, par["output"]))
+if os.path.exists(RUTA_DATASET_BASE):
+    with open(RUTA_DATASET_BASE, "r", encoding="utf-8") as f:
+        for linea in f:
+            par = json.loads(linea)
+            bag = par["input"].split()
+            conceptos.append((bag, par["output"]))
+elif os.path.exists(RUTA_DATASET_GENERADO):
+    print(
+        f"AVISO: no se encontró '{RUTA_DATASET_BASE}', se reconstruyen los "
+        f"conceptos base a partir de '{RUTA_DATASET_GENERADO}' (corrida anterior)."
+    )
+    conceptos.extend(reconstruir_conceptos_desde_generado(RUTA_DATASET_GENERADO))
+else:
+    print(
+        f"AVISO: no se encontró ni '{RUTA_DATASET_BASE}' ni "
+        f"'{RUTA_DATASET_GENERADO}'. Se arranca solo con los conceptos "
+        f"definidos manualmente en este script."
+    )
 
 # ── 2) Conceptos nuevos (situaciones adicionales, ~12 por categoría) ───────────
 
@@ -184,20 +222,179 @@ conceptos_negacion = [
 
 conceptos.extend(conceptos_negacion)
 
+# ── 2d) Frases largas y complejas ────────────────────────────────────────────
+# El modelo fallaba con frases largas porque el dataset original tenía sobre
+# todo bags de 2-4 palabras. Estos conceptos usan bags de 5 a 9 palabras y
+# frases de salida con oraciones compuestas (conectores, subordinadas,
+# justificaciones, vocativos + razón), para que el encoder-decoder vea
+# secuencias largas durante el entrenamiento y no solo en inferencia.
+
+conceptos_frases_largas = [
+    # Casa
+    (["querer", "comer", "algo", "rico", "porque", "tener", "hambre"],
+     "Quiero comer algo rico porque tengo mucha hambre."),
+    (["necesitar", "ayuda", "ordenar", "cuarto", "antes", "dormir"],
+     "Necesito ayuda para ordenar mi cuarto antes de dormir."),
+    (["querer", "ver", "película", "papá", "mamá", "noche"],
+     "Quiero ver una película con mamá y papá esta noche."),
+    (["no", "querer", "bañarme", "ahora", "porque", "tener", "frío"],
+     "No quiero bañarme ahora porque tengo frío."),
+    (["querer", "invitar", "amigo", "casa", "jugar", "fin", "semana"],
+     "Quiero invitar a un amigo a casa para jugar el fin de semana."),
+    (["necesitar", "mamá", "ayudar", "hacer", "tarea", "difícil"],
+     "Necesito que mamá me ayude a hacer una tarea difícil."),
+    (["querer", "dormir", "temprano", "porque", "estar", "muy", "cansado"],
+     "Quiero dormir temprano porque estoy muy cansado."),
+    (["tener", "hambre", "sed", "querer", "comer", "tomar", "agua"],
+     "Tengo hambre y sed, quiero comer y tomar agua."),
+    (["no", "querer", "apagar", "televisión", "porque", "estar", "viendo", "programa"],
+     "No quiero apagar la televisión porque estoy viendo un programa."),
+    (["querer", "ayudar", "mamá", "cocinar", "cena", "hoy"],
+     "Quiero ayudar a mamá a cocinar la cena hoy."),
+    (["necesitar", "cambiarme", "ropa", "porque", "estar", "mojada", "sucia"],
+     "Necesito cambiarme porque tengo la ropa mojada y sucia."),
+    (["querer", "jugar", "afuera", "pero", "estar", "lloviendo", "mucho"],
+     "Quiero jugar afuera pero está lloviendo mucho."),
+    # Escuela
+    (["no", "entender", "tarea", "matemática", "necesitar", "que", "maestra", "explicar"],
+     "No entiendo la tarea de matemática, necesito que la maestra me la explique."),
+    (["querer", "sentarme", "amigo", "lado", "porque", "trabajar", "mejor", "juntos"],
+     "Quiero sentarme al lado de mi amigo porque trabajamos mejor juntos."),
+    (["necesitar", "hoja", "carpeta", "lápiz", "porque", "olvidé", "cartuchera"],
+     "Necesito una hoja, la carpeta y un lápiz porque olvidé la cartuchera."),
+    (["querer", "presentar", "proyecto", "porque", "trabajar", "mucho", "él"],
+     "Quiero presentar mi proyecto porque trabajé mucho en él."),
+    (["no", "querer", "ir", "escuela", "hoy", "porque", "tener", "miedo", "prueba"],
+     "No quiero ir a la escuela hoy porque tengo miedo a la prueba."),
+    (["querer", "cambiar", "grupo", "porque", "compañero", "molestar", "siempre"],
+     "Quiero cambiarme de grupo porque un compañero me molesta siempre."),
+    (["necesitar", "ayuda", "terminar", "tarea", "antes", "recreo", "termine"],
+     "Necesito ayuda para terminar la tarea antes de que termine el recreo."),
+    (["querer", "ir", "excursión", "amigos", "pero", "necesitar", "permiso", "mamá"],
+     "Quiero ir de excursión con mis amigos pero necesito el permiso de mamá."),
+    (["olvidé", "cuaderno", "casa", "necesitar", "hoja", "prestada"],
+     "Olvidé el cuaderno en casa, necesito que me presten una hoja."),
+    (["querer", "participar", "clase", "pero", "tener", "vergüenza", "hablar"],
+     "Quiero participar en clase pero tengo vergüenza de hablar."),
+    # Médico
+    (["doler", "cabeza", "mucho", "desde", "mañana", "querer", "tomar", "algo"],
+     "Me duele mucho la cabeza desde la mañana, quiero tomar algo."),
+    (["tener", "fiebre", "alta", "necesitar", "que", "doctora", "revisar", "ahora"],
+     "Tengo fiebre alta, necesito que la doctora me revise ahora."),
+    (["querer", "saber", "resultado", "análisis", "porque", "estar", "preocupado"],
+     "Quiero saber el resultado del análisis porque estoy preocupado."),
+    (["necesitar", "curita", "rodilla", "porque", "caer", "jugando", "afuera"],
+     "Necesito una curita en la rodilla porque me caí jugando afuera."),
+    (["no", "querer", "tomar", "medicina", "porque", "tener", "sabor", "feo"],
+     "No quiero tomar la medicina porque tiene un sabor feo."),
+    (["tener", "tos", "fuerte", "no", "parar", "desde", "noche", "anterior"],
+     "Tengo una tos fuerte que no para desde la noche anterior."),
+    (["querer", "mamá", "quedarse", "conmigo", "porque", "tener", "miedo", "inyección"],
+     "Quiero que mamá se quede conmigo porque tengo miedo a la inyección."),
+    (["necesitar", "reposo", "casa", "porque", "doctor", "decir", "descansar"],
+     "Necesito hacer reposo en casa porque el doctor dijo que descanse."),
+    (["doler", "estómago", "después", "comer", "querer", "acostarme", "un", "rato"],
+     "Me duele el estómago después de comer, quiero acostarme un rato."),
+    # Emociones
+    (["estar", "triste", "hoy", "porque", "pelear", "mejor", "amigo"],
+     "Hoy estoy triste porque peleé con mi mejor amigo."),
+    (["estar", "feliz", "mucho", "porque", "mañana", "ir", "cumpleaños", "primo"],
+     "Estoy muy feliz porque mañana voy al cumpleaños de mi primo."),
+    (["sentir", "nervioso", "porque", "tener", "prueba", "importante", "mañana"],
+     "Me siento nervioso porque tengo una prueba importante mañana."),
+    (["estar", "enojado", "porque", "hermano", "romper", "juguete", "favorito"],
+     "Estoy enojado porque mi hermano rompió mi juguete favorito."),
+    (["necesitar", "hablar", "alguien", "porque", "sentirme", "solo", "últimamente"],
+     "Necesito hablar con alguien porque me siento solo últimamente."),
+    (["estar", "orgulloso", "mí", "mismo", "porque", "terminar", "algo", "difícil"],
+     "Estoy orgulloso de mí mismo porque terminé algo difícil."),
+    (["sentir", "vergüenza", "porque", "equivocarme", "frente", "todos"],
+     "Siento vergüenza porque me equivoqué frente a todos."),
+    (["no", "saber", "qué", "sentir", "porque", "ser", "día", "raro"],
+     "No sé qué estoy sintiendo porque fue un día raro."),
+    (["estar", "asustado", "porque", "escuchar", "ruido", "fuerte", "afuera"],
+     "Estoy asustado porque escuché un ruido fuerte afuera."),
+    # Transporte
+    (["querer", "bajar", "próxima", "parada", "porque", "llegar", "tarde", "escuela"],
+     "Quiero bajar en la próxima parada porque voy a llegar tarde a la escuela."),
+    (["perder", "colectivo", "necesitar", "ayuda", "saber", "cuándo", "viene", "otro"],
+     "Perdí el colectivo, necesito ayuda para saber cuándo viene otro."),
+    (["estar", "mareado", "colectivo", "necesitar", "aire", "ventanilla", "abierta"],
+     "Estoy mareado en el colectivo, necesito que abran la ventanilla."),
+    (["necesitar", "ayuda", "subir", "escalón", "porque", "doler", "pierna"],
+     "Necesito ayuda para subir el escalón porque me duele la pierna."),
+    (["querer", "ir", "casa", "auto", "porque", "estar", "lloviendo", "mucho"],
+     "Quiero ir a casa en auto porque está lloviendo mucho."),
+    (["falta", "mucho", "llegar", "porque", "estar", "cansado", "viaje", "largo"],
+     "¿Falta mucho para llegar? Estoy cansado, el viaje es largo."),
+    (["necesitar", "chofer", "esperar", "porque", "bajar", "silla", "ruedas"],
+     "Necesito que el chofer me espere porque bajo con la silla de ruedas."),
+    (["querer", "sentarme", "ventana", "colectivo", "porque", "gustar", "ver", "afuera"],
+     "Quiero sentarme junto a la ventana porque me gusta ver hacia afuera."),
+    # Amigos
+    (["querer", "pedir", "perdón", "amigo", "porque", "decir", "algo", "feo"],
+     "Quiero pedirle perdón a mi amigo porque le dije algo feo."),
+    (["amigo", "no", "querer", "jugar", "conmigo", "no", "saber", "por", "qué"],
+     "Mi amigo no quiere jugar conmigo y no sé por qué."),
+    (["querer", "invitar", "amigos", "casa", "jugar", "videojuegos", "sábado"],
+     "Quiero invitar a mis amigos a casa para jugar videojuegos el sábado."),
+    (["extrañar", "amigo", "vivir", "otra", "ciudad", "querer", "llamarlo"],
+     "Extraño a mi amigo que vive en otra ciudad, quiero llamarlo."),
+    (["querer", "hacer", "las", "paces", "amigo", "porque", "extrañar", "jugar", "juntos"],
+     "Quiero hacer las paces con mi amigo porque extraño jugar juntos."),
+    (["amigo", "contarme", "secreto", "no", "querer", "contarlo", "nadie"],
+     "Mi amigo me contó un secreto y no quiero contárselo a nadie."),
+    (["querer", "presentar", "amigo", "nuevo", "otros", "amigos", "escuela"],
+     "Quiero presentarle mi amigo nuevo a los otros amigos de la escuela."),
+    (["amigo", "ayudarme", "tarea", "querer", "agradecerle", "algo", "especial"],
+     "Mi amigo me ayudó con la tarea, quiero agradecerle con algo especial."),
+]
+
+conceptos.extend(conceptos_frases_largas)
+
+# ── 2e) Deduplicar por bag ───────────────────────────────────────────────────
+# Cuando se reconstruye desde RUTA_DATASET_GENERADO (fallback del punto 1),
+# ese archivo ya incluye los bloques manuales de arriba (fueron parte de la
+# corrida anterior), así que sin este paso quedarían contados dos veces.
+
+_vistos_bag = set()
+_conceptos_dedup = []
+for bag, frase in conceptos:
+    clave = tuple(sorted(bag))
+    if clave in _vistos_bag:
+        continue
+    _vistos_bag.add(clave)
+    _conceptos_dedup.append((bag, frase))
+conceptos = _conceptos_dedup
+
 # ── 3) Generar permutaciones de cada concepto ───────────────────────────────────
+# Se generan permutaciones al azar (en vez de materializar TODAS las
+# permutaciones con itertools, que para bags largos de 8-9 palabras sería
+# carísimo: 9! = 362880) hasta juntar MAX_PERMS_POR_CONCEPTO distintas o
+# agotar los intentos razonables, lo que además escala bien sin importar el
+# largo del bag.
+
+def generar_permutaciones(bag, k):
+    resultados = []
+    vistos = set()
+    max_intentos = k * 25
+    intentos = 0
+    while len(resultados) < k and intentos < max_intentos:
+        intentos += 1
+        perm = tuple(random.sample(bag, len(bag)))
+        if perm in vistos:
+            continue
+        vistos.add(perm)
+        resultados.append(perm)
+    return resultados
+
 
 pares_finales = []
 
 for bag, frase in conceptos:
-    perms = list(itertools.permutations(bag))
-    if len(perms) > MAX_PERMS_POR_CONCEPTO:
-        perms = random.sample(perms, MAX_PERMS_POR_CONCEPTO)
-    vistos = set()
+    perms = generar_permutaciones(bag, MAX_PERMS_POR_CONCEPTO)
     for perm in perms:
         entrada = " ".join(perm)
-        if entrada in vistos:
-            continue
-        vistos.add(entrada)
         pares_finales.append({"input": entrada, "output": frase})
 
 random.shuffle(pares_finales)

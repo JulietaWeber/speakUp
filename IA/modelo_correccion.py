@@ -31,9 +31,11 @@ DEVICE = torch.device("cpu")
 
 PAD, SOS, EOS, UNK = "<pad>", "<sos>", "<eos>", "<unk>"
 
-HIDDEN_SIZE = 128
+HIDDEN_SIZE = 160
 EMB_SIZE = 128
-MAX_LEN_SALIDA = 20  # tope de tokens al generar, evita loops infinitos
+DROPOUT = 0.2
+MAX_LEN_SALIDA = 32  # tope de tokens al generar, evita loops infinitos (subido
+                     # de 20 a 32 para no truncar frases largas y complejas)
 
 # ── Tokenización de la frase de salida ──────────────────────────────────────
 # Separamos palabras y signos de puntuación como tokens distintos para que el
@@ -106,13 +108,15 @@ def vectorizar_entrada(nlp, palabras):
 # ── Arquitectura ─────────────────────────────────────────────────────────────
 
 class Encoder(nn.Module):
-    def __init__(self, input_size, hidden_size=HIDDEN_SIZE):
+    def __init__(self, input_size, hidden_size=HIDDEN_SIZE, dropout=DROPOUT):
         super().__init__()
         self.hidden_size = hidden_size
         self.gru = nn.GRU(input_size, hidden_size, bidirectional=True, batch_first=True)
         self.reduce_hidden = nn.Linear(hidden_size * 2, hidden_size)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, lengths):
+        x = self.dropout(x)
         packed = nn.utils.rnn.pack_padded_sequence(
             x, lengths, batch_first=True, enforce_sorted=False
         )
@@ -139,15 +143,16 @@ class Attention(nn.Module):
         return contexto, pesos
 
 class Decoder(nn.Module):
-    def __init__(self, vocab_size, hidden_size=HIDDEN_SIZE, emb_size=EMB_SIZE):
+    def __init__(self, vocab_size, hidden_size=HIDDEN_SIZE, emb_size=EMB_SIZE, dropout=DROPOUT):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, emb_size, padding_idx=0)
         self.attention = Attention(hidden_size)
         self.gru = nn.GRU(emb_size + hidden_size * 2, hidden_size, batch_first=True)
         self.out = nn.Linear(hidden_size * 3 + emb_size, vocab_size)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, token_entrada, hidden, encoder_outputs, mask):
-        embedded = self.embedding(token_entrada).unsqueeze(1)
+        embedded = self.dropout(self.embedding(token_entrada).unsqueeze(1))
         contexto, pesos = self.attention(hidden, encoder_outputs, mask)
         entrada_gru = torch.cat([embedded, contexto], dim=2)
         salida, hidden = self.gru(entrada_gru, hidden)
@@ -240,8 +245,11 @@ def entrenar():
     optimizador = torch.optim.Adam(
         list(encoder.parameters()) + list(decoder.parameters()), lr=1e-3
     )
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizador, mode="min", factor=0.5, patience=4
+    )
     pad_idx = vocab_salida.tok2idx[PAD]
-    criterio = nn.CrossEntropyLoss(ignore_index=pad_idx)
+    criterio = nn.CrossEntropyLoss(ignore_index=pad_idx, label_smoothing=0.1)
 
     def hacer_batch(muestras):
         muestras = sorted(muestras, key=lambda m: len(m[0]), reverse=True)
@@ -262,7 +270,7 @@ def entrenar():
             mask[i, :l] = 1
         return x, lengths_in, mask, y
 
-    EPOCHS = 60
+    EPOCHS = 80
     BATCH_SIZE = 32
     TEACHER_FORCING = 0.5
 
@@ -318,8 +326,11 @@ def entrenar():
                 val_loss_total += (loss.item() / pasos) * len(batch)
             loss_val = val_loss_total / max(len(val_set), 1)
 
+        scheduler.step(loss_val)
+
         if epoch % 5 == 0 or epoch == 1 or epoch == EPOCHS:
-            print(f"Epoch {epoch:3d} | train_loss={loss_train:.4f} | val_loss={loss_val:.4f}")
+            lr_actual = optimizador.param_groups[0]["lr"]
+            print(f"Epoch {epoch:3d} | train_loss={loss_train:.4f} | val_loss={loss_val:.4f} | lr={lr_actual:.2e}")
 
         if loss_val < mejor_val_loss:
             mejor_val_loss = loss_val
