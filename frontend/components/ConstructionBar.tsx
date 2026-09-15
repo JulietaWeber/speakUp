@@ -1,16 +1,43 @@
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useAudioPlayer, setAudioModeAsync } from "expo-audio";
 import { useConstruction } from "../context/ConstructionContext";
-import { armarFrase } from "../services/api";
+import { armarFrase, generarAudio } from "../services/api";
 
 export default function ConstructionBar() {
   const { palabras, borrarUltimaPalabra, limpiar } = useConstruction();
   const [seleccionada, setSeleccionada] = useState(false);
 
+  const player = useAudioPlayer(null);
+
+  useEffect(() => {
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: false,
+    }).catch((error) => {
+      console.log("ERROR CONFIGURANDO AUDIO:", error);
+    });
+  }, []);
+
   useEffect(() => {
     setSeleccionada(false);
   }, [palabras]);
+
+  const reproducirAudio = (audioUrl: string) => {
+    try {
+      console.log("REPRODUCIENDO AUDIO:");
+      console.log(audioUrl);
+
+      player.replace(audioUrl);
+      player.volume = 1;
+      player.play();
+
+      console.log("AUDIO REPRODUCIÉNDOSE");
+    } catch (error) {
+      console.log("ERROR REPRODUCIENDO AUDIO:", error);
+    }
+  };
 
   const confirmarOracion = async () => {
     if (palabras.length === 0) return;
@@ -22,7 +49,6 @@ export default function ConstructionBar() {
     );
 
     const token = await AsyncStorage.getItem("token");
-
     const usuarioGuardado = await AsyncStorage.getItem("usuario");
 
     const usuario = usuarioGuardado
@@ -31,6 +57,7 @@ export default function ConstructionBar() {
 
     if (!usuario || !token) {
       console.log("No hay sesión iniciada");
+      setSeleccionada(false);
       return;
     }
 
@@ -41,11 +68,30 @@ export default function ConstructionBar() {
         token
       );
 
-      console.log("Frase creada:", respuesta);
+      console.log("=================================");
+      console.log("FRASE CREADA:");
+      console.log(respuesta);
+      console.log("=================================");
 
-      // No limpiamos la oración después de confirmar
+      const audio = await generarAudio(
+        respuesta.id_frase,
+        respuesta.texto,
+        token
+      );
+
+      console.log("=================================");
+      console.log("AUDIO GENERADO:");
+      console.log(audio);
+      console.log("=================================");
+
+      if (audio?.audio_url) {
+        reproducirAudio(audio.audio_url);
+      }
     } catch (error) {
-      console.log("Error enviando frase:", error);
+      console.log(
+        "Error enviando frase, generando audio o reproduciendo:",
+        error
+      );
     } finally {
       setSeleccionada(false);
     }
@@ -64,8 +110,6 @@ export default function ConstructionBar() {
         style={styles.wordsArea}
       >
         <View style={styles.topRow}>
-
-          {/* Texto de ayuda o palabras */}
           <View style={styles.wordsContainer}>
             {palabras.length === 0 ? (
               <Text style={styles.placeholderText}>
@@ -78,7 +122,6 @@ export default function ConstructionBar() {
             )}
           </View>
 
-          {/* Cruz: solamente aparece si hay pictogramas */}
           {palabras.length > 0 && (
             <TouchableOpacity
               onPress={borrarUltimaPalabra}
@@ -87,11 +130,9 @@ export default function ConstructionBar() {
               <Text style={styles.deleteText}>✕</Text>
             </TouchableOpacity>
           )}
-
         </View>
       </TouchableOpacity>
 
-      {/* Reiniciar oración: solamente aparece si hay pictogramas */}
       {palabras.length > 0 && (
         <TouchableOpacity
           onPress={limpiar}
@@ -134,7 +175,6 @@ const styles = StyleSheet.create({
     minHeight: 45,
   },
 
-  // Mensaje cuando no hay pictogramas
   placeholderText: {
     fontSize: 14,
     color: "#8A969A",
@@ -142,13 +182,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
 
-  // Palabras de la oración
   text: {
     fontSize: 22,
     color: "#356879",
   },
 
-  // Botón para borrar la última palabra
   deleteButton: {
     width: 40,
     height: 40,
@@ -165,7 +203,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 
-  // Botón reiniciar
   clearButton: {
     marginTop: 15,
     backgroundColor: "#EF4444",
