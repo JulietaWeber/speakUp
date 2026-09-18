@@ -1,30 +1,19 @@
 """
 Entrena un modelo de corrección de frases para CAA: recibe palabras sueltas
 seleccionadas por el usuario (en cualquier orden) y aprende a producir la
-frase natural en español correspondiente, usando EXACTAMENTE esas palabras
-(reordenadas y conjugadas) más el glue gramatical mínimo (artículos,
-preposiciones, pronombres, etc. - ver gramatica.py).
+frase natural en español correspondiente.
 
-Arquitectura: seq2seq encoder-decoder con atención (Bahdanau) sobre GRUs de
-una sola capa y una sola dirección, liviano para que la inferencia sea
-rápida en el servidor:
+Arquitectura: seq2seq encoder-decoder con atención (Bahdanau) sobre GRUs.
 - Encoder: cada palabra de entrada se representa con su vector de spaCy
   (embeddings preentrenados en español). Esto es clave para generalizar a
   frases nunca vistas: si el usuario elige un sinónimo o una palabra nueva,
   su vector va a estar cerca de palabras que el modelo sí vio entrenando.
 - Decoder: GRU con atención que genera la frase palabra por palabra a partir
   de un vocabulario de salida aprendido del dataset.
-- Restricción de vocabulario en inferencia: en cada paso de generación se
-  enmascaran (logit = -inf) todos los tokens del vocabulario que no sean ni
-  palabras funcionales cerradas ni derivados de alguna palabra de entrada.
-  Así el modelo puede reordenar y conjugar, pero estructuralmente NO puede
-  inventar contenido nuevo, incluso si nunca vio ese input exacto en el
-  dataset de entrenamiento.
 
-Se ejecuta como script para entrenar y guardar los pesos en
-modelo_correccion.pt. Las clases (Encoder, Attention, Decoder) y la función
-de inferencia `corregir_frase` se importan desde funciones.py para servir el
-modelo en la API.
+Se ejecuta como script para entrenar y guardar los pesos en modelo_correccion.pt.
+Las clases (Encoder, Attention, Decoder) y la función de inferencia
+`corregir_frase` se importan desde funciones.py para servir el modelo en la API.
 """
 
 import json
@@ -35,8 +24,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from gramatica import lema, es_permitida
-
 random.seed(42)
 torch.manual_seed(42)
 
@@ -44,11 +31,11 @@ DEVICE = torch.device("cpu")
 
 PAD, SOS, EOS, UNK = "<pad>", "<sos>", "<eos>", "<unk>"
 
-HIDDEN_SIZE = 64
-EMB_SIZE = 48
-DROPOUT = 0.15
-MAX_LEN_SALIDA = 20  # tope de tokens al generar, evita loops infinitos (el
-                      # dataset actual no supera 15 tokens de salida)
+HIDDEN_SIZE = 160
+EMB_SIZE = 128
+DROPOUT = 0.2
+MAX_LEN_SALIDA = 32  # tope de tokens al generar, evita loops infinitos (subido
+                     # de 20 a 32 para no truncar frases largas y complejas)
 
 # ── Tokenización de la frase de salida ──────────────────────────────────────
 # Separamos palabras y signos de puntuación como tokens distintos para que el
@@ -119,15 +106,13 @@ def vectorizar_entrada(nlp, palabras):
     return np.stack([vector_palabra(nlp, p) for p in palabras])
 
 # ── Arquitectura ─────────────────────────────────────────────────────────────
-# Encoder unidireccional de una sola capa (más liviano que un GRU bidireccional
-# de 2 capas: la mitad de los parámetros recurrentes y la mitad del cómputo en
-# cada forward pass), suficiente para bolsas de palabras cortas como las de CAA.
 
 class Encoder(nn.Module):
     def __init__(self, input_size, hidden_size=HIDDEN_SIZE, dropout=DROPOUT):
         super().__init__()
         self.hidden_size = hidden_size
-        self.gru = nn.GRU(input_size, hidden_size, batch_first=True)
+        self.gru = nn.GRU(input_size, hidden_size, bidirectional=True, batch_first=True)
+        self.reduce_hidden = nn.Linear(hidden_size * 2, hidden_size)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, lengths):
@@ -137,12 +122,14 @@ class Encoder(nn.Module):
         )
         outputs, hidden = self.gru(packed)
         outputs, _ = nn.utils.rnn.pad_packed_sequence(outputs, batch_first=True)
-        return outputs, hidden
+        hidden_cat = torch.cat([hidden[0], hidden[1]], dim=1)
+        hidden_reducido = torch.tanh(self.reduce_hidden(hidden_cat)).unsqueeze(0)
+        return outputs, hidden_reducido
 
 class Attention(nn.Module):
     def __init__(self, hidden_size=HIDDEN_SIZE):
         super().__init__()
-        self.attn = nn.Linear(hidden_size * 2, hidden_size)
+        self.attn = nn.Linear(hidden_size * 3, hidden_size)
         self.v = nn.Linear(hidden_size, 1, bias=False)
 
     def forward(self, decoder_hidden, encoder_outputs, mask):
@@ -160,8 +147,8 @@ class Decoder(nn.Module):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, emb_size, padding_idx=0)
         self.attention = Attention(hidden_size)
-        self.gru = nn.GRU(emb_size + hidden_size, hidden_size, batch_first=True)
-        self.out = nn.Linear(hidden_size * 2 + emb_size, vocab_size)
+        self.gru = nn.GRU(emb_size + hidden_size * 2, hidden_size, batch_first=True)
+        self.out = nn.Linear(hidden_size * 3 + emb_size, vocab_size)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, token_entrada, hidden, encoder_outputs, mask):
@@ -172,39 +159,12 @@ class Decoder(nn.Module):
         logits = self.out(torch.cat([salida.squeeze(1), contexto.squeeze(1), embedded.squeeze(1)], dim=1))
         return logits, hidden, pesos
 
-# ── Restricción de vocabulario en inferencia ─────────────────────────────────
-
-def _mascara_vocabulario(nlp, vocab_salida, palabras):
-    """Devuelve un tensor (vocab,) con 0.0 en los tokens que el decoder tiene
-    permitido generar y -inf en el resto: palabras funcionales cerradas
-    (gramatica.FUNCIONALES), puntuación, <eos>, y cualquier token cuyo lema
-    coincida con el de alguna palabra de entrada. Esto es lo que impide que
-    el modelo "invente" contenido que el usuario no seleccionó, incluso para
-    combinaciones de palabras que nunca vio en el dataset de entrenamiento."""
-    lemas_entrada = {lema(nlp, p) for p in palabras}
-    mask = torch.full((len(vocab_salida),), float("-inf"))
-    for idx, tok in enumerate(vocab_salida.idx2tok):
-        if tok in (PAD, SOS, UNK):
-            continue
-        if tok == EOS:
-            mask[idx] = 0.0
-            continue
-        if es_permitida(nlp, tok, lemas_entrada):
-            mask[idx] = 0.0
-    return mask
-
 # ── Inferencia (usada acá para evaluar y en funciones.py para servir) ────────
 
 def corregir_frase(nlp, encoder, decoder, vocab_salida, palabras):
-    """Arma una frase gramaticalmente correcta en español a partir de
-    `palabras`, reordenándolas y conjugándolas, pero sin agregar contenido
-    que el usuario no seleccionó (ver `_mascara_vocabulario`).
-
-    Si `palabras` tiene un solo elemento no hay nada que corregir ni
-    reordenar: se devuelve tal cual."""
-    if len(palabras) <= 1:
-        return palabras[0] if palabras else ""
-
+    """Decodificación greedy que bloquea bigramas ya generados, para evitar
+    que el modelo entre en un loop de repetición (p. ej. "estoy triste y
+    estoy triste") en frases de entrada poco comunes."""
     encoder.eval()
     decoder.eval()
     eos_idx = vocab_salida.tok2idx[EOS]
@@ -215,7 +175,6 @@ def corregir_frase(nlp, encoder, decoder, vocab_salida, palabras):
 
         encoder_outputs, hidden = encoder(x, lengths)
         mask = torch.ones(1, encoder_outputs.size(1))
-        mask_vocab = _mascara_vocabulario(nlp, vocab_salida, palabras)
 
         token = torch.tensor([vocab_salida.tok2idx[SOS]])
         prev_id = vocab_salida.tok2idx[SOS]
@@ -224,18 +183,15 @@ def corregir_frase(nlp, encoder, decoder, vocab_salida, palabras):
 
         for _ in range(MAX_LEN_SALIDA):
             logits, hidden, _ = decoder(token, hidden, encoder_outputs, mask)
-            logits = logits[0] + mask_vocab
-            orden = torch.argsort(logits, descending=True)
+            orden = torch.argsort(logits[0], descending=True)
 
             elegido = None
             for candidato in orden.tolist():
-                if logits[candidato].item() == float("-inf"):
-                    break  # ya no quedan candidatos permitidos
                 if candidato == eos_idx or (prev_id, candidato) not in bigramas_vistos:
                     elegido = candidato
                     break
             if elegido is None:
-                break
+                elegido = orden[0].item()
 
             if elegido == eos_idx:
                 break
@@ -395,7 +351,7 @@ def entrenar():
     print("Modelo guardado en modelo_correccion.pt\n")
 
     # ── Prueba rápida con frases variadas (algunas no vistas en el dataset) ──
-    print("-- Prueba de correccion --")
+    print("── Prueba de corrección ──")
     checkpoint = torch.load("modelo_correccion.pt", weights_only=False)
     vocab_final = Vocabulario([])
     vocab_final.tok2idx = checkpoint["tok2idx"]
@@ -410,9 +366,8 @@ def entrenar():
         ["doler", "cabeza"],
         ["escuela", "no", "querer", "ir"],
         ["amigo", "jugar", "querer", "parque"],
-        ["yo", "querer", "comer", "pizza", "noche"],
+        ["colectivo", "perdí"],
         ["triste", "estar", "hoy"],
-        ["agua"],
     ]
     for palabras in ejemplos_prueba:
         frase = corregir_frase(nlp, encoder_final, decoder_final, vocab_final, palabras)
