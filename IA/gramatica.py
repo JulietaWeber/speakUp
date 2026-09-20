@@ -52,6 +52,35 @@ def lema(nlp, palabra):
     return _cache_lemas[clave]
 
 
+def palabras_obligatorias(palabras):
+    """Palabras de la entrada que la frase generada NO puede omitir: todo lo
+    que no sea funcional, más las negaciones (omitirlas invierte el sentido).
+    Los pronombres/artículos/preposiciones de la entrada sí pueden elidirse
+    ("yo quiero" -> "Quiero")."""
+    obligatorias_funcionales = {"no", "ni", "tampoco"}
+    return [p.lower() for p in palabras
+            if p.lower() not in FUNCIONALES or p.lower() in obligatorias_funcionales]
+
+
+def token_cubre(nlp, token, palabra):
+    """True si `token` (de la salida) representa a `palabra` (de la entrada),
+    directamente o por lema (conjugación / plural)."""
+    if not token.isalpha():
+        return False
+    tl = token.lower()
+    lema_palabra = lema(nlp, palabra)
+    return tl in (palabra, lema_palabra) or lema(nlp, tl) in (palabra, lema_palabra)
+
+
+def cubre_entrada(nlp, tokens_salida, palabras):
+    """True si la frase generada (`tokens_salida`) contiene TODAS las palabras
+    obligatorias de la entrada (ver `palabras_obligatorias`)."""
+    return all(
+        any(token_cubre(nlp, t, p) for t in tokens_salida)
+        for p in palabras_obligatorias(palabras)
+    )
+
+
 def es_permitida(nlp, token, lemas_entrada):
     """True si `token` (una palabra de la frase de salida) es una palabra
     funcional cerrada o comparte lema con alguna de las palabras de entrada

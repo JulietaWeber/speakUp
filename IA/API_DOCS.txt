@@ -91,6 +91,15 @@ Recibe las palabras sueltas que el usuario fue seleccionando en su tablero
 pero redactada de forma natural y gramaticalmente correcta en español, lista
 para mostrarse o leerse en voz alta.
 
+Reglas:
+- Una sola palabra: se devuelve esa misma palabra, sin cambios.
+- Varias palabras: la frase usa exactamente esas palabras (reordenadas y
+  conjugadas), más a lo sumo artículos, preposiciones o conectores necesarios.
+  Nunca agrega verbos, sustantivos ni adjetivos que el usuario no eligió.
+- Si el modelo no logra armar una frase que use todas las palabras (por
+  ejemplo, palabras que nunca vio), se devuelven las palabras recibidas, en
+  el mismo orden, con mayúscula inicial y punto final.
+
 Body (JSON):
 - palabras (lista de texto): las palabras seleccionadas por el usuario, en
   el orden en que las fue tocando.

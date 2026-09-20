@@ -35,7 +35,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from gramatica import lema, es_permitida
+from gramatica import lema, es_permitida, cubre_entrada, palabras_obligatorias, token_cubre
 
 random.seed(42)
 torch.manual_seed(42)
@@ -202,6 +202,7 @@ def corregir_frase(nlp, encoder, decoder, vocab_salida, palabras):
 
     Si `palabras` tiene un solo elemento no hay nada que corregir ni
     reordenar: se devuelve tal cual."""
+    palabras = [p.strip() for p in palabras if isinstance(p, str) and p.strip()]
     if len(palabras) <= 1:
         return palabras[0] if palabras else ""
 
@@ -221,6 +222,7 @@ def corregir_frase(nlp, encoder, decoder, vocab_salida, palabras):
         prev_id = vocab_salida.tok2idx[SOS]
         bigramas_vistos = set()
         ids_generados = []
+        pendientes = set(palabras_obligatorias(palabras))
 
         for _ in range(MAX_LEN_SALIDA):
             logits, hidden, _ = decoder(token, hidden, encoder_outputs, mask)
@@ -231,7 +233,12 @@ def corregir_frase(nlp, encoder, decoder, vocab_salida, palabras):
             for candidato in orden.tolist():
                 if logits[candidato].item() == float("-inf"):
                     break  # ya no quedan candidatos permitidos
-                if candidato == eos_idx or (prev_id, candidato) not in bigramas_vistos:
+                if candidato == eos_idx:
+                    if pendientes:
+                        continue  # no se puede terminar sin usar todas las palabras
+                    elegido = candidato
+                    break
+                if (prev_id, candidato) not in bigramas_vistos:
                     elegido = candidato
                     break
             if elegido is None:
@@ -242,13 +249,25 @@ def corregir_frase(nlp, encoder, decoder, vocab_salida, palabras):
 
             bigramas_vistos.add((prev_id, elegido))
             ids_generados.append(elegido)
+            tok_elegido = vocab_salida.idx2tok[elegido]
+            pendientes = {p for p in pendientes if not token_cubre(nlp, tok_elegido, p)}
             prev_id = elegido
             token = torch.tensor([elegido])
 
         tokens = vocab_salida.decode(ids_generados)
-        if not tokens:
-            return " ".join(palabras).capitalize() + "."
+        # Si el modelo no usó todas las palabras del usuario (típico cuando hay
+        # palabras que nunca vio), su salida no es confiable: es preferible
+        # devolver las palabras tal cual las recibimos antes que una frase
+        # con contenido perdido o inventado.
+        if not tokens or not cubre_entrada(nlp, tokens, palabras):
+            return _frase_literal(palabras)
         return detokenizar_salida(tokens)
+
+def _frase_literal(palabras):
+    """Fallback determinista: exactamente las palabras recibidas, en el orden
+    recibido, sin agregar nada salvo mayúscula inicial y punto final."""
+    texto = " ".join(palabras)
+    return texto[0].upper() + texto[1:] + "."
 
 # ── Entrenamiento ─────────────────────────────────────────────────────────────
 
