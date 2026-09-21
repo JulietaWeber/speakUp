@@ -40,6 +40,10 @@ _encoder_correccion.eval()
 _decoder_correccion.eval()
 print("Modelo de corrección cargado\n")
 
+# Precalentar: la primera corrección lematiza todo el vocabulario de salida
+# (~segundos); mejor pagar ese costo al arrancar y no en la primera request.
+_corregir_frase_modelo(nlp, _encoder_correccion, _decoder_correccion, _vocab_correccion, ["querer", "comer"])
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def palabra_a_vector(palabra):

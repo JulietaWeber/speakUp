@@ -35,7 +35,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from gramatica import lema, es_permitida, cubre_entrada, palabras_obligatorias, token_cubre
+from collections import Counter
+
+from gramatica import (
+    lema, es_permitida, cubre_entrada, bien_formada, palabras_obligatorias, token_cubre,
+    CONJUNCIONES, FUNCIONALES,
+)
 
 random.seed(42)
 torch.manual_seed(42)
@@ -43,6 +48,7 @@ torch.manual_seed(42)
 DEVICE = torch.device("cpu")
 
 PAD, SOS, EOS, UNK = "<pad>", "<sos>", "<eos>", "<unk>"
+FIN_DE_FRASE = {".", "!", "?"}
 
 HIDDEN_SIZE = 64
 EMB_SIZE = 48
@@ -201,11 +207,91 @@ def corregir_frase(nlp, encoder, decoder, vocab_salida, palabras):
     que el usuario no seleccionó (ver `_mascara_vocabulario`).
 
     Si `palabras` tiene un solo elemento no hay nada que corregir ni
-    reordenar: se devuelve tal cual."""
+    reordenar: se devuelve tal cual. Si el modelo no logra usar todas las
+    palabras de una sola vez (frases largas), se parte la frase en tramos, se
+    corrige cada tramo y se unen; un tramo que no se puede armar queda literal."""
     palabras = [p.strip() for p in palabras if isinstance(p, str) and p.strip()]
     if len(palabras) <= 1:
         return palabras[0] if palabras else ""
+    frase, _ = _corregir_recursivo(nlp, encoder, decoder, vocab_salida, tuple(palabras), {})
+    return frase
 
+def _corregir_recursivo(nlp, encoder, decoder, vocab_salida, palabras, memo):
+    """Devuelve (frase, palabras_sin_procesar): cuántas palabras quedaron
+    literales, sin que el modelo las conjugue. Se usa para elegir el corte que
+    mejor aprovecha al modelo."""
+    if palabras in memo:
+        return memo[palabras]
+    frase = _generar(nlp, encoder, decoder, vocab_salida, list(palabras))
+    # El modelo rinde mucho mejor con frases cortas (casi todo su entrenamiento
+    # tiene <= 5 palabras): en las largas, aunque devuelva algo válido, se
+    # prefiere partir si todos los tramos pueden armarse con el modelo.
+    corte = None
+    if len(palabras) >= 4 and (frase is None or len(palabras) > MAX_PALABRAS_DIRECTO):
+        corte = _mejor_corte(nlp, encoder, decoder, vocab_salida, palabras, memo)
+    if frase is not None and (corte is None or corte[1] > 0):
+        resultado = (frase, 0)
+    elif corte is not None:
+        resultado = corte
+    else:
+        resultado = (_frase_literal(palabras), len(palabras))
+    memo[palabras] = resultado
+    return resultado
+
+MAX_PALABRAS_DIRECTO = 5
+
+def _mejor_corte(nlp, encoder, decoder, vocab_salida, palabras, memo):
+    """Prueba los cortes candidatos y devuelve (frase, palabras_sin_procesar)
+    del que deja menos palabras literales."""
+    mejor = None
+    for izq, conector, der in _cortes(nlp, palabras):
+        f_izq, lit_izq = _sub(nlp, encoder, decoder, vocab_salida, izq, memo)
+        f_der, lit_der = _sub(nlp, encoder, decoder, vocab_salida, der, memo)
+        union = f" {conector} " if conector else ", "
+        candidato = (f_izq.rstrip(".") + union + f_der[0].lower() + f_der[1:], lit_izq + lit_der)
+        if mejor is None or candidato[1] < mejor[1]:
+            mejor = candidato
+        if mejor[1] == 0:
+            break
+    return mejor
+
+def _sub(nlp, encoder, decoder, vocab_salida, palabras, memo):
+    if len(palabras) == 1:
+        return _frase_literal(palabras), 1
+    return _corregir_recursivo(nlp, encoder, decoder, vocab_salida, palabras, memo)
+
+MAX_CORTES = 3  # candidatos de corte a probar por tramo (acota la latencia)
+
+def _cortes(nlp, palabras):
+    """Candidatos para partir una frase que el modelo no pudo armar entera,
+    como (izquierda, conector, derecha), del más al menos prometedor.
+    Si hay conjunciones (porque, y, pero...) se corta en ellas y la conjunción
+    se conserva como nexo; si no, se corta antes de un verbo o, en su defecto,
+    en cualquier posición. En todos los casos, cerca del medio primero."""
+    n = len(palabras)
+    medio = n / 2
+    conj = [i for i in range(1, n - 1) if palabras[i].lower() in CONJUNCIONES]
+    if conj:
+        orden = sorted(conj, key=lambda k: abs(k - medio))[:MAX_CORTES]
+        return [(palabras[:i], palabras[i], palabras[i + 1:]) for i in orden]
+    posibles = list(range(2, n - 1))
+    verbos = [i for i in posibles if _es_verbo(nlp, palabras[i])]
+    orden = sorted(verbos, key=lambda k: abs(k - medio))[:MAX_CORTES]
+    orden += [i for i in sorted(posibles, key=lambda k: abs(k - medio)) if i not in orden][: MAX_CORTES - len(orden)]
+    return [(palabras[:i], None, palabras[i:]) for i in orden]
+
+_cache_verbo = {}
+
+def _es_verbo(nlp, palabra):
+    clave = palabra.lower()
+    if clave not in _cache_verbo:
+        doc = nlp(clave)
+        _cache_verbo[clave] = bool(len(doc)) and doc[0].pos_ in ("VERB", "AUX")
+    return _cache_verbo[clave]
+
+def _generar(nlp, encoder, decoder, vocab_salida, palabras):
+    """Genera la frase con el modelo. Devuelve None si el resultado no usa
+    todas las palabras obligatorias de la entrada."""
     encoder.eval()
     decoder.eval()
     eos_idx = vocab_salida.tok2idx[EOS]
@@ -222,9 +308,21 @@ def corregir_frase(nlp, encoder, decoder, vocab_salida, palabras):
         prev_id = vocab_salida.tok2idx[SOS]
         bigramas_vistos = set()
         ids_generados = []
-        pendientes = set(palabras_obligatorias(palabras))
+        requeridas = palabras_obligatorias(palabras)
+        pendientes = set(requeridas)
+        # Cada palabra de contenido se puede usar tantas veces como el usuario
+        # la eligió (evita "tengo frío, tengo frío"); las funcionales, hasta 2.
+        restante = dict(Counter(requeridas))
+        usos_funcionales = Counter()
+        cubre_cache = {}
 
-        for _ in range(MAX_LEN_SALIDA):
+        def palabras_que_cubre(tok):
+            if tok not in cubre_cache:
+                cubre_cache[tok] = [p for p in restante if token_cubre(nlp, tok, p)]
+            return cubre_cache[tok]
+
+        max_len = min(MAX_LEN_SALIDA, 2 * len(palabras) + 4)
+        for _ in range(max_len):
             logits, hidden, _ = decoder(token, hidden, encoder_outputs, mask)
             logits = logits[0] + mask_vocab
             orden = torch.argsort(logits, descending=True)
@@ -238,29 +336,41 @@ def corregir_frase(nlp, encoder, decoder, vocab_salida, palabras):
                         continue  # no se puede terminar sin usar todas las palabras
                     elegido = candidato
                     break
-                if (prev_id, candidato) not in bigramas_vistos:
-                    elegido = candidato
-                    break
-            if elegido is None:
+                tok = vocab_salida.idx2tok[candidato]
+                if tok in FIN_DE_FRASE and pendientes:
+                    continue  # no cerrar la frase antes de usar todas las palabras
+                if (prev_id, candidato) in bigramas_vistos:
+                    continue
+                cubre = palabras_que_cubre(tok)
+                if any(restante[p] == 0 for p in cubre):
+                    continue  # ya se usó todas las veces que el usuario la eligió
+                if not cubre and tok.lower() in FUNCIONALES and usos_funcionales[tok.lower()] >= 2:
+                    continue
+                elegido = candidato
                 break
-
-            if elegido == eos_idx:
+            if elegido is None or elegido == eos_idx:
                 break
 
             bigramas_vistos.add((prev_id, elegido))
             ids_generados.append(elegido)
             tok_elegido = vocab_salida.idx2tok[elegido]
-            pendientes = {p for p in pendientes if not token_cubre(nlp, tok_elegido, p)}
+            cubre = palabras_que_cubre(tok_elegido)
+            for p in cubre:
+                restante[p] -= 1
+                pendientes.discard(p)
+            if not cubre and tok_elegido.lower() in FUNCIONALES:
+                usos_funcionales[tok_elegido.lower()] += 1
+            if tok_elegido in FIN_DE_FRASE:
+                break  # la frase termina en el primer punto: nada de texto extra
             prev_id = elegido
             token = torch.tensor([elegido])
 
         tokens = vocab_salida.decode(ids_generados)
-        # Si el modelo no usó todas las palabras del usuario (típico cuando hay
-        # palabras que nunca vio), su salida no es confiable: es preferible
-        # devolver las palabras tal cual las recibimos antes que una frase
-        # con contenido perdido o inventado.
-        if not tokens or not cubre_entrada(nlp, tokens, palabras):
-            return _frase_literal(palabras)
+        # Si el modelo no usó todas las palabras del usuario (típico en frases
+        # largas o con palabras que nunca vio), su salida no es confiable:
+        # mejor no devolverla que devolver una frase con contenido perdido.
+        if not tokens or not cubre_entrada(nlp, tokens, palabras) or not bien_formada(tokens):
+            return None
         return detokenizar_salida(tokens)
 
 def _frase_literal(palabras):
@@ -270,6 +380,31 @@ def _frase_literal(palabras):
     return texto[0].upper() + texto[1:] + "."
 
 # ── Entrenamiento ─────────────────────────────────────────────────────────────
+
+def _pares_compuestos(pares, cantidad):
+    """Genera ejemplos largos uniendo dos pares (entrada, salida) del dataset:
+    entrada = palabras de A + conector (si es una palabra) + palabras de B;
+    salida = A sin punto + conector + B con minúscula inicial."""
+    simples = [
+        (pin, pout) for pin, pout in pares
+        if len(pin) <= 5 and pout[-1] == "." and pout[0].isalpha() and "¿" not in pout
+    ]
+    conectores = [("y", ["y"], ["y"]), ("porque", ["porque"], ["porque"]), (",", [], [","])]
+    pesos = [0.4, 0.3, 0.3]
+    compuestos = []
+    intentos = 0
+    while len(compuestos) < cantidad and intentos < cantidad * 20:
+        intentos += 1
+        (a_in, a_out), (b_in, b_out) = random.sample(simples, 2)
+        _, extra_in, extra_out = random.choices(conectores, pesos)[0]
+        if "porque" in a_in or "porque" in b_in or set(a_in) & set(b_in):
+            continue
+        entrada = a_in + extra_in + b_in
+        if len(entrada) > 10:
+            continue
+        salida = a_out[:-1] + extra_out + [b_out[0].lower()] + b_out[1:]
+        compuestos.append((entrada, salida))
+    return compuestos
 
 def entrenar():
     import spacy
@@ -285,7 +420,19 @@ def entrenar():
         for linea in f:
             par = json.loads(linea)
             pares.append((par["input"].split(), tokenizar_salida(par["output"])))
-    print(f"Pares cargados: {len(pares)}\n")
+    print(f"Pares cargados: {len(pares)}")
+
+    # Solo se entrena con ejemplos que usan TODAS las palabras de la entrada:
+    # los que descartan palabras le enseñarían al modelo justo lo que la API
+    # no debe hacer (ver gramatica.cubre_entrada).
+    pares = [(pin, pout) for pin, pout in pares if cubre_entrada(nlp, pout, pin)]
+    print(f"Pares que respetan todas las palabras: {len(pares)}")
+
+    # Aumentación con frases largas: el dataset casi no tiene entradas de 6+
+    # palabras, y con esas el modelo no generaliza. Se unen dos pares reales
+    # con "y", "porque" o coma, conservando el orden de cada cláusula.
+    pares += _pares_compuestos(pares, cantidad=3000)
+    print(f"Con frases compuestas: {len(pares)}\n")
 
     vocab_salida = Vocabulario([out for _, out in pares])
     print(f"Vocabulario de salida: {len(vocab_salida)} tokens\n")

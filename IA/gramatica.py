@@ -36,6 +36,62 @@ FUNCIONALES = {
     "no", "muy", "más", "menos", "tan", "también", "tampoco", "ya",
 }
 
+# Funcionales que SÍ cambian el significado si se agregan (negación,
+# intensidad, causa, contraste...): solo se pueden generar si el usuario las
+# eligió. El resto de FUNCIONALES (artículos, preposiciones, "y", "que",
+# pronombres, posesivos, demostrativos) es glue puro y se puede agregar.
+SOLO_SI_EN_ENTRADA = {
+    "no", "ni", "tampoco", "muy", "más", "menos", "tan", "ya", "también",
+    "pero", "porque", "aunque", "sino", "si", "cuando", "pues", "o", "u",
+    "sin", "contra", "desde", "hasta", "tras", "ante", "bajo", "sobre",
+    "según", "entre", "hacia",
+    # pronombres sujeto: inventarlos introduce un referente que el usuario no
+    # eligió ("ella"); el sujeto ya va implícito en la conjugación del verbo.
+    "yo", "tú", "vos", "usted", "él", "ella", "nosotros", "nosotras",
+    "ustedes", "ellos", "ellas",
+}
+
+_DETERMINANTES = {
+    "el", "la", "los", "las", "un", "una", "unos", "unas", "al", "del",
+    "mi", "mis", "tu", "tus", "su", "sus", "nuestro", "nuestra", "nuestros",
+    "nuestras", "este", "esta", "estos", "estas", "ese", "esa", "esos", "esas",
+}
+_PREPOSICIONES = {
+    "a", "ante", "bajo", "con", "contra", "de", "desde", "en", "entre",
+    "hacia", "hasta", "para", "por", "según", "sin", "sobre", "tras",
+}
+_NEXOS = {"y", "e", "o", "u", "que", "porque", "pero", "si", "cuando", "como", "aunque", "pues"}
+_CIERRES = {".", "!", "?", "¿", "¡"}
+_CLITICOS = {"me", "te", "se", "nos", "le", "les"}
+_PRONOMBRES_SUJETO = {"yo", "tú", "vos", "usted", "él", "ella", "nosotros", "nosotras", "ustedes", "ellos", "ellas"}
+_DETERMINANTES_MASC_SING = {"el", "al", "del", "un", "mi", "tu", "su"}
+_NO_TERMINA =_DETERMINANTES | _PREPOSICIONES | _NEXOS | {"muy", "más", "menos", "tan", "me", "te", "se", "nos", "le", "les"}
+
+
+def bien_formada(tokens):
+    """Chequeo estructural mínimo sobre la salida del modelo: rechaza frases
+    colgadas ("Voy a la.", "Quiero mi la escuela", "por el,"): un determinante,
+    preposición, nexo o clítico no puede quedar al final de la frase o de un
+    tramo (antes de coma/punto), ni un determinante seguido de otro
+    determinante o de una preposición."""
+    toks = [t.lower() for t in tokens]
+    for i, t in enumerate(toks):
+        sig = toks[i + 1] if i + 1 < len(toks) else None
+        # Mayúscula en medio de la frase ("... en la Me al ..."): solo es
+        # válida al inicio o después de un punto / signo de cierre.
+        if i > 0 and tokens[i][:1].isupper() and toks[i - 1] not in _CIERRES:
+            return False
+        if t in _NO_TERMINA and (sig is None or not sig.isalpha()):
+            return False
+        if t in _DETERMINANTES and sig in (_DETERMINANTES | _PREPOSICIONES | _NEXOS | _PRONOMBRES_SUJETO):
+            return False
+        if t in _PREPOSICIONES and sig in (_NEXOS | _CLITICOS | _PRONOMBRES_SUJETO):
+            return False
+        if t in _CLITICOS and sig in _DETERMINANTES_MASC_SING:
+            return False
+    return True
+
+
 _cache_lemas = {}
 
 
@@ -52,14 +108,22 @@ def lema(nlp, palabra):
     return _cache_lemas[clave]
 
 
+# Lo único de la entrada que se puede omitir sin perder contenido: el pronombre
+# sujeto (se elide al conjugar: "yo quiero" -> "Quiero") y los artículos.
+# Conectores (porque, y, con, para...), negaciones y todo lo demás son
+# obligatorios: omitirlos cambia el significado de la frase.
+OMITIBLES = {
+    "yo", "tú", "vos", "usted", "él", "ella", "nosotros", "nosotras",
+    "ustedes", "ellos", "ellas",
+    "el", "la", "los", "las", "un", "una", "unos", "unas",
+}
+
+CONJUNCIONES = {"porque", "y", "e", "pero", "cuando", "si", "aunque", "pues", "o", "u", "ni", "sino"}
+
+
 def palabras_obligatorias(palabras):
-    """Palabras de la entrada que la frase generada NO puede omitir: todo lo
-    que no sea funcional, más las negaciones (omitirlas invierte el sentido).
-    Los pronombres/artículos/preposiciones de la entrada sí pueden elidirse
-    ("yo quiero" -> "Quiero")."""
-    obligatorias_funcionales = {"no", "ni", "tampoco"}
-    return [p.lower() for p in palabras
-            if p.lower() not in FUNCIONALES or p.lower() in obligatorias_funcionales]
+    """Palabras de la entrada que la frase generada NO puede omitir."""
+    return [p.lower() for p in palabras if p.lower() not in OMITIBLES]
 
 
 def token_cubre(nlp, token, palabra):
@@ -88,9 +152,11 @@ def es_permitida(nlp, token, lemas_entrada):
     if not token.isalpha():
         return True  # puntuación, siempre permitida
     tl = token.lower()
+    lm = lema(nlp, token)
+    if tl in SOLO_SI_EN_ENTRADA:
+        return tl in lemas_entrada or lm in lemas_entrada
     if tl in FUNCIONALES:
         return True
-    lm = lema(nlp, token)
     if lm in FUNCIONALES:
-        return True
+        return lm not in SOLO_SI_EN_ENTRADA or lm in lemas_entrada
     return lm in lemas_entrada
