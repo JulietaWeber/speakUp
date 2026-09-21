@@ -37,6 +37,11 @@ import torch.nn.functional as F
 
 from collections import Counter
 
+from conjugacion import (
+    componer_clausula, es_infinitivo, es_verbo, infinitivo_sin_gobierno,
+    tiene_verbo_conjugado,
+)
+
 from gramatica import (
     lema, es_permitida, cubre_entrada, bien_formada, palabras_obligatorias, token_cubre,
     CONJUNCIONES, FUNCIONALES,
@@ -213,40 +218,49 @@ def corregir_frase(nlp, encoder, decoder, vocab_salida, palabras):
     palabras = [p.strip() for p in palabras if isinstance(p, str) and p.strip()]
     if len(palabras) <= 1:
         return palabras[0] if palabras else ""
-    frase, _ = _corregir_recursivo(nlp, encoder, decoder, vocab_salida, tuple(palabras), {})
+    frase, _ = _corregir_recursivo(nlp, encoder, decoder, vocab_salida, tuple(palabras), False, {})
     return frase
 
-def _corregir_recursivo(nlp, encoder, decoder, vocab_salida, palabras, memo):
+def _corregir_recursivo(nlp, encoder, decoder, vocab_salida, palabras, causa, memo):
     """Devuelve (frase, palabras_sin_procesar): cuántas palabras quedaron
     literales, sin que el modelo las conjugue. Se usa para elegir el corte que
-    mejor aprovecha al modelo."""
-    if palabras in memo:
-        return memo[palabras]
+    mejor aprovecha al modelo. `causa` indica que el tramo viene después de
+    "porque" (afecta el tiempo verbal de componer_clausula)."""
+    clave = (palabras, causa)
+    if clave in memo:
+        return memo[clave]
     frase = _generar(nlp, encoder, decoder, vocab_salida, list(palabras))
+    if frase is None:
+        # El modelo no pudo (verbo sin conjugar, palabras que no conoce...):
+        # si es una cláusula simple, se arma por reglas conjugando el verbo.
+        frase_reglas = componer_clausula(nlp, palabras, causa)
+        if frase_reglas is not None:
+            memo[clave] = (frase_reglas, 0)
+            return memo[clave]
     # El modelo rinde mucho mejor con frases cortas (casi todo su entrenamiento
     # tiene <= 5 palabras): en las largas, aunque devuelva algo válido, se
     # prefiere partir si todos los tramos pueden armarse con el modelo.
     corte = None
     if len(palabras) >= 4 and (frase is None or len(palabras) > MAX_PALABRAS_DIRECTO):
-        corte = _mejor_corte(nlp, encoder, decoder, vocab_salida, palabras, memo)
+        corte = _mejor_corte(nlp, encoder, decoder, vocab_salida, palabras, causa, memo)
     if frase is not None and (corte is None or corte[1] > 0):
         resultado = (frase, 0)
     elif corte is not None:
         resultado = corte
     else:
         resultado = (_frase_literal(palabras), len(palabras))
-    memo[palabras] = resultado
+    memo[clave] = resultado
     return resultado
 
 MAX_PALABRAS_DIRECTO = 5
 
-def _mejor_corte(nlp, encoder, decoder, vocab_salida, palabras, memo):
+def _mejor_corte(nlp, encoder, decoder, vocab_salida, palabras, causa, memo):
     """Prueba los cortes candidatos y devuelve (frase, palabras_sin_procesar)
     del que deja menos palabras literales."""
     mejor = None
     for izq, conector, der in _cortes(nlp, palabras):
-        f_izq, lit_izq = _sub(nlp, encoder, decoder, vocab_salida, izq, memo)
-        f_der, lit_der = _sub(nlp, encoder, decoder, vocab_salida, der, memo)
+        f_izq, lit_izq = _sub(nlp, encoder, decoder, vocab_salida, izq, causa, memo)
+        f_der, lit_der = _sub(nlp, encoder, decoder, vocab_salida, der, conector == "porque", memo)
         union = f" {conector} " if conector else ", "
         candidato = (f_izq.rstrip(".") + union + f_der[0].lower() + f_der[1:], lit_izq + lit_der)
         if mejor is None or candidato[1] < mejor[1]:
@@ -255,12 +269,13 @@ def _mejor_corte(nlp, encoder, decoder, vocab_salida, palabras, memo):
             break
     return mejor
 
-def _sub(nlp, encoder, decoder, vocab_salida, palabras, memo):
+def _sub(nlp, encoder, decoder, vocab_salida, palabras, causa, memo):
     if len(palabras) == 1:
         return _frase_literal(palabras), 1
-    return _corregir_recursivo(nlp, encoder, decoder, vocab_salida, palabras, memo)
+    return _corregir_recursivo(nlp, encoder, decoder, vocab_salida, palabras, causa, memo)
 
 MAX_CORTES = 3  # candidatos de corte a probar por tramo (acota la latencia)
+NO_SEPARAR_DE = {"querer", "quiero", "poder", "necesitar", "deber", "saber", "soler", "intentar", "ir", "no", "tener"}
 
 def _cortes(nlp, palabras):
     """Candidatos para partir una frase que el modelo no pudo armar entera,
@@ -274,20 +289,12 @@ def _cortes(nlp, palabras):
     if conj:
         orden = sorted(conj, key=lambda k: abs(k - medio))[:MAX_CORTES]
         return [(palabras[:i], palabras[i], palabras[i + 1:]) for i in orden]
-    posibles = list(range(2, n - 1))
-    verbos = [i for i in posibles if _es_verbo(nlp, palabras[i])]
+    # No cortar entre un modal y su complemento ("querer | ir", "poder | comer")
+    posibles = [i for i in range(2, n - 1) if palabras[i - 1].lower() not in NO_SEPARAR_DE]
+    verbos = [i for i in posibles if es_verbo(nlp, palabras[i])]
     orden = sorted(verbos, key=lambda k: abs(k - medio))[:MAX_CORTES]
     orden += [i for i in sorted(posibles, key=lambda k: abs(k - medio)) if i not in orden][: MAX_CORTES - len(orden)]
     return [(palabras[:i], None, palabras[i:]) for i in orden]
-
-_cache_verbo = {}
-
-def _es_verbo(nlp, palabra):
-    clave = palabra.lower()
-    if clave not in _cache_verbo:
-        doc = nlp(clave)
-        _cache_verbo[clave] = bool(len(doc)) and doc[0].pos_ in ("VERB", "AUX")
-    return _cache_verbo[clave]
 
 def _generar(nlp, encoder, decoder, vocab_salida, palabras):
     """Genera la frase con el modelo. Devuelve None si el resultado no usa
@@ -371,6 +378,13 @@ def _generar(nlp, encoder, decoder, vocab_salida, palabras):
         # mejor no devolverla que devolver una frase con contenido perdido.
         if not tokens or not cubre_entrada(nlp, tokens, palabras) or not bien_formada(tokens):
             return None
+        # Si el usuario eligió un verbo en infinitivo, la frase tiene que
+        # tener algún verbo conjugado ("No esta noche dormir." no sirve).
+        infinitivos = {p.lower() for p in palabras if es_infinitivo(nlp, p)}
+        if infinitivos:
+            frase = detokenizar_salida(tokens)
+            if not tiene_verbo_conjugado(nlp, frase) or infinitivo_sin_gobierno(nlp, frase, infinitivos):
+                return None
         return detokenizar_salida(tokens)
 
 def _frase_literal(palabras):

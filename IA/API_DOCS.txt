@@ -96,9 +96,15 @@ Reglas:
 - Varias palabras: la frase usa exactamente esas palabras (reordenadas y
   conjugadas), más a lo sumo artículos, preposiciones o conectores necesarios.
   Nunca agrega verbos, sustantivos ni adjetivos que el usuario no eligió.
-- Si el modelo no logra armar una frase que use todas las palabras (por
-  ejemplo, palabras que nunca vio), se devuelven las palabras recibidas, en
-  el mismo orden, con mayúscula inicial y punto final.
+- Los verbos se pueden devolver conjugados (otra forma de la misma palabra):
+  "dormir" puede salir como "dormí" o "duermo".
+  Ejemplo: ["cabeza", "duele", "porque", "no", "dormir", "noche"] ->
+  "Me duele la cabeza porque no dormí a la noche."
+- Las frases largas se parten en tramos (por "porque", "y", etc.), se
+  corrige cada tramo y se unen.
+- Si no se logra armar un tramo con todas las palabras (por ejemplo, palabras
+  que nunca vio), ese tramo se devuelve con las palabras recibidas, en el
+  mismo orden, con mayúscula inicial y punto final.
 
 Body (JSON):
 - palabras (lista de texto): las palabras seleccionadas por el usuario, en
