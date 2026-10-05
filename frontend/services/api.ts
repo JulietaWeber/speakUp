@@ -290,3 +290,62 @@ export const generarAudio = async (
 
   return response.data.data;
 };
+
+// =========================
+// INTELIGENCIA ARTIFICIAL
+// =========================
+
+export const corregirFraseIA = async (
+  palabras: string[],
+  token: string
+) => {
+  const response = await axios.post(
+    `${API_URL}/ia/corregir`,
+    {
+      palabras,
+    },
+    {
+      headers: getAuthHeaders(token),
+    }
+  );
+
+  return response.data.data;
+};
+
+export const predecirPalabraIA = async (
+  palabra: string,
+  categoria: string,
+  token: string
+) => {
+  const response = await axios.post(
+    `${API_URL}/ia/predecir`,
+    {
+      palabra,
+      categoria,
+    },
+    {
+      headers: getAuthHeaders(token),
+    }
+  );
+
+  return response.data.data;
+};
+
+export const procesarFraseIA = async (
+  palabras: string[],
+  categoria: string,
+  token: string
+) => {
+  const response = await axios.post(
+    `${API_URL}/ia/procesar-frase`,
+    {
+      palabras,
+      categoria,
+    },
+    {
+      headers: getAuthHeaders(token),
+    }
+  );
+
+  return response.data.data;
+};

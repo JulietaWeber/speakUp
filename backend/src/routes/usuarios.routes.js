@@ -15,11 +15,14 @@ const {
   obtenerTablerosDeUsuario,
   subirFotoPerfil,
   eliminarFotoPerfil,
-  obtenerPerfil
+  obtenerPerfil,
+  actualizarVozPreferida
 } = require("../controllers/usuarios.controller");
 
 // Rutas de perfil del usuario logueado
 router.get("/perfil/me", verificarToken, obtenerPerfil);
+
+router.put("/voz", verificarToken, actualizarVozPreferida);
 
 router.post(
   "/foto-perfil",
