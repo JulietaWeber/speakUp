@@ -37,17 +37,26 @@ funcionando correctamente.
 ENDPOINT: POST /predecir
 --------------------------
 Descripción:
-Dado el usuario, la categoría en la que está navegando y la última palabra
-que seleccionó, devuelve las 3 palabras más probables para que seleccione a
-continuación, junto con su probabilidad. Si el usuario todavía no tiene un
-modelo personalizado propio (no reentrenó todavía), se usa el modelo base
-general.
+Dado el usuario y las últimas palabras que fue seleccionando (hasta 3),
+devuelve las 3 palabras más probables para que seleccione a continuación,
+junto con su probabilidad. Ya no se usa categoría: el contexto que mejor
+predice la siguiente palabra son las últimas palabras reales que escribió
+el usuario. Si el usuario todavía no tiene un modelo personalizado propio
+(no reentrenó todavía), se usa el modelo base general.
 
 Body (JSON):
 - user_id (texto): identificador único del usuario.
-- categoria (texto): nombre de la categoría actual (por ejemplo "Casa",
-  "Escuela", "Médico", "Emociones", "Transporte" o "Amigos").
-- palabra (texto): la última palabra que seleccionó el usuario.
+- palabras (lista de texto): las últimas palabras que seleccionó el
+  usuario, en el orden en que las tocó. Mandar como máximo las últimas 3:
+  - Si ya escribió 3 o más palabras, mandar las últimas 3.
+  - Si escribió 2, mandar esas 2.
+  - Si escribió 1 (o ninguna todavía), mandar esa 1 (o una lista vacía).
+  Cuantas más palabras de contexto reales se manden (hasta el máximo de 3),
+  mejor es la predicción.
+
+Ejemplo de request:
+  POST https://tuapp.railway.app/predecir
+  {"user_id": "001", "palabras": ["quiero", "tomar", "agua"]}
 
 Respuesta:
 Una lista de 3 objetos, ordenados de mayor a menor probabilidad. Cada objeto
@@ -71,9 +80,11 @@ Body (JSON):
 - user_id (texto): identificador único del usuario.
 - datos (lista): lista de registros, uno por cada frase que el usuario armó.
   Cada registro tiene:
-  - categoria (texto): categoría en la que se armó la frase.
+  - categoria (texto, opcional): se acepta por compatibilidad pero ya NO se
+    usa para entrenar (el modelo ya no distingue categorías).
   - frase (lista de texto): las palabras seleccionadas, en el orden en que
-    el usuario las fue tocando.
+    el usuario las fue tocando. Se generan pares de contexto (hasta 3
+    palabras anteriores) -> palabra siguiente, igual que en /predecir.
 
 Respuesta:
 Objeto JSON con:

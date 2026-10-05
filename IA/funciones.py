@@ -46,14 +46,24 @@ _corregir_frase_modelo(nlp, _encoder_correccion, _decoder_correccion, _vocab_cor
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+DIM_SPACY = 96       # dimensión de los vectores de es_core_news_md
+MAX_CONTEXTO = 3      # cantidad máxima de palabras de contexto que usa el modelo
+
 def palabra_a_vector(palabra):
     """Convierte una palabra a su vector spaCy de 96 dimensiones."""
     return nlp(palabra.lower()).vector
 
-def categoria_a_vector(categoria):
-    """Convierte una categoría a su vector spaCy, igual que las palabras.
-    Así el modelo acepta cualquier categoría nueva sin necesitar reentrenar."""
-    return nlp(categoria.lower()).vector
+def contexto_a_vector(palabras):
+    """Convierte la lista de hasta las últimas 3 palabras escritas por el
+    usuario en un único vector de tamaño fijo (igual esquema que
+    modelo_final.py): si hay menos de 3 palabras, se rellena con ceros a la
+    izquierda, así la palabra más reciente siempre cae en la misma posición
+    final del vector."""
+    palabras = palabras[-MAX_CONTEXTO:]
+    faltantes = MAX_CONTEXTO - len(palabras)
+    bloques = [np.zeros(DIM_SPACY) for _ in range(faltantes)]
+    bloques += [palabra_a_vector(p) for p in palabras]
+    return np.concatenate(bloques)
 
 def cargar_modelo_usuario(user_id):
     """Carga el modelo del usuario si existe, sino usa el base."""
@@ -64,13 +74,13 @@ def cargar_modelo_usuario(user_id):
 
 # ── Función 1: Predecir Top 3 ─────────────────────────────────────────────────
 
-def predecir_top3(user_id, categoria, palabra):
+def predecir_top3(user_id, palabras):
+    """Predice las 3 palabras más probables a partir del contexto: las
+    últimas hasta 3 palabras que escribió el usuario (si escribió menos de
+    3, se usan las que haya)."""
     modelo = cargar_modelo_usuario(user_id)
 
-    entrada = np.concatenate([
-        categoria_a_vector(categoria),
-        palabra_a_vector(palabra)
-    ]).reshape(1, -1)
+    entrada = contexto_a_vector(palabras).reshape(1, -1)
 
     probs = modelo.predict_proba(entrada)[0]
     top3  = probs.argsort()[-3:][::-1]
@@ -90,21 +100,20 @@ def reentrenar(user_id, datos):
     nuevos_y = []
 
     for registro in datos:
-        categoria = registro["categoria"]
-        frase     = registro["frase"]
+        frase = registro["frase"]
 
-        for i in range(len(frase) - 1):
-            palabra_actual    = frase[i]
-            palabra_siguiente = frase[i + 1]
+        # Ventana deslizante: para cada posición, el contexto son las
+        # palabras anteriores (hasta 3) y el objetivo es la palabra
+        # siguiente. Igual esquema que dataset_predictivo.py / modelo_final.py.
+        for i in range(1, len(frase)):
+            contexto          = frase[max(0, i - 3):i]
+            palabra_siguiente = frase[i]
 
             if palabra_siguiente not in encoder_salida.classes_:
                 print(f"'{palabra_siguiente}' no está en el vocabulario, se omite.")
                 continue
 
-            nuevos_X.append(np.concatenate([
-                categoria_a_vector(categoria),
-                palabra_a_vector(palabra_actual)
-            ]))
+            nuevos_X.append(contexto_a_vector(contexto))
             nuevos_y.append(encoder_salida.transform([palabra_siguiente])[0])
 
     if not nuevos_X:

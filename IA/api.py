@@ -12,9 +12,8 @@ app = FastAPI()
 # Si el back manda algo mal formado, FastAPI lo rechaza automáticamente.
 
 class PredecirRequest(BaseModel):
-    user_id:   str
-    categoria: str
-    palabra:   str
+    user_id:  str
+    palabras: list[str]  # últimas hasta 3 palabras escritas por el usuario, en orden
 
 class ReentrenarRequest(BaseModel):
     user_id: str
@@ -24,23 +23,24 @@ class CorregirRequest(BaseModel):
     palabras: list  # lista de palabras sueltas, ej: ["mamá", "agua", "querer"]
 
 # ── Endpoint 1: Predecir ──────────────────────────────────────────────────────
-# El back llama a este endpoint con un user_id, categoria y palabra.
+# El back llama a este endpoint con un user_id y las últimas hasta 3 palabras
+# que escribió el usuario (si escribió menos de 3, manda las que tenga).
 # Devuelve las 3 palabras más probables para ese usuario.
 #
 # Ejemplo de request:
 #   POST https://tuapp.railway.app/predecir
-#   {"user_id": "001", "categoria": "Casa", "palabra": "quiero"}
+#   {"user_id": "001", "palabras": ["quiero", "tomar", "agua"]}
 #
 # Ejemplo de response:
 #   [
-#     {"palabra": "comer",      "probabilidad": 45.2},
-#     {"palabra": "dormir",     "probabilidad": 30.1},
-#     {"palabra": "televisión", "probabilidad": 24.7}
+#     {"palabra": "fría",       "probabilidad": 45.2},
+#     {"palabra": "ahora",      "probabilidad": 30.1},
+#     {"palabra": "por favor",  "probabilidad": 24.7}
 #   ]
 
 @app.post("/predecir")
 def predecir(request: PredecirRequest):
-    return predecir_top3(request.user_id, request.categoria, request.palabra)
+    return predecir_top3(request.user_id, request.palabras)
 
 # ── Endpoint 2: Reentrenar ────────────────────────────────────────────────────
 # El back llama a este endpoint una vez por semana con todas las frases
