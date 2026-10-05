@@ -256,3 +256,37 @@ export const actualizarImagenPictogramaPersonalizado =
 
     return response.data.data;
   };
+
+// =========================
+// AUDIOS
+// =========================
+
+export const generarAudio = async (
+  idFrase: number,
+  texto: string,
+  token: string
+) => {
+  const inicio = Date.now();
+
+  console.log("GENERANDO AUDIO...");
+  console.log("Texto:", texto);
+
+  const response = await axios.post(
+    `${API_URL}/audios/generar`,
+    {
+      id_frase: idFrase,
+      texto,
+    },
+    {
+      headers: getAuthHeaders(token),
+    }
+  );
+
+  const tiempo = Date.now() - inicio;
+
+  console.log(
+    `AUDIO GENERADO EN ${tiempo} ms`
+  );
+
+  return response.data.data;
+};
