@@ -1,12 +1,17 @@
 const supabase = require("../config/Supabase");
 const supabaseAdmin = require("../config/SupabaseAdmin");
 
+const {
+  existeVoz,
+  VOZ_DEFAULT
+} = require("../config/voces");
+
 // GET /usuarios
 const obtenerUsuarios = async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("usuarios")
-      .select("id_usuario, nombre, email, rol, foto_perfil")
+      .select("id_usuario, nombre, email, rol, foto_perfil, voz_preferida")
       .order("id_usuario", { ascending: true });
 
     if (error) {
@@ -53,10 +58,11 @@ const crearUsuario = async (req, res) => {
           nombre,
           email,
           password,
-          rol: rol || "usuario"
+          rol: rol || "usuario",
+          voz_preferida: VOZ_DEFAULT
         }
       ])
-      .select("id_usuario, nombre, email, rol, foto_perfil")
+      .select("id_usuario, nombre, email, rol, foto_perfil, voz_preferida")
       .single();
 
     if (error) {
@@ -86,7 +92,7 @@ const obtenerUsuarioPorId = async (req, res) => {
 
     const { data, error } = await supabase
       .from("usuarios")
-      .select("id_usuario, nombre, email, rol, foto_perfil")
+      .select("id_usuario, nombre, email, rol, foto_perfil, voz_preferida")
       .eq("id_usuario", id)
       .single();
 
@@ -120,7 +126,8 @@ const actualizarUsuario = async (req, res) => {
       email,
       password,
       rol,
-      foto_perfil
+      foto_perfil,
+      voz_preferida
     } = req.body;
 
     const datosActualizar = {};
@@ -130,6 +137,17 @@ const actualizarUsuario = async (req, res) => {
     if (password !== undefined) datosActualizar.password = password;
     if (rol !== undefined) datosActualizar.rol = rol;
     if (foto_perfil !== undefined) datosActualizar.foto_perfil = foto_perfil;
+
+    if (voz_preferida !== undefined) {
+      if (!existeVoz(voz_preferida)) {
+        return res.status(400).json({
+          data: null,
+          error: "La voz seleccionada no es válida"
+        });
+      }
+
+      datosActualizar.voz_preferida = voz_preferida;
+    }
 
     if (Object.keys(datosActualizar).length === 0) {
       return res.status(400).json({
@@ -142,7 +160,7 @@ const actualizarUsuario = async (req, res) => {
       .from("usuarios")
       .update(datosActualizar)
       .eq("id_usuario", id)
-      .select("id_usuario, nombre, email, rol, foto_perfil")
+      .select("id_usuario, nombre, email, rol, foto_perfil, voz_preferida")
       .single();
 
     if (error) {
@@ -154,6 +172,64 @@ const actualizarUsuario = async (req, res) => {
 
     return res.json({
       data,
+      error: null
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      data: null,
+      error: error.message
+    });
+  }
+};
+
+// PUT /usuarios/voz
+const actualizarVozPreferida = async (req, res) => {
+  try {
+    const id_usuario = req.usuario.id_usuario;
+
+    const { voz_preferida } = req.body;
+
+    if (!voz_preferida) {
+      return res.status(400).json({
+        data: null,
+        error: "Falta la voz_preferida"
+      });
+    }
+
+    if (!existeVoz(voz_preferida)) {
+      return res.status(400).json({
+        data: null,
+        error: "La voz seleccionada no es válida"
+      });
+    }
+
+    const { data: usuarioActualizado, error } = await supabase
+      .from("usuarios")
+      .update({
+        voz_preferida
+      })
+      .eq("id_usuario", id_usuario)
+      .select("id_usuario, nombre, email, rol, foto_perfil, voz_preferida")
+      .single();
+
+    if (error) {
+      return res.status(500).json({
+        data: null,
+        error: error.message
+      });
+    }
+
+    await supabase.from("historial_uso").insert([
+      {
+        id_usuario,
+        accion: "actualizar_voz_preferida",
+        detalle: `Voz preferida actualizada a: ${voz_preferida}`
+      }
+    ]);
+
+    return res.json({
+      data: usuarioActualizado,
       error: null
     });
 
@@ -233,7 +309,7 @@ const obtenerPerfil = async (req, res) => {
 
     const { data: usuario, error } = await supabase
       .from("usuarios")
-      .select("id_usuario, nombre, email, rol, foto_perfil")
+      .select("id_usuario, nombre, email, rol, foto_perfil, voz_preferida")
       .eq("id_usuario", id_usuario)
       .single();
 
@@ -305,7 +381,7 @@ const subirFotoPerfil = async (req, res) => {
       .from("usuarios")
       .update({ foto_perfil })
       .eq("id_usuario", id_usuario)
-      .select("id_usuario, nombre, email, rol, foto_perfil")
+      .select("id_usuario, nombre, email, rol, foto_perfil, voz_preferida")
       .single();
 
     if (updateError) {
@@ -343,7 +419,7 @@ const eliminarFotoPerfil = async (req, res) => {
 
     const { data: usuario, error: buscarError } = await supabase
       .from("usuarios")
-      .select("id_usuario, nombre, email, rol, foto_perfil")
+      .select("id_usuario, nombre, email, rol, foto_perfil, voz_preferida")
       .eq("id_usuario", id_usuario)
       .single();
 
@@ -372,7 +448,7 @@ const eliminarFotoPerfil = async (req, res) => {
       .from("usuarios")
       .update({ foto_perfil: null })
       .eq("id_usuario", id_usuario)
-      .select("id_usuario, nombre, email, rol, foto_perfil")
+      .select("id_usuario, nombre, email, rol, foto_perfil, voz_preferida")
       .single();
 
     if (updateError) {
@@ -412,5 +488,6 @@ module.exports = {
   obtenerTablerosDeUsuario,
   subirFotoPerfil,
   eliminarFotoPerfil,
-  obtenerPerfil
+  obtenerPerfil,
+  actualizarVozPreferida
 };
