@@ -7,10 +7,13 @@ const {
   generarAudioConElevenLabs,
   obtenerMisAudios,
   obtenerAudioPorFrase,
-  eliminarAudio
+  eliminarAudio,
+  obtenerVocesDisponibles
 } = require("../controllers/audios.controller");
 
 const verificarToken = require("../middlewares/auth.middleware");
+
+router.get("/voces", verificarToken, obtenerVocesDisponibles);
 
 router.post("/", verificarToken, crearAudio);
 

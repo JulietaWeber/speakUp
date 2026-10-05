@@ -1,6 +1,12 @@
 const supabase = require("../config/Supabase");
 const supabaseAdmin = require("../config/SupabaseAdmin");
 
+const {
+  obtenerVocesPublicas,
+  obtenerVoiceIdPorVoz,
+  VOZ_DEFAULT
+} = require("../config/voces");
+
 const SELECT_AUDIO = `
   id_audio,
   id_frase,
@@ -52,9 +58,22 @@ const obtenerFrasePropia = async (id_frase, id_usuario) => {
   };
 };
 
-const generarAudioElevenLabs = async (texto) => {
+const obtenerUsuarioConVoz = async (id_usuario) => {
+  const { data: usuario, error } = await supabase
+    .from("usuarios")
+    .select("id_usuario, voz_preferida")
+    .eq("id_usuario", id_usuario)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return usuario;
+};
+
+const generarAudioElevenLabs = async (texto, voiceId) => {
   const apiKey = process.env.ELEVENLABS_API_KEY;
-  const voiceId = process.env.ELEVENLABS_VOICE_ID;
   const modelId = process.env.ELEVENLABS_MODEL_ID || "eleven_multilingual_v2";
 
   if (!apiKey) {
@@ -62,7 +81,7 @@ const generarAudioElevenLabs = async (texto) => {
   }
 
   if (!voiceId) {
-    throw new Error("Falta configurar ELEVENLABS_VOICE_ID");
+    throw new Error("Falta configurar ELEVENLABS_VOICE_ID o la voz preferida");
   }
 
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`;
@@ -113,6 +132,19 @@ const subirAudioStorage = async ({ audioBuffer, id_usuario, id_frase }) => {
     .getPublicUrl(rutaArchivo);
 
   return publicUrlData.publicUrl;
+};
+
+// GET /audios/voces
+const obtenerVocesDisponibles = async (req, res) => {
+  try {
+    return res.json({
+      data: obtenerVocesPublicas(),
+      error: null
+    });
+
+  } catch (error) {
+    return responderError(res, 500, error.message);
+  }
 };
 
 // POST /audios
@@ -181,7 +213,7 @@ const crearAudio = async (req, res) => {
 };
 
 // POST /audios/generar
-// Genera audio real con ElevenLabs, lo sube a Supabase Storage y guarda audio_url
+// Genera audio real con ElevenLabs usando la voz preferida del usuario
 const generarAudioConElevenLabs = async (req, res) => {
   try {
     const id_usuario = req.usuario.id_usuario;
@@ -212,7 +244,16 @@ const generarAudioConElevenLabs = async (req, res) => {
       return responderError(res, 400, "No hay texto para generar el audio");
     }
 
-    const audioBuffer = await generarAudioElevenLabs(textoFinal);
+    const usuario = await obtenerUsuarioConVoz(id_usuario);
+
+    const vozPreferida =
+      usuario && usuario.voz_preferida
+        ? usuario.voz_preferida
+        : VOZ_DEFAULT;
+
+    const voiceId = obtenerVoiceIdPorVoz(vozPreferida);
+
+    const audioBuffer = await generarAudioElevenLabs(textoFinal, voiceId);
 
     const audio_url = await subirAudioStorage({
       audioBuffer,
@@ -241,12 +282,15 @@ const generarAudioConElevenLabs = async (req, res) => {
       {
         id_usuario,
         accion: "generar_audio_elevenlabs",
-        detalle: `Audio generado con ElevenLabs para frase: ${textoFinal}`
+        detalle: `Audio generado con ElevenLabs para frase: ${textoFinal}. Voz usada: ${vozPreferida}`
       }
     ]);
 
     return res.status(201).json({
-      data: audioCreado,
+      data: {
+        ...audioCreado,
+        voz_usada: vozPreferida
+      },
       error: null
     });
 
@@ -416,5 +460,6 @@ module.exports = {
   generarAudioConElevenLabs,
   obtenerMisAudios,
   obtenerAudioPorFrase,
-  eliminarAudio
+  eliminarAudio,
+  obtenerVocesDisponibles
 };
