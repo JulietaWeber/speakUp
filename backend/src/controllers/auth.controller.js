@@ -1,6 +1,36 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+
 const supabase = require("../config/Supabase");
+
+const VOZ_DEFAULT = "voz_neutra";
+
+// =====================
+// Helpers generales
+// =====================
+
+const responderOk = (res, data, status = 200) => {
+  return res.status(status).json({
+    data,
+    error: null
+  });
+};
+
+const responderError = (res, status, error) => {
+  return res.status(status).json({
+    data: null,
+    error
+  });
+};
+
+const normalizarEmail = (email) => {
+  return String(email || "").trim().toLowerCase();
+};
+
+const normalizarTexto = (texto) => {
+  return String(texto || "").trim();
+};
 
 const generarToken = (usuario) => {
   return jwt.sign(
@@ -21,12 +51,19 @@ const validarEmail = (email) => {
   return emailRegex.test(email);
 };
 
-const validarPasswordRegistro = (password) => {
-  const tieneMinimo8 = password.length >= 8;
+const validarPasswordSegura = (password) => {
+  if (!password || password.length < 8) {
+    return "La contraseña debe tener al menos 8 caracteres";
+  }
+
   const tieneMayuscula = /[A-Z]/.test(password);
   const tieneCaracterEspecial = /[^A-Za-z0-9]/.test(password);
 
-  return tieneMinimo8 && tieneMayuscula && tieneCaracterEspecial;
+  if (!tieneMayuscula || !tieneCaracterEspecial) {
+    return "La contraseña debe tener al menos una mayúscula y un carácter especial";
+  }
+
+  return null;
 };
 
 const armarUsuarioSeguro = (usuario) => {
@@ -35,43 +72,59 @@ const armarUsuarioSeguro = (usuario) => {
     nombre: usuario.nombre,
     email: usuario.email,
     rol: usuario.rol,
-    foto_perfil: usuario.foto_perfil || null
+    foto_perfil: usuario.foto_perfil || null,
+    voz_preferida: usuario.voz_preferida || VOZ_DEFAULT
   };
 };
+
+// =====================
+// Helpers recuperación
+// =====================
+
+const generarTokenRecuperacion = () => {
+  return crypto.randomBytes(32).toString("hex");
+};
+
+const hashearTokenRecuperacion = (token) => {
+  return crypto
+    .createHash("sha256")
+    .update(token)
+    .digest("hex");
+};
+
+const calcularFechaExpiracion = () => {
+  const fecha = new Date();
+  fecha.setMinutes(fecha.getMinutes() + 30);
+  return fecha.toISOString();
+};
+
+// =====================
+// POST /auth/register
+// =====================
 
 const registrarUsuario = async (req, res) => {
   try {
     const { nombre, email, password } = req.body;
 
     if (!nombre || !email || !password) {
-      return res.status(400).json({
-        data: null,
-        error: "Faltan datos obligatorios"
-      });
+      return responderError(res, 400, "Faltan datos obligatorios");
     }
 
-    const nombreNormalizado = nombre.trim();
-    const emailNormalizado = email.trim().toLowerCase();
+    const nombreNormalizado = normalizarTexto(nombre);
+    const emailNormalizado = normalizarEmail(email);
 
     if (!nombreNormalizado) {
-      return res.status(400).json({
-        data: null,
-        error: "El nombre no puede estar vacío"
-      });
+      return responderError(res, 400, "El nombre no puede estar vacío");
     }
 
     if (!validarEmail(emailNormalizado)) {
-      return res.status(400).json({
-        data: null,
-        error: "El email debe tener un formato válido"
-      });
+      return responderError(res, 400, "El email debe tener un formato válido");
     }
 
-    if (!validarPasswordRegistro(password)) {
-      return res.status(400).json({
-        data: null,
-        error: "La contraseña debe tener al menos 8 caracteres, una mayúscula y un carácter especial"
-      });
+    const errorPassword = validarPasswordSegura(password);
+
+    if (errorPassword) {
+      return responderError(res, 400, errorPassword);
     }
 
     const { data: usuarioExistente, error: errorBuscar } = await supabase
@@ -81,17 +134,11 @@ const registrarUsuario = async (req, res) => {
       .maybeSingle();
 
     if (errorBuscar) {
-      return res.status(500).json({
-        data: null,
-        error: errorBuscar.message
-      });
+      return responderError(res, 500, errorBuscar.message);
     }
 
     if (usuarioExistente) {
-      return res.status(400).json({
-        data: null,
-        error: "Ya existe un usuario con ese email"
-      });
+      return responderError(res, 400, "Ya existe un usuario con ese email");
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -104,145 +151,116 @@ const registrarUsuario = async (req, res) => {
           email: emailNormalizado,
           password: passwordHash,
           rol: "usuario",
-          google_id: null
+          google_id: null,
+          voz_preferida: VOZ_DEFAULT
         }
       ])
-      .select("id_usuario, nombre, email, rol, foto_perfil, google_id")
+      .select("id_usuario, nombre, email, rol, foto_perfil, google_id, voz_preferida")
       .single();
 
     if (errorInsertar) {
-      return res.status(500).json({
-        data: null,
-        error: errorInsertar.message
-      });
+      return responderError(res, 500, errorInsertar.message);
     }
 
     const usuarioSeguro = armarUsuarioSeguro(usuarioCreado);
     const token = generarToken(usuarioSeguro);
 
-    return res.status(201).json({
-      data: {
+    return responderOk(
+      res,
+      {
         usuario: usuarioSeguro,
         token
       },
-      error: null
-    });
+      201
+    );
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
+
+// =====================
+// POST /auth/login
+// =====================
 
 const loginUsuario = async (req, res) => {
   try {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({
-        data: null,
-        error: "Faltan email o contraseña"
-      });
+      return responderError(res, 400, "Faltan email o contraseña");
     }
 
-    const emailNormalizado = email.trim().toLowerCase();
+    const emailNormalizado = normalizarEmail(email);
 
     if (!validarEmail(emailNormalizado)) {
-      return res.status(400).json({
-        data: null,
-        error: "El email debe tener un formato válido"
-      });
+      return responderError(res, 400, "El email debe tener un formato válido");
     }
 
     const { data: usuario, error: errorBuscar } = await supabase
       .from("usuarios")
-      .select("id_usuario, nombre, email, password, rol, foto_perfil")
+      .select("id_usuario, nombre, email, password, rol, foto_perfil, voz_preferida")
       .eq("email", emailNormalizado)
       .maybeSingle();
 
     if (errorBuscar) {
-      return res.status(500).json({
-        data: null,
-        error: errorBuscar.message
-      });
+      return responderError(res, 500, errorBuscar.message);
     }
 
     if (!usuario) {
-      return res.status(401).json({
-        data: null,
-        error: "Email o contraseña incorrectos"
-      });
+      return responderError(res, 401, "Email o contraseña incorrectos");
     }
 
     if (!usuario.password) {
-      return res.status(401).json({
-        data: null,
-        error: "Este usuario debe ingresar con Google"
-      });
+      return responderError(res, 401, "Este usuario debe ingresar con Google");
     }
 
     const passwordValida = await bcrypt.compare(password, usuario.password);
 
     if (!passwordValida) {
-      return res.status(401).json({
-        data: null,
-        error: "Email o contraseña incorrectos"
-      });
+      return responderError(res, 401, "Email o contraseña incorrectos");
     }
 
     const usuarioSeguro = armarUsuarioSeguro(usuario);
     const token = generarToken(usuarioSeguro);
 
-    return res.json({
-      data: {
-        usuario: usuarioSeguro,
-        token
-      },
-      error: null
+    return responderOk(res, {
+      usuario: usuarioSeguro,
+      token
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
+
+// =====================
+// POST /auth/google
+// =====================
 
 const loginGoogle = async (req, res) => {
   try {
     const { nombre, email, google_id } = req.body;
 
     if (!email || !google_id) {
-      return res.status(400).json({
-        data: null,
-        error: "Faltan datos obligatorios: email y google_id"
-      });
+      return responderError(res, 400, "Faltan datos obligatorios: email y google_id");
     }
 
-    const emailNormalizado = email.trim().toLowerCase();
-    const nombreNormalizado = nombre ? nombre.trim() : "Usuario Google";
+    const emailNormalizado = normalizarEmail(email);
+    const nombreNormalizado = nombre ? normalizarTexto(nombre) : "Usuario Google";
 
     if (!validarEmail(emailNormalizado)) {
-      return res.status(400).json({
-        data: null,
-        error: "El email debe tener un formato válido"
-      });
+      return responderError(res, 400, "El email debe tener un formato válido");
     }
 
     const { data: usuarioExistente, error: errorBuscar } = await supabase
       .from("usuarios")
-      .select("id_usuario, nombre, email, rol, foto_perfil, google_id")
+      .select("id_usuario, nombre, email, rol, foto_perfil, google_id, voz_preferida")
       .eq("email", emailNormalizado)
       .maybeSingle();
 
     if (errorBuscar) {
-      return res.status(500).json({
-        data: null,
-        error: errorBuscar.message
-      });
+      return responderError(res, 500, errorBuscar.message);
     }
 
     if (usuarioExistente) {
@@ -256,6 +274,10 @@ const loginGoogle = async (req, res) => {
         camposActualizar.nombre = nombreNormalizado;
       }
 
+      if (!usuarioExistente.voz_preferida) {
+        camposActualizar.voz_preferida = VOZ_DEFAULT;
+      }
+
       let usuarioFinal = usuarioExistente;
 
       if (Object.keys(camposActualizar).length > 0) {
@@ -263,14 +285,11 @@ const loginGoogle = async (req, res) => {
           .from("usuarios")
           .update(camposActualizar)
           .eq("id_usuario", usuarioExistente.id_usuario)
-          .select("id_usuario, nombre, email, rol, foto_perfil, google_id")
+          .select("id_usuario, nombre, email, rol, foto_perfil, google_id, voz_preferida")
           .single();
 
         if (errorActualizar) {
-          return res.status(500).json({
-            data: null,
-            error: errorActualizar.message
-          });
+          return responderError(res, 500, errorActualizar.message);
         }
 
         usuarioFinal = usuarioActualizado;
@@ -279,12 +298,9 @@ const loginGoogle = async (req, res) => {
       const usuarioSeguro = armarUsuarioSeguro(usuarioFinal);
       const token = generarToken(usuarioSeguro);
 
-      return res.json({
-        data: {
-          usuario: usuarioSeguro,
-          token
-        },
-        error: null
+      return responderOk(res, {
+        usuario: usuarioSeguro,
+        token
       });
     }
 
@@ -301,37 +317,37 @@ const loginGoogle = async (req, res) => {
           email: emailNormalizado,
           password: passwordTemporal,
           rol: "usuario",
-          google_id
+          google_id,
+          voz_preferida: VOZ_DEFAULT
         }
       ])
-      .select("id_usuario, nombre, email, rol, foto_perfil, google_id")
+      .select("id_usuario, nombre, email, rol, foto_perfil, google_id, voz_preferida")
       .single();
 
     if (errorInsertar) {
-      return res.status(500).json({
-        data: null,
-        error: errorInsertar.message
-      });
+      return responderError(res, 500, errorInsertar.message);
     }
 
     const usuarioSeguro = armarUsuarioSeguro(usuarioCreado);
     const token = generarToken(usuarioSeguro);
 
-    return res.status(201).json({
-      data: {
+    return responderOk(
+      res,
+      {
         usuario: usuarioSeguro,
         token
       },
-      error: null
-    });
+      201
+    );
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return responderError(res, 500, error.message);
   }
 };
+
+// =====================
+// GET /auth/me
+// =====================
 
 const obtenerMiPerfil = async (req, res) => {
   try {
@@ -339,34 +355,209 @@ const obtenerMiPerfil = async (req, res) => {
 
     const { data: usuario, error } = await supabase
       .from("usuarios")
-      .select("id_usuario, nombre, email, rol, foto_perfil, google_id")
+      .select("id_usuario, nombre, email, rol, foto_perfil, google_id, voz_preferida")
       .eq("id_usuario", idUsuario)
       .maybeSingle();
 
     if (error) {
-      return res.status(500).json({
-        data: null,
-        error: error.message
-      });
+      return responderError(res, 500, error.message);
     }
 
     if (!usuario) {
-      return res.status(404).json({
-        data: null,
-        error: "Usuario no encontrado"
+      return responderError(res, 404, "Usuario no encontrado");
+    }
+
+    return responderOk(res, armarUsuarioSeguro(usuario));
+
+  } catch (error) {
+    return responderError(res, 500, error.message);
+  }
+};
+
+// =====================
+// POST /auth/forgot-password
+// =====================
+
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return responderError(res, 400, "Falta el email");
+    }
+
+    const emailNormalizado = normalizarEmail(email);
+
+    if (!validarEmail(emailNormalizado)) {
+      return responderError(res, 400, "El email debe tener un formato válido");
+    }
+
+    const { data: usuario, error: usuarioError } = await supabase
+      .from("usuarios")
+      .select("id_usuario, nombre, email")
+      .ilike("email", emailNormalizado)
+      .maybeSingle();
+
+    if (usuarioError) {
+      return responderError(res, 500, usuarioError.message);
+    }
+
+    /*
+      No revelamos si el email existe o no.
+      Esto evita que alguien use el endpoint para descubrir usuarios registrados.
+    */
+    if (!usuario) {
+      return responderOk(res, {
+        mensaje: "Si el email existe, se generó un token de recuperación"
       });
     }
 
-    return res.json({
-      data: armarUsuarioSeguro(usuario),
-      error: null
+    const token = generarTokenRecuperacion();
+    const tokenHash = hashearTokenRecuperacion(token);
+    const fechaExpiracion = calcularFechaExpiracion();
+
+    // Invalidar tokens anteriores no usados del usuario
+    const { error: invalidarError } = await supabase
+      .from("password_reset_tokens")
+      .update({ usado: true })
+      .eq("id_usuario", usuario.id_usuario)
+      .eq("usado", false);
+
+    if (invalidarError) {
+      return responderError(res, 500, invalidarError.message);
+    }
+
+    const { error: tokenError } = await supabase
+      .from("password_reset_tokens")
+      .insert([
+        {
+          id_usuario: usuario.id_usuario,
+          token_hash: tokenHash,
+          usado: false,
+          fecha_expiracion: fechaExpiracion
+        }
+      ]);
+
+    if (tokenError) {
+      return responderError(res, 500, tokenError.message);
+    }
+
+    await supabase.from("historial_uso").insert([
+      {
+        id_usuario: usuario.id_usuario,
+        accion: "solicitar_recuperacion_password",
+        detalle: "Se generó un token de recuperación de contraseña"
+      }
+    ]);
+
+    /*
+      MVP / pruebas:
+      Devolvemos el token en la respuesta para poder probar sin email.
+      Después esto se reemplaza por envío de mail.
+    */
+    return responderOk(res, {
+      mensaje: "Token de recuperación generado correctamente",
+      reset_token: token,
+      expires_in_minutes: 30
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
+    return responderError(res, 500, error.message);
+  }
+};
+
+// =====================
+// POST /auth/reset-password
+// =====================
+
+const resetPassword = async (req, res) => {
+  try {
+    const {
+      token,
+      nueva_password
+    } = req.body;
+
+    if (!token || !nueva_password) {
+      return responderError(res, 400, "Faltan datos obligatorios: token o nueva_password");
+    }
+
+    const errorPassword = validarPasswordSegura(nueva_password);
+
+    if (errorPassword) {
+      return responderError(res, 400, errorPassword);
+    }
+
+    const tokenHash = hashearTokenRecuperacion(token);
+
+    const { data: resetToken, error: buscarError } = await supabase
+      .from("password_reset_tokens")
+      .select(`
+        id_reset,
+        id_usuario,
+        token_hash,
+        usado,
+        fecha_expiracion
+      `)
+      .eq("token_hash", tokenHash)
+      .eq("usado", false)
+      .maybeSingle();
+
+    if (buscarError) {
+      return responderError(res, 500, buscarError.message);
+    }
+
+    if (!resetToken) {
+      return responderError(res, 400, "Token inválido o ya utilizado");
+    }
+
+    const ahora = new Date();
+    const fechaExpiracion = new Date(resetToken.fecha_expiracion);
+
+    if (fechaExpiracion < ahora) {
+      await supabase
+        .from("password_reset_tokens")
+        .update({ usado: true })
+        .eq("id_reset", resetToken.id_reset);
+
+      return responderError(res, 400, "El token expiró");
+    }
+
+    const passwordHasheada = await bcrypt.hash(nueva_password, 10);
+
+    const { error: updatePasswordError } = await supabase
+      .from("usuarios")
+      .update({
+        password: passwordHasheada
+      })
+      .eq("id_usuario", resetToken.id_usuario);
+
+    if (updatePasswordError) {
+      return responderError(res, 500, updatePasswordError.message);
+    }
+
+    const { error: marcarTokenError } = await supabase
+      .from("password_reset_tokens")
+      .update({ usado: true })
+      .eq("id_reset", resetToken.id_reset);
+
+    if (marcarTokenError) {
+      return responderError(res, 500, marcarTokenError.message);
+    }
+
+    await supabase.from("historial_uso").insert([
+      {
+        id_usuario: resetToken.id_usuario,
+        accion: "reset_password",
+        detalle: "Contraseña actualizada mediante recuperación"
+      }
+    ]);
+
+    return responderOk(res, {
+      mensaje: "Contraseña actualizada correctamente"
     });
+
+  } catch (error) {
+    return responderError(res, 500, error.message);
   }
 };
 
@@ -374,5 +565,7 @@ module.exports = {
   registrarUsuario,
   loginUsuario,
   loginGoogle,
-  obtenerMiPerfil
+  obtenerMiPerfil,
+  forgotPassword,
+  resetPassword
 };
