@@ -26,7 +26,7 @@ print("Cargando spaCy...")
 nlp = spacy.load("es_core_news_md")
 print("spaCy cargado\n")
 
-DIM_SPACY = 96       # dimensión de los vectores de es_core_news_md
+DIM_SPACY = 300      # dimensión de los vectores de es_core_news_md
 MAX_CONTEXTO = 3      # cantidad máxima de palabras de contexto que usa el modelo
 
 # ── Vectorización de contexto ────────────────────────────────────────────────
@@ -47,7 +47,7 @@ def contexto_a_vector(contexto):
     ceros a la izquierda si hay menos de 3 palabras."""
     contexto = contexto[-MAX_CONTEXTO:]
     faltantes = MAX_CONTEXTO - len(contexto)
-    bloques = [np.zeros(DIM_SPACY) for _ in range(faltantes)]
+    bloques = [np.zeros(DIM_SPACY, dtype=np.float32) for _ in range(faltantes)]
     bloques += [palabra_a_vector(p) for p in contexto]
     return np.concatenate(bloques)
 
@@ -110,7 +110,7 @@ joblib.dump(encoder_salida, "encoder_salida.pkl")
 # de estos pares base + todo el historial acumulado del usuario, así el
 # modelo final siempre conserva el conocimiento general (A) además de todo lo
 # que el usuario fue enseñando (B, C, ...).
-joblib.dump((X, y), "base_pares.pkl")
+joblib.dump((X, y), "base_pares.pkl", compress=3)
 print("Modelo guardado: modelo_base.pkl\n")
 
 # ── Prueba ────────────────────────────────────────────────────────────────────

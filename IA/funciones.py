@@ -46,7 +46,7 @@ _corregir_frase_modelo(nlp, _encoder_correccion, _decoder_correccion, _vocab_cor
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-DIM_SPACY = 96       # dimensión de los vectores de es_core_news_md
+DIM_SPACY = 300      # dimensión de los vectores de es_core_news_md
 MAX_CONTEXTO = 3      # cantidad máxima de palabras de contexto que usa el modelo
 
 def palabra_a_vector(palabra):
@@ -61,7 +61,7 @@ def contexto_a_vector(palabras):
     final del vector."""
     palabras = palabras[-MAX_CONTEXTO:]
     faltantes = MAX_CONTEXTO - len(palabras)
-    bloques = [np.zeros(DIM_SPACY) for _ in range(faltantes)]
+    bloques = [np.zeros(DIM_SPACY, dtype=np.float32) for _ in range(faltantes)]
     bloques += [palabra_a_vector(p) for p in palabras]
     return np.concatenate(bloques)
 
@@ -88,7 +88,7 @@ def predecir_top3(user_id, palabras):
     return [
         {
             "palabra":      encoder_salida.inverse_transform([modelo.classes_[i]])[0],
-            "probabilidad": float(round(probs[i] * 100, 2))
+            "probabilidad": round(float(probs[i]) * 100, 2)
         }
         for i in top3
     ]
