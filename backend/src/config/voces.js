@@ -20,7 +20,7 @@ const VOCES_DISPONIBLES = {
     voice_id: process.env.ELEVENLABS_VOICE_ID_MASCULINA
   },
 
-  voz_infantil: {
+  voz_juvenil: {
     id: "voz_juvenil",
     nombre: "Voz juvenil",
     descripcion: "Voz más liviana y expresiva",
