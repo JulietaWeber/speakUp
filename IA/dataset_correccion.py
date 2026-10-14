@@ -11,6 +11,9 @@ pronombres, posesivos, demostrativos, conjunciones - ver gramatica.py) o
 conjugadas, en singular/plural). Cualquier concepto que no cumpla esto se
 descarta automáticamente acá, como red de seguridad ante ediciones futuras.
 
+A los conceptos curados se suman frases largas (6-10 palabras) generadas por
+composición en frases_largas.py, con la misma validación.
+
 Para cada concepto válido generamos varias permutaciones del orden de las
 palabras de entrada, porque en la vida real el usuario de CAA selecciona los
 botones en cualquier orden: eso le enseña al modelo a ser invariante al
@@ -23,11 +26,13 @@ import re
 
 import spacy
 
-from gramatica import lema, es_permitida
+import frases_largas
+from gramatica import lemas_y_formas, es_permitida
 
 random.seed(42)
 
 MAX_PERMS_POR_CONCEPTO = 8
+CANTIDAD_LARGOS = 2200
 
 RUTA_CONCEPTOS = "conceptos_correccion.jsonl"
 RUTA_DATASET_GENERADO = "dataset_correccion.jsonl"
@@ -47,7 +52,7 @@ def cargar_conceptos(ruta):
 
 
 def concepto_valido(nlp, bag, frase):
-    lemas_entrada = {lema(nlp, p) for p in bag}
+    lemas_entrada = lemas_y_formas(nlp, bag)
     return all(es_permitida(nlp, t, lemas_entrada) for t in tokenizar_salida(frase))
 
 
@@ -73,7 +78,12 @@ def main():
     nlp = spacy.load("es_core_news_md")
 
     conceptos = cargar_conceptos(RUTA_CONCEPTOS)
-    print(f"Conceptos cargados: {len(conceptos)}")
+    print(f"Conceptos curados cargados: {len(conceptos)}")
+    # Frases largas (6-10 palabras) generadas por composición: los curados
+    # casi no tienen, y sin ellas el modelo arma mal las frases largas.
+    largos = frases_largas.generar(CANTIDAD_LARGOS, excluir=[b for b, _ in conceptos])
+    print(f"Conceptos largos generados: {len(largos)}")
+    conceptos += largos
 
     validos = []
     for bag, frase in conceptos:

@@ -34,6 +34,15 @@ def es_verbo(nlp, palabra):
     return _pos(nlp, palabra) in ("VERB", "AUX")
 
 
+def pos_palabra(nlp, palabra):
+    """Categoría gramatical (POS de spaCy) de una palabra suelta, cacheada."""
+    return _pos(nlp, palabra)
+
+
+def es_adjetivo(nlp, palabra):
+    return _pos(nlp, palabra) == "ADJ"
+
+
 def es_infinitivo(nlp, palabra):
     """True si `palabra` es un verbo en infinitivo (sin clíticos: "cambiarme"
     no cuenta) que sabemos conjugar."""
@@ -58,8 +67,12 @@ _IGNORAR_ANTES = {"me", "te", "se", "nos", "no", "nunca", "tampoco"}
 def infinitivo_sin_gobierno(nlp, texto, infinitivos):
     """True si en `texto` algún infinitivo de `infinitivos` quedó suelto: sin
     una preposición, "que" o un verbo modal justo antes ("No esta noche
-    dormir", "mis jugar"). Un infinitivo así es una palabra sin conjugar."""
+    dormir", "mis jugar"). Un infinitivo así es una palabra sin conjugar.
+
+    Un infinitivo coordinado con uno ya regido también vale: en "quiero usar
+    la tablet y comprar una remera", "comprar" depende de "quiero"."""
     doc = nlp(texto)
+    hubo_regido = False
     for t in doc:
         if t.text.lower() not in infinitivos:
             continue
@@ -70,9 +83,15 @@ def infinitivo_sin_gobierno(nlp, texto, infinitivos):
             return True
         previo = doc[j]
         if previo.text.lower() in PREPOSICIONES_INF or previo.lemma_.lower() in GOBERNADORES:
+            hubo_regido = True
+            continue
+        if hubo_regido and previo.text.lower() in _COORDINANTES:
             continue
         return True
     return False
+
+
+_COORDINANTES = {"y", "e", "o", "u", "ni"}
 
 
 def tiene_verbo_conjugado(nlp, texto):
@@ -109,7 +128,8 @@ _PRES_RAIZ = {
     "despertar": "despierto", "mover": "muevo", "soñar": "sueño",
     "probar": "pruebo", "reír": "río", "corregir": "corrijo",
     "sentar": "siento", "acostar": "acuesto", "devolver": "devuelvo",
-    "abrir": "abro",
+    "abrir": "abro", "doler": "duelo", "merendar": "meriendo", "oler": "huelo",
+    "costar": "cuesto", "acordar": "acuerdo", "colgar": "cuelgo",
 }
 
 _PRET_IRREG = {
@@ -168,6 +188,66 @@ def conjugar_yo(infinitivo, pasado=False):
         if raiz.endswith("u") and fin == "ir":
             return raiz + "yo"         # construir
     return raiz + "o"
+
+
+_PRES3_IRREG = {
+    "ir": "va", "ser": "es", "estar": "está", "dar": "da", "haber": "hay",
+    "oír": "oye", "caber": "cabe", "llover": "llueve", "nevar": "nieva",
+}
+_PRET3_IRREG = {
+    "ir": "fue", "ser": "fue", "dar": "dio", "ver": "vio", "estar": "estuvo",
+    "tener": "tuvo", "hacer": "hizo", "poder": "pudo", "poner": "puso",
+    "querer": "quiso", "saber": "supo", "venir": "vino", "decir": "dijo",
+    "traer": "trajo", "andar": "anduvo", "dormir": "durmió", "morir": "murió",
+    "pedir": "pidió", "sentir": "sintió", "leer": "leyó", "caer": "cayó",
+    "oír": "oyó", "haber": "hubo", "reír": "rió", "seguir": "siguió",
+}
+_SUBJ_IRREG = {
+    "ir": "vaya", "ser": "sea", "estar": "esté", "dar": "dé", "saber": "sepa",
+    "haber": "haya",
+}
+
+
+def conjugaciones(palabra):
+    """{tiempo/persona: forma} de un infinitivo, con las formas que aparecen
+    en frases de CAA: 1ª y 3ª persona del singular en presente y pretérito,
+    1ª del plural, 3ª del plural en pretérito, presente de subjuntivo ("que
+    me ayude") y gerundio. Vacío si no es un infinitivo."""
+    v = palabra.lower()
+    if not _INFINITIVO.match(v) or len(v) < 3:
+        return {}
+    raiz, fin = v[:-2], v[-2:]
+    if fin == "ír":
+        fin = "ir"
+    yo = conjugar_yo(v)
+    # 3ª persona del presente: misma raíz que la 1ª ("duermo" -> "duerme")
+    base = yo[:-1] if yo.endswith("o") and v not in _PRES_IRREG else raiz
+    pres3 = {"tener": "tiene", "venir": "viene", "decir": "dice"}.get(v, base + ("a" if fin == "ar" else "e"))
+    if v in _SUBJ_IRREG:
+        subj = _SUBJ_IRREG[v]
+    elif yo.endswith("o"):
+        subj = yo[:-1] + ("e" if fin == "ar" else "a")
+    else:
+        subj = raiz + ("e" if fin == "ar" else "a")
+    return {
+        "inf": v,
+        "pres1": yo,
+        "pret1": conjugar_yo(v, pasado=True),
+        "pres3": _PRES3_IRREG.get(v, pres3),
+        "pret3": _PRET3_IRREG.get(v, raiz + ("ó" if fin == "ar" else "ió")),
+        "pres1pl": raiz + {"ar": "amos", "er": "emos", "ir": "imos"}[fin],
+        "pret3pl": raiz + {"ar": "aron", "er": "ieron", "ir": "ieron"}[fin],
+        "subj": subj,
+        "imp": {"ser": "era", "ir": "iba", "ver": "veía"}.get(v, raiz + ("aba" if fin == "ar" else "ía")),
+        "ger": raiz + ("ando" if fin == "ar" else "iendo"),
+    }
+
+
+def formas_verbales(palabra):
+    """Formas conjugadas de un infinitivo (ver `conjugaciones`), sin el
+    infinitivo. Las usa gramatica.formas para reconocer conjugaciones que
+    spaCy no lematiza bien en palabras sueltas ("dibujé", "corrí")."""
+    return {f for t, f in conjugaciones(palabra).items() if t != "inf"}
 
 
 # ── Armado de una cláusula simple ────────────────────────────────────────────

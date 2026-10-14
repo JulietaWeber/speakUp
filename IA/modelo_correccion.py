@@ -38,12 +38,13 @@ import torch.nn.functional as F
 from collections import Counter
 
 from conjugacion import (
-    componer_clausula, es_infinitivo, es_verbo, infinitivo_sin_gobierno,
-    tiene_verbo_conjugado,
+    componer_clausula, conjugaciones, es_adjetivo, es_infinitivo, es_verbo,
+    infinitivo_sin_gobierno, pos_palabra, tiene_verbo_conjugado,
 )
 
 from gramatica import (
-    lema, es_permitida, cubre_entrada, bien_formada, palabras_obligatorias, token_cubre,
+    lema, lemas_y_formas, es_permitida, cubre_entrada, bien_formada, palabras_obligatorias, token_cubre,
+    concuerda, flexionar, formas, lexico_genero, verbo_tras_preposicion, rasgos_adjetivo,
     CONJUNCIONES, FUNCIONALES,
 )
 
@@ -55,11 +56,12 @@ DEVICE = torch.device("cpu")
 PAD, SOS, EOS, UNK = "<pad>", "<sos>", "<eos>", "<unk>"
 FIN_DE_FRASE = {".", "!", "?"}
 
-HIDDEN_SIZE = 64
-EMB_SIZE = 48
-DROPOUT = 0.15
-MAX_LEN_SALIDA = 20  # tope de tokens al generar, evita loops infinitos (el
-                      # dataset actual no supera 15 tokens de salida)
+HIDDEN_SIZE = 128
+EMB_SIZE = 64
+DROPOUT = 0.2
+MAX_LEN_SALIDA = 32  # tope de tokens al generar, evita loops infinitos (las
+                      # frases de 10 palabras llegan a ~25 tokens de salida)
+BEAM = 5             # hipótesis que se mantienen en paralelo al generar
 
 # ── Tokenización de la frase de salida ──────────────────────────────────────
 # Separamos palabras y signos de puntuación como tokens distintos para que el
@@ -95,6 +97,9 @@ class Vocabulario:
                     palabras.append(t)
         self.idx2tok = especiales + sorted(palabras)
         self.tok2idx = {t: i for i, t in enumerate(self.idx2tok)}
+        # género/número de cada sustantivo según el dataset (ver
+        # gramatica.lexico_genero); se guarda en el checkpoint.
+        self.generos = lexico_genero(oraciones_tokenizadas)
 
     def __len__(self):
         return len(self.idx2tok)
@@ -130,15 +135,17 @@ def vectorizar_entrada(nlp, palabras):
     return np.stack([vector_palabra(nlp, p) for p in palabras])
 
 # ── Arquitectura ─────────────────────────────────────────────────────────────
-# Encoder unidireccional de una sola capa (más liviano que un GRU bidireccional
-# de 2 capas: la mitad de los parámetros recurrentes y la mitad del cómputo en
-# cada forward pass), suficiente para bolsas de palabras cortas como las de CAA.
+# Encoder bidireccional de una capa: el usuario elige las palabras en cualquier
+# orden, y con una sola dirección la representación de cada palabra solo
+# "veía" las anteriores, lo que en frases largas hacía que el decoder perdiera
+# el contexto de las últimas. Cada dirección usa hidden_size/2, así las salidas
+# y el estado inicial del decoder siguen siendo de tamaño hidden_size.
 
 class Encoder(nn.Module):
     def __init__(self, input_size, hidden_size=HIDDEN_SIZE, dropout=DROPOUT):
         super().__init__()
         self.hidden_size = hidden_size
-        self.gru = nn.GRU(input_size, hidden_size, batch_first=True)
+        self.gru = nn.GRU(input_size, hidden_size // 2, batch_first=True, bidirectional=True)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, lengths):
@@ -148,6 +155,8 @@ class Encoder(nn.Module):
         )
         outputs, hidden = self.gru(packed)
         outputs, _ = nn.utils.rnn.pad_packed_sequence(outputs, batch_first=True)
+        # (2, batch, h/2) -> (1, batch, h): estados finales de ambas direcciones
+        hidden = torch.cat([hidden[0], hidden[1]], dim=1).unsqueeze(0)
         return outputs, hidden
 
 class Attention(nn.Module):
@@ -192,7 +201,7 @@ def _mascara_vocabulario(nlp, vocab_salida, palabras):
     coincida con el de alguna palabra de entrada. Esto es lo que impide que
     el modelo "invente" contenido que el usuario no seleccionó, incluso para
     combinaciones de palabras que nunca vio en el dataset de entrenamiento."""
-    lemas_entrada = {lema(nlp, p) for p in palabras}
+    lemas_entrada = lemas_y_formas(nlp, palabras)
     mask = torch.full((len(vocab_salida),), float("-inf"))
     for idx, tok in enumerate(vocab_salida.idx2tok):
         if tok in (PAD, SOS, UNK):
@@ -212,14 +221,141 @@ def corregir_frase(nlp, encoder, decoder, vocab_salida, palabras):
     que el usuario no seleccionó (ver `_mascara_vocabulario`).
 
     Si `palabras` tiene un solo elemento no hay nada que corregir ni
-    reordenar: se devuelve tal cual. Si el modelo no logra usar todas las
-    palabras de una sola vez (frases largas), se parte la frase en tramos, se
-    corrige cada tramo y se unen; un tramo que no se puede armar queda literal."""
+    reordenar: se devuelve tal cual. Las palabras que el modelo no conoce se
+    reemplazan temporalmente por una conocida equivalente (ver `_reemplazos`).
+    Si el modelo no logra usar todas las palabras de una sola vez, se parte la
+    frase en tramos, se corrige cada tramo y se unen; un tramo que no se puede
+    armar queda literal."""
     palabras = [p.strip() for p in palabras if isinstance(p, str) and p.strip()]
     if len(palabras) <= 1:
         return palabras[0] if palabras else ""
-    frase, _ = _corregir_recursivo(nlp, encoder, decoder, vocab_salida, tuple(palabras), False, {})
-    return frase
+    reemplazos = _reemplazos(nlp, vocab_salida, palabras)
+    entrada = tuple(reemplazos[p][0] if p in reemplazos else p for p in palabras)
+    frase, _ = _corregir_recursivo(nlp, encoder, decoder, vocab_salida, entrada, False, {})
+    return _restaurar(frase, reemplazos) if reemplazos else frase
+
+# ── Palabras fuera del vocabulario ───────────────────────────────────────────
+# El decoder solo puede escribir tokens que vio al entrenar: si el usuario
+# elige "sillón" o "cenar" y no están en el dataset, no hay forma de que
+# aparezcan en la frase y todo cae al armado literal. Para esas palabras se
+# usa un "doble": la palabra conocida más parecida (vector de spaCy) de la
+# misma categoría y, en sustantivos, del mismo género y número. Se genera la
+# frase con el doble y después se vuelve a poner la palabra original con la
+# misma flexión que tomó el doble ("comí" -> "cené", "roja" -> "azul").
+
+_cache_candidatos = {}
+
+
+def _lemas_vocab(nlp, vocab_salida):
+    clave = (id(vocab_salida), "lemas")
+    if clave not in _cache_candidatos:
+        _cache_candidatos[clave] = {lema(nlp, t) for t in vocab_salida.idx2tok if t.isalpha()}
+    return _cache_candidatos[clave]
+
+
+def _conocida(nlp, vocab_salida, p):
+    """True si el decoder puede escribir `p` o alguna forma suya: la palabra
+    misma, una flexión, o un token cuyo lema sea el de `p` ("doler" está
+    como "duele")."""
+    pl = p.lower()
+    vocab_tokens = vocab_salida.tok2idx
+    return (pl in vocab_tokens or any(f in vocab_tokens for f in formas(pl))
+            or lema(nlp, pl) in _lemas_vocab(nlp, vocab_salida))
+
+
+def _categoria(nlp, p):
+    if es_infinitivo(nlp, p):
+        return "verbo"
+    if es_adjetivo(nlp, p):
+        return "adj"
+    if pos_palabra(nlp, p) in ("NOUN", "PROPN"):
+        return "sust"
+    return pos_palabra(nlp, p) or "otro"
+
+
+def _rasgos_sustantivo(nlp, s):
+    """(género, número) estimado de un sustantivo que no está en el léxico."""
+    n = "p" if s.endswith("s") and not s.endswith(("és", "ís", "ús")) else "s"
+    base = s[:-1] if n == "p" else s
+    doc = nlp(base)
+    g = doc[0].morph.get("Gender") if len(doc) else []
+    if g:
+        return ("f" if g[0] == "Fem" else "m"), n
+    return ("f" if base.endswith(("a", "ión", "dad", "tad", "tud", "umbre")) else "m"), n
+
+
+def _candidatos(nlp, vocab_salida, categoria):
+    clave = (id(vocab_salida), categoria)
+    if clave not in _cache_candidatos:
+        toks = [t for t in vocab_salida.idx2tok if t.isalpha() and t.islower() and t not in FUNCIONALES]
+        if categoria == "verbo":
+            cands = [t for t in toks if es_infinitivo(nlp, t)]
+        elif categoria == "adj":
+            # forma base: masculino singular o invariable ("rojo", "azul")
+            cands = [t for t in toks if es_adjetivo(nlp, t) and not t.endswith(("a", "s"))]
+        elif categoria == "sust":
+            cands = [t for t in toks if t in vocab_salida.generos]
+        else:
+            cands = [t for t in toks if pos_palabra(nlp, t) == categoria]
+        matriz = np.stack([vector_palabra(nlp, t) for t in cands]) if cands else None
+        if matriz is not None:
+            matriz = matriz / (np.linalg.norm(matriz, axis=1, keepdims=True) + 1e-8)
+        _cache_candidatos[clave] = (cands, matriz)
+    return _cache_candidatos[clave]
+
+
+def _reemplazos(nlp, vocab_salida, palabras):
+    """{palabra desconocida: (doble, categoría)} para la entrada."""
+    prohibidas = lemas_y_formas(nlp, palabras)
+    reemplazos = {}
+    for p in palabras:
+        pl = p.lower()
+        if pl in FUNCIONALES or pl in CONJUNCIONES or not pl.isalpha() or p in reemplazos:
+            continue
+        if _conocida(nlp, vocab_salida, pl):
+            continue
+        cat = _categoria(nlp, pl)
+        cands, matriz = _candidatos(nlp, vocab_salida, cat)
+        if not cands:
+            continue
+        rasgos = _rasgos_sustantivo(nlp, pl) if cat == "sust" else None
+        v = vector_palabra(nlp, pl)
+        sims = matriz @ (v / (np.linalg.norm(v) + 1e-8))
+        for i in np.argsort(-sims):
+            c = cands[i]
+            if c in prohibidas or any(c == r[0] for r in reemplazos.values()):
+                continue
+            if rasgos and rasgos not in vocab_salida.generos[c]:
+                continue
+            reemplazos[p] = (c, cat)
+            prohibidas |= formas(c) | {c}
+            break
+    return reemplazos
+
+
+def _restaurar(frase, reemplazos):
+    """Vuelve a poner en `frase` las palabras originales en lugar de sus
+    dobles, con la misma flexión que tomó cada doble."""
+    mapa = {}
+    for original, (doble, cat) in reemplazos.items():
+        o = original.lower()
+        mapa[doble] = o
+        if cat == "verbo":
+            conj_o = conjugaciones(o)
+            for tag, forma in conjugaciones(doble).items():
+                mapa.setdefault(forma, conj_o.get(tag, o))
+        elif cat == "adj":
+            for forma in formas(doble):
+                g, n = rasgos_adjetivo(forma)
+                mapa.setdefault(forma, flexionar(o, g or "m", n))
+    tokens = []
+    for tok in tokenizar_salida(frase):
+        nuevo = mapa.get(tok.lower())
+        if nuevo is None:
+            tokens.append(tok)
+        else:
+            tokens.append(nuevo[0].upper() + nuevo[1:] if tok[:1].isupper() else nuevo)
+    return detokenizar_salida(tokens)
 
 def _corregir_recursivo(nlp, encoder, decoder, vocab_salida, palabras, causa, memo):
     """Devuelve (frase, palabras_sin_procesar): cuántas palabras quedaron
@@ -234,12 +370,14 @@ def _corregir_recursivo(nlp, encoder, decoder, vocab_salida, palabras, causa, me
         # El modelo no pudo (verbo sin conjugar, palabras que no conoce...):
         # si es una cláusula simple, se arma por reglas conjugando el verbo.
         frase_reglas = componer_clausula(nlp, palabras, causa)
-        if frase_reglas is not None:
+        # Las reglas eligen el artículo con el género que spaCy adivina para
+        # la palabra suelta ("el flor"): se valida con el léxico del dataset.
+        if frase_reglas is not None and concuerda(tokenizar_salida(frase_reglas), vocab_salida.generos, set()):
             memo[clave] = (frase_reglas, 0)
             return memo[clave]
-    # El modelo rinde mucho mejor con frases cortas (casi todo su entrenamiento
-    # tiene <= 5 palabras): en las largas, aunque devuelva algo válido, se
-    # prefiere partir si todos los tramos pueden armarse con el modelo.
+    # El dataset cubre frases de hasta MAX_PALABRAS_DIRECTO palabras: más
+    # largas que eso, aunque el modelo devuelva algo válido, se prefiere
+    # partir si todos los tramos pueden armarse con el modelo.
     corte = None
     if len(palabras) >= 4 and (frase is None or len(palabras) > MAX_PALABRAS_DIRECTO):
         corte = _mejor_corte(nlp, encoder, decoder, vocab_salida, palabras, causa, memo)
@@ -252,7 +390,7 @@ def _corregir_recursivo(nlp, encoder, decoder, vocab_salida, palabras, causa, me
     memo[clave] = resultado
     return resultado
 
-MAX_PALABRAS_DIRECTO = 5
+MAX_PALABRAS_DIRECTO = 10
 
 def _mejor_corte(nlp, encoder, decoder, vocab_salida, palabras, causa, memo):
     """Prueba los cortes candidatos y devuelve (frase, palabras_sin_procesar)
@@ -296,96 +434,161 @@ def _cortes(nlp, palabras):
     orden += [i for i in sorted(posibles, key=lambda k: abs(k - medio)) if i not in orden][: MAX_CORTES - len(orden)]
     return [(palabras[:i], None, palabras[i:]) for i in orden]
 
-def _generar(nlp, encoder, decoder, vocab_salida, palabras):
-    """Genera la frase con el modelo. Devuelve None si el resultado no usa
-    todas las palabras obligatorias de la entrada."""
+class _Hipotesis:
+    """Una frase parcial del beam search, con el estado de las restricciones
+    (qué palabras del usuario faltan usar, cuántas veces se usó cada una...)."""
+    __slots__ = ("ids", "logp", "hidden", "restante", "pendientes", "usos_funcionales", "bigramas", "terminada")
+
+    def __init__(self, ids, logp, hidden, restante, pendientes, usos_funcionales, bigramas, terminada=False):
+        self.ids, self.logp, self.hidden = ids, logp, hidden
+        self.restante, self.pendientes = restante, pendientes
+        self.usos_funcionales, self.bigramas = usos_funcionales, bigramas
+        self.terminada = terminada
+
+    def puntaje(self):
+        # Normalizado por largo: sin esto el beam prefiere frases cortas y
+        # "apuradas", justo el problema que tenían las frases largas.
+        return self.logp / max(len(self.ids), 1) ** 0.7
+
+
+def _generar(nlp, encoder, decoder, vocab_salida, palabras, beam=BEAM):
+    """Genera la frase con el modelo usando beam search restringido: en cada
+    paso solo se expanden tokens permitidos por la máscara de vocabulario, que
+    no repitan una palabra del usuario más veces de las que la eligió y que no
+    cierren la frase antes de usarlas todas. Al final se devuelve la mejor
+    hipótesis que además pase los chequeos de `_valida`, o None si ninguna.
+
+    El greedy anterior se comprometía con una palabra por paso: en frases
+    largas, un primer token apenas peor ("Querer" en vez de "Quiero") lo
+    dejaba sin salida y había que partir la frase o devolverla literal."""
     encoder.eval()
     decoder.eval()
     eos_idx = vocab_salida.tok2idx[EOS]
+    sos_idx = vocab_salida.tok2idx[SOS]
     with torch.no_grad():
         vecs = vectorizar_entrada(nlp, palabras)
         x = torch.tensor(vecs, dtype=torch.float32).unsqueeze(0)
-        lengths = [len(palabras)]
-
-        encoder_outputs, hidden = encoder(x, lengths)
-        mask = torch.ones(1, encoder_outputs.size(1))
+        encoder_outputs, hidden = encoder(x, [len(palabras)])
         mask_vocab = _mascara_vocabulario(nlp, vocab_salida, palabras)
 
-        token = torch.tensor([vocab_salida.tok2idx[SOS]])
-        prev_id = vocab_salida.tok2idx[SOS]
-        bigramas_vistos = set()
-        ids_generados = []
         requeridas = palabras_obligatorias(palabras)
-        pendientes = set(requeridas)
-        # Cada palabra de contenido se puede usar tantas veces como el usuario
-        # la eligió (evita "tengo frío, tengo frío"); las funcionales, hasta 2.
-        restante = dict(Counter(requeridas))
-        usos_funcionales = Counter()
         cubre_cache = {}
+        claves = list(dict.fromkeys(requeridas))
 
         def palabras_que_cubre(tok):
             if tok not in cubre_cache:
-                cubre_cache[tok] = [p for p in restante if token_cubre(nlp, tok, p)]
+                cubre_cache[tok] = [p for p in claves if token_cubre(nlp, tok, p)]
             return cubre_cache[tok]
 
-        max_len = min(MAX_LEN_SALIDA, 2 * len(palabras) + 4)
+        # Cada palabra de contenido se puede usar tantas veces como el usuario
+        # la eligió (evita "tengo frío, tengo frío"); las funcionales, hasta 2.
+        vivas = [_Hipotesis([], 0.0, hidden, dict(Counter(requeridas)), frozenset(requeridas),
+                            Counter(), frozenset())]
+        terminadas = []
+        max_len = min(MAX_LEN_SALIDA, 3 * len(palabras) + 6)
         for _ in range(max_len):
-            logits, hidden, _ = decoder(token, hidden, encoder_outputs, mask)
-            logits = logits[0] + mask_vocab
-            orden = torch.argsort(logits, descending=True)
+            if not vivas:
+                break
+            n = len(vivas)
+            tokens = torch.tensor([h.ids[-1] if h.ids else sos_idx for h in vivas])
+            hid = torch.cat([h.hidden for h in vivas], dim=1)
+            enc = encoder_outputs.expand(n, -1, -1)
+            logits, hid_nuevo, _ = decoder(tokens, hid, enc, torch.ones(n, enc.size(1)))
+            logp = F.log_softmax(logits, dim=1) + mask_vocab
 
-            elegido = None
-            for candidato in orden.tolist():
-                if logits[candidato].item() == float("-inf"):
-                    break  # ya no quedan candidatos permitidos
-                if candidato == eos_idx:
-                    if pendientes:
-                        continue  # no se puede terminar sin usar todas las palabras
-                    elegido = candidato
+            candidatas = []
+            for i, h in enumerate(vivas):
+                prev = h.ids[-1] if h.ids else sos_idx
+                encontrados = 0
+                for cand in torch.argsort(logp[i], descending=True).tolist():
+                    valor = logp[i, cand].item()
+                    if valor == float("-inf") or encontrados >= beam:
+                        break
+                    if cand == eos_idx:
+                        if h.pendientes:
+                            continue  # no se puede terminar sin usar todas las palabras
+                        candidatas.append((h.logp + valor, i, cand, None))
+                        encontrados += 1
+                        continue
+                    tok = vocab_salida.idx2tok[cand]
+                    if tok in FIN_DE_FRASE and h.pendientes:
+                        continue  # no cerrar la frase antes de usar todas las palabras
+                    if (prev, cand) in h.bigramas:
+                        continue
+                    cubre = palabras_que_cubre(tok)
+                    if any(h.restante[p] == 0 for p in cubre):
+                        continue  # ya se usó todas las veces que el usuario la eligió
+                    if not cubre and tok.lower() in FUNCIONALES and h.usos_funcionales[tok.lower()] >= 2:
+                        continue
+                    candidatas.append((h.logp + valor, i, cand, cubre))
+                    encontrados += 1
+
+            candidatas.sort(key=lambda c: c[0], reverse=True)
+            nuevas = []
+            for logp_total, i, cand, cubre in candidatas:
+                if len(nuevas) >= beam:
                     break
-                tok = vocab_salida.idx2tok[candidato]
-                if tok in FIN_DE_FRASE and pendientes:
-                    continue  # no cerrar la frase antes de usar todas las palabras
-                if (prev_id, candidato) in bigramas_vistos:
+                h = vivas[i]
+                if cand == eos_idx:
+                    terminadas.append(_Hipotesis(h.ids, logp_total, None, h.restante, h.pendientes,
+                                                 h.usos_funcionales, h.bigramas, True))
                     continue
-                cubre = palabras_que_cubre(tok)
-                if any(restante[p] == 0 for p in cubre):
-                    continue  # ya se usó todas las veces que el usuario la eligió
-                if not cubre and tok.lower() in FUNCIONALES and usos_funcionales[tok.lower()] >= 2:
-                    continue
-                elegido = candidato
-                break
-            if elegido is None or elegido == eos_idx:
-                break
+                tok = vocab_salida.idx2tok[cand]
+                restante = dict(h.restante)
+                for p in cubre:
+                    restante[p] -= 1
+                usos = h.usos_funcionales
+                if not cubre and tok.lower() in FUNCIONALES:
+                    usos = Counter(usos)
+                    usos[tok.lower()] += 1
+                prev = h.ids[-1] if h.ids else sos_idx
+                nueva = _Hipotesis(h.ids + [cand], logp_total, hid_nuevo[:, i:i + 1].contiguous(), restante,
+                                   h.pendientes - set(cubre), usos, h.bigramas | {(prev, cand)})
+                if tok in FIN_DE_FRASE:
+                    # la frase termina en el primer punto: nada de texto extra
+                    nueva.terminada = True
+                    terminadas.append(nueva)
+                else:
+                    nuevas.append(nueva)
+            vivas = nuevas
+            # Ya hay `beam` frases completas mejores que cualquier parcial viva:
+            # seguir expandiendo solo puede empeorarlas (logp es acumulativo).
+            if len(terminadas) >= beam and vivas:
+                peor = sorted(h.puntaje() for h in terminadas)[-beam]
+                if max(h.logp for h in vivas) / max_len ** 0.7 < peor:
+                    break
 
-            bigramas_vistos.add((prev_id, elegido))
-            ids_generados.append(elegido)
-            tok_elegido = vocab_salida.idx2tok[elegido]
-            cubre = palabras_que_cubre(tok_elegido)
-            for p in cubre:
-                restante[p] -= 1
-                pendientes.discard(p)
-            if not cubre and tok_elegido.lower() in FUNCIONALES:
-                usos_funcionales[tok_elegido.lower()] += 1
-            if tok_elegido in FIN_DE_FRASE:
-                break  # la frase termina en el primer punto: nada de texto extra
-            prev_id = elegido
-            token = torch.tensor([elegido])
+        adjetivos = set()
+        for p in palabras:
+            if es_adjetivo(nlp, p):
+                adjetivos |= formas(p)
+        for h in sorted(terminadas, key=lambda h: h.puntaje(), reverse=True):
+            frase = _valida(nlp, vocab_salida.decode(h.ids), palabras, vocab_salida.generos, adjetivos)
+            if frase is not None:
+                return frase
+        return None
 
-        tokens = vocab_salida.decode(ids_generados)
-        # Si el modelo no usó todas las palabras del usuario (típico en frases
-        # largas o con palabras que nunca vio), su salida no es confiable:
-        # mejor no devolverla que devolver una frase con contenido perdido.
-        if not tokens or not cubre_entrada(nlp, tokens, palabras) or not bien_formada(tokens):
+
+def _valida(nlp, tokens, palabras, generos, adjetivos):
+    """La frase detokenizada si `tokens` sirve como respuesta, o None."""
+    # Si el modelo no usó todas las palabras del usuario (típico en frases
+    # largas o con palabras que nunca vio), su salida no es confiable:
+    # mejor no devolverla que devolver una frase con contenido perdido.
+    if not tokens or not cubre_entrada(nlp, tokens, palabras) or not bien_formada(tokens):
+        return None
+    # Errores de concordancia ("el flor", "un sándwich rica") o un verbo
+    # conjugado donde va el infinitivo ("a corrí"): se prueba la siguiente
+    # hipótesis del beam, que suele ser la misma frase bien concordada.
+    if not concuerda(tokens, generos, adjetivos) or verbo_tras_preposicion(tokens, palabras):
+        return None
+    frase = detokenizar_salida(tokens)
+    # Si el usuario eligió un verbo en infinitivo, la frase tiene que
+    # tener algún verbo conjugado ("No esta noche dormir." no sirve).
+    infinitivos = {p.lower() for p in palabras if es_infinitivo(nlp, p)}
+    if infinitivos:
+        if not tiene_verbo_conjugado(nlp, frase) or infinitivo_sin_gobierno(nlp, frase, infinitivos):
             return None
-        # Si el usuario eligió un verbo en infinitivo, la frase tiene que
-        # tener algún verbo conjugado ("No esta noche dormir." no sirve).
-        infinitivos = {p.lower() for p in palabras if es_infinitivo(nlp, p)}
-        if infinitivos:
-            frase = detokenizar_salida(tokens)
-            if not tiene_verbo_conjugado(nlp, frase) or infinitivo_sin_gobierno(nlp, frase, infinitivos):
-                return None
-        return detokenizar_salida(tokens)
+    return frase
 
 def _frase_literal(palabras):
     """Fallback determinista: exactamente las palabras recibidas, en el orden
@@ -442,10 +645,10 @@ def entrenar():
     pares = [(pin, pout) for pin, pout in pares if cubre_entrada(nlp, pout, pin)]
     print(f"Pares que respetan todas las palabras: {len(pares)}")
 
-    # Aumentación con frases largas: el dataset casi no tiene entradas de 6+
-    # palabras, y con esas el modelo no generaliza. Se unen dos pares reales
-    # con "y", "porque" o coma, conservando el orden de cada cláusula.
-    pares += _pares_compuestos(pares, cantidad=3000)
+    # Aumentación: además de las frases largas del dataset (frases_largas.py),
+    # se unen dos pares reales con "y", "porque" o coma, conservando el orden
+    # de cada cláusula, para que el modelo vea uniones entre cláusulas libres.
+    pares += _pares_compuestos(pares, cantidad=1500)
     print(f"Con frases compuestas: {len(pares)}\n")
 
     vocab_salida = Vocabulario([out for _, out in pares])
@@ -456,13 +659,18 @@ def entrenar():
     for palabras_in, tokens_out in pares:
         vecs = vectorizar_entrada(nlp, palabras_in)
         ids_out = vocab_salida.encode(tokens_out)
-        ejemplos.append((vecs, ids_out))
+        ejemplos.append((vecs, ids_out, tuple(tokens_out)))
     print(f"Palabras únicas vectorizadas: {len(_cache_vectores)}\n")
 
-    random.shuffle(ejemplos)
-    corte = int(len(ejemplos) * 0.9)
-    train_set, val_set = ejemplos[:corte], ejemplos[corte:]
-    print(f"Train: {len(train_set)} | Val: {len(val_set)}\n")
+    # Validación por FRASE, no por par: cada frase aparece con varias
+    # permutaciones de la entrada, y si se reparten al azar el val_loss mide
+    # memoria (frases que ya vio en train), no generalización a frases nuevas.
+    frases = sorted({e[2] for e in ejemplos})
+    random.shuffle(frases)
+    frases_val = set(frases[: len(frases) // 10])
+    train_set = [(v, i) for v, i, f in ejemplos if f not in frases_val]
+    val_set = [(v, i) for v, i, f in ejemplos if f in frases_val]
+    print(f"Train: {len(train_set)} | Val: {len(val_set)} ({len(frases_val)} frases no vistas)\n")
 
     encoder = Encoder(dim_spacy).to(DEVICE)
     decoder = Decoder(len(vocab_salida)).to(DEVICE)
@@ -494,12 +702,14 @@ def entrenar():
             mask[i, :l] = 1
         return x, lengths_in, mask, y
 
-    EPOCHS = 80
-    BATCH_SIZE = 32
+    EPOCHS = 60
+    BATCH_SIZE = 64
     TEACHER_FORCING = 0.5
+    PACIENCIA = 10   # epochs sin mejorar val_loss antes de cortar
 
     print("Entrenando...")
     mejor_val_loss = float("inf")
+    sin_mejora = 0
     for epoch in range(1, EPOCHS + 1):
         encoder.train()
         decoder.train()
@@ -552,11 +762,16 @@ def entrenar():
 
         scheduler.step(loss_val)
 
-        if epoch % 5 == 0 or epoch == 1 or epoch == EPOCHS:
-            lr_actual = optimizador.param_groups[0]["lr"]
-            print(f"Epoch {epoch:3d} | train_loss={loss_train:.4f} | val_loss={loss_val:.4f} | lr={lr_actual:.2e}")
+        lr_actual = optimizador.param_groups[0]["lr"]
+        print(f"Epoch {epoch:3d} | train_loss={loss_train:.4f} | val_loss={loss_val:.4f} | lr={lr_actual:.2e}", flush=True)
 
-        if loss_val < mejor_val_loss:
+        if loss_val >= mejor_val_loss:
+            sin_mejora += 1
+            if sin_mejora >= PACIENCIA:
+                print(f"Sin mejora en {PACIENCIA} epochs, se corta el entrenamiento.")
+                break
+        else:
+            sin_mejora = 0
             mejor_val_loss = loss_val
             torch.save(
                 {
@@ -564,6 +779,7 @@ def entrenar():
                     "decoder_state": decoder.state_dict(),
                     "tok2idx": vocab_salida.tok2idx,
                     "idx2tok": vocab_salida.idx2tok,
+                    "generos": vocab_salida.generos,
                     "dim_spacy": dim_spacy,
                     "hidden_size": HIDDEN_SIZE,
                     "emb_size": EMB_SIZE,
@@ -580,6 +796,7 @@ def entrenar():
     vocab_final = Vocabulario([])
     vocab_final.tok2idx = checkpoint["tok2idx"]
     vocab_final.idx2tok = checkpoint["idx2tok"]
+    vocab_final.generos = checkpoint["generos"]
     encoder_final = Encoder(dim_spacy)
     decoder_final = Decoder(len(vocab_final))
     encoder_final.load_state_dict(checkpoint["encoder_state"])
@@ -592,6 +809,9 @@ def entrenar():
         ["amigo", "jugar", "querer", "parque"],
         ["yo", "querer", "comer", "pizza", "noche"],
         ["triste", "estar", "hoy"],
+        ["querer", "ir", "parque", "hermano", "jugar", "pelota"],
+        ["no", "poder", "dormir", "porque", "tener", "miedo", "oscuridad", "noche"],
+        ["mañana", "querer", "ir", "playa", "familia", "nadar", "mar", "porque", "hacer", "calor"],
         ["agua"],
     ]
     for palabras in ejemplos_prueba:

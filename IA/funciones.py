@@ -31,6 +31,7 @@ _checkpoint_correccion = torch.load("modelo_correccion.pt", map_location="cpu", 
 _vocab_correccion = VocabularioCorreccion([])
 _vocab_correccion.tok2idx = _checkpoint_correccion["tok2idx"]
 _vocab_correccion.idx2tok = _checkpoint_correccion["idx2tok"]
+_vocab_correccion.generos = _checkpoint_correccion.get("generos", {})
 
 _encoder_correccion = EncoderCorreccion(_checkpoint_correccion["dim_spacy"], _checkpoint_correccion["hidden_size"])
 _decoder_correccion = DecoderCorreccion(len(_vocab_correccion), _checkpoint_correccion["hidden_size"], _checkpoint_correccion["emb_size"])
@@ -50,7 +51,7 @@ DIM_SPACY = 300      # dimensión de los vectores de es_core_news_md
 MAX_CONTEXTO = 3      # cantidad máxima de palabras de contexto que usa el modelo
 
 def palabra_a_vector(palabra):
-    """Convierte una palabra a su vector spaCy de 96 dimensiones."""
+    """Convierte una palabra a su vector spaCy de DIM_SPACY dimensiones."""
     return nlp(palabra.lower()).vector
 
 def contexto_a_vector(palabras):
