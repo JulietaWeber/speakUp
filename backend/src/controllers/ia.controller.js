@@ -256,7 +256,8 @@ const procesarFraseConIA = async (req, res) => {
       body: JSON.stringify({
         user_id: String(id_usuario),
         categoria: categoriaFinal,
-        palabra: ultimaPalabra
+        palabra: ultimaPalabra,
+        palabras: palabrasNormalizadas
       })
     });
 

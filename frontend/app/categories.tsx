@@ -26,6 +26,7 @@ import {
   crearCategoria,
   crearPictogramaPersonalizado,
   crearPictogramaPersonalizadoConImagen,
+  procesarFraseIA,
 } from "../services/api";
 
 export default function Categories() {
@@ -225,10 +226,42 @@ export default function Categories() {
   // AGREGAR PICTOGRAMA A FRASE
   // =========================
 
-  const agregarPictograma = (
+  const agregarPictograma = async (
     pictogram: any
   ) => {
+    // Agregar el pictograma a la frase como siempre
     agregarPalabra(pictogram);
+
+    try {
+      const token = await AsyncStorage.getItem("token");
+
+      if (!token || !selectedCategory) {
+        console.log("Falta el token o la categoría seleccionada");
+        return;
+      }
+
+      console.log("SE EJECUTÓ agregarPictograma");
+      console.log("Consultando IA...");
+      console.log("Palabra:", pictogram.nombre);
+      console.log("Categoría:", selectedCategory.nombre);
+
+      const respuesta = await procesarFraseIA(
+        [pictogram.nombre],
+        selectedCategory.nombre,
+        token
+      );
+
+      console.log("Respuesta de la IA:", respuesta);
+    } catch (error: any) {
+      console.error(
+        "Error al consultar la IA:",
+        JSON.stringify(
+          error?.response?.data || error?.message || error,
+          null,
+          2
+        )
+      );
+    }
   };
 
   // =========================

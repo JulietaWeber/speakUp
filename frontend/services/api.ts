@@ -1,3 +1,4 @@
+
 import axios from "axios";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -82,7 +83,6 @@ export const obtenerCategorias = async (
   return response.data.data;
 };
 
-// Crear una categoría personalizada
 export const crearCategoria = async (
   nombre: string,
   color: string,
@@ -188,21 +188,11 @@ export const crearPictogramaPersonalizadoConImagen = async (
 ) => {
   const formData = new FormData();
 
-  formData.append(
-    "id_categorias",
-    String(idCategorias)
-  );
-
-  formData.append(
-    "nombre",
-    nombre
-  );
+  formData.append("id_categorias", String(idCategorias));
+  formData.append("nombre", nombre);
 
   if (audioUrl) {
-    formData.append(
-      "audio_url",
-      audioUrl
-    );
+    formData.append("audio_url", audioUrl);
   }
 
   formData.append(
@@ -229,33 +219,32 @@ export const crearPictogramaPersonalizadoConImagen = async (
 // ACTUALIZAR IMAGEN
 // =========================
 
-export const actualizarImagenPictogramaPersonalizado =
-  async (
-    idPictograma: number,
-    imagen: ImagenExpo,
-    token: string
-  ) => {
-    const formData = new FormData();
+export const actualizarImagenPictogramaPersonalizado = async (
+  idPictograma: number,
+  imagen: ImagenExpo,
+  token: string
+) => {
+  const formData = new FormData();
 
-    formData.append(
-      "imagen",
-      {
-        uri: imagen.uri,
-        name: imagen.name,
-        type: imagen.type,
-      } as any
-    );
+  formData.append(
+    "imagen",
+    {
+      uri: imagen.uri,
+      name: imagen.name,
+      type: imagen.type,
+    } as any
+  );
 
-    const response = await axios.put(
-      `${API_URL}/pictogramas/personalizado/${idPictograma}/imagen`,
-      formData,
-      {
-        headers: getAuthHeaders(token),
-      }
-    );
+  const response = await axios.put(
+    `${API_URL}/pictogramas/personalizado/${idPictograma}/imagen`,
+    formData,
+    {
+      headers: getAuthHeaders(token),
+    }
+  );
 
-    return response.data.data;
-  };
+  return response.data.data;
+};
 
 // =========================
 // AUDIOS
@@ -284,9 +273,7 @@ export const generarAudio = async (
 
   const tiempo = Date.now() - inicio;
 
-  console.log(
-    `AUDIO GENERADO EN ${tiempo} ms`
-  );
+  console.log(`AUDIO GENERADO EN ${tiempo} ms`);
 
   return response.data.data;
 };
@@ -312,24 +299,36 @@ export const corregirFraseIA = async (
   return response.data.data;
 };
 
+
 export const predecirPalabraIA = async (
   palabra: string,
   categoria: string,
   token: string
 ) => {
+  const datos = {
+    palabra: palabra.trim(),
+    palabras: [palabra.trim()],
+    categoria: categoria.trim(),
+  };
+
+  console.log("Datos enviados a la IA:", datos);
+
   const response = await axios.post(
     `${API_URL}/ia/predecir`,
+    datos,
     {
-      palabra,
-      categoria,
-    },
-    {
-      headers: getAuthHeaders(token),
+      headers: {
+        ...getAuthHeaders(token),
+        "Content-Type": "application/json",
+      },
     }
   );
 
+  console.log("Respuesta recibida de la IA:", response.data);
+
   return response.data.data;
 };
+
 
 export const procesarFraseIA = async (
   palabras: string[],
