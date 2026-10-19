@@ -48,24 +48,6 @@ export const login = async (
   return response.data.data;
 };
 
-// LOGIN CON GOOGLE
-export const loginGoogle = async (
-  nombre: string,
-  email: string,
-  google_id: string
-) => {
-  const response = await axios.post(
-    `${API_URL}/auth/google`,
-    {
-      nombre,
-      email,
-      google_id,
-    }
-  );
-
-  return response.data.data;
-};
-
 export const register = async (
   nombre: string,
   email: string,
@@ -100,6 +82,7 @@ export const obtenerCategorias = async (
   return response.data.data;
 };
 
+// Crear una categoría personalizada
 export const crearCategoria = async (
   nombre: string,
   color: string,
