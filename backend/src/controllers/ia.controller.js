@@ -262,6 +262,9 @@ const procesarFraseConIA = async (req, res) => {
     });
 
     const dataPredecir = await leerRespuestaIA(respuestaPredecir);
+    
+    console.log("ESTADO DE LA RESPUESTA IA:", respuestaPredecir.status);
+    console.log("DATOS RECIBIDOS DE LA IA:", dataPredecir);
 
     if (!respuestaPredecir.ok) {
       return res.status(502).json({
