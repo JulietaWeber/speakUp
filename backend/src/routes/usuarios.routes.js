@@ -1,11 +1,7 @@
 const express = require("express");
-
 const router = express.Router();
-
 const verificarToken = require("../middlewares/auth.middleware");
-
 const upload = require("../middlewares/upload.middleware");
-
 const {
   obtenerUsuarios,
   crearUsuario,
@@ -19,35 +15,19 @@ const {
   actualizarVozPreferida
 } = require("../controllers/usuarios.controller");
 
-// Rutas de perfil del usuario logueado
-router.get("/perfil/me", verificarToken, obtenerPerfil);
+// Las rutas de usuarios requieren autenticación, también las que antes eran públicas.
+router.use(verificarToken);
 
-router.put("/voz", verificarToken, actualizarVozPreferida);
+router.get("/perfil/me", obtenerPerfil);
+router.put("/voz", actualizarVozPreferida);
+router.post("/foto-perfil", upload.single("foto"), subirFotoPerfil);
+router.delete("/foto-perfil", eliminarFotoPerfil);
 
-router.post(
-  "/foto-perfil",
-  verificarToken,
-  upload.single("foto"),
-  subirFotoPerfil
-);
-
-router.delete(
-  "/foto-perfil",
-  verificarToken,
-  eliminarFotoPerfil
-);
-
-// Rutas generales
 router.get("/", obtenerUsuarios);
-
 router.post("/", crearUsuario);
-
 router.get("/:id/tableros", obtenerTablerosDeUsuario);
-
 router.get("/:id", obtenerUsuarioPorId);
-
 router.put("/:id", actualizarUsuario);
-
 router.delete("/:id", eliminarUsuario);
 
 module.exports = router;
