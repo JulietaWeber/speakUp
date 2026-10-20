@@ -1,7 +1,15 @@
+
 const supabase = require("../config/Supabase");
 
+// =====================
+// CONFIGURACIÓN
+// =====================
+
 const obtenerUrlIA = () => {
-  return process.env.IA_API_URL || "https://speakup-ia.onrender.com";
+  return (
+    process.env.IA_API_URL ||
+    "https://speakup-ia.onrender.com"
+  ).replace(/\/+$/, "");
 };
 
 const leerRespuestaIA = async (respuesta) => {
@@ -9,311 +17,426 @@ const leerRespuestaIA = async (respuesta) => {
 
   try {
     return JSON.parse(texto);
-  } catch (error) {
+  } catch {
     return texto;
   }
 };
 
-// GET /ia/ping
-const pingIA = async (req, res) => {
-  try {
-    const IA_API_URL = obtenerUrlIA();
+const responderOk = (res, data) => {
+  return res.json({
+    data,
+    error: null
+  });
+};
 
-    const respuesta = await fetch(`${IA_API_URL}/ping`);
-    const dataIA = await leerRespuestaIA(respuesta);
+const responderError = (res, status, mensaje, detalle) => {
+  const respuesta = {
+    data: null,
+    error: mensaje
+  };
 
-    if (!respuesta.ok) {
-      return res.status(502).json({
-        data: null,
-        error: "La API de IA respondió con error",
-        detalle: dataIA
-      });
+  if (detalle !== undefined) {
+    respuesta.detalle = detalle;
+  }
+
+  return res.status(status).json(respuesta);
+};
+
+// =====================
+// HELPERS DE IA
+// =====================
+
+// Convierte la entrada en una lista de palabras.
+// Acepta el array nuevo o una palabra del frontend anterior.
+const normalizarPalabras = (entrada) => {
+  if (typeof entrada === "string") {
+    return entrada.trim().split(/\s+/).filter(Boolean);
+  }
+
+  if (!Array.isArray(entrada)) {
+    return [];
+  }
+
+  return entrada
+    .filter((valor) => typeof valor === "string")
+    .flatMap((valor) => valor.trim().split(/\s+/))
+    .filter(Boolean);
+};
+
+// La IA ahora recibe solamente las últimas 3 palabras.
+const obtenerUltimasTresPalabras = (palabras) => {
+  return normalizarPalabras(palabras).slice(-3);
+};
+
+// Unifica la llamada HTTP a la IA.
+const consultarIA = async (endpoint, payload) => {
+  const respuesta = await fetch(
+    `${obtenerUrlIA()}${endpoint}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60000)
     }
+  );
 
-    return res.json({
-      data: dataIA,
-      error: null
-    });
+  const data = await leerRespuestaIA(respuesta);
 
-  } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+  return {
+    ok: respuesta.ok,
+    status: respuesta.status,
+    data
+  };
+};
+
+// Guardar historial sin interrumpir una predicción exitosa.
+const guardarHistorialIA = async (
+  id_usuario,
+  texto_actual,
+  sugerencia,
+  origen,
+  accion,
+  detalle
+) => {
+  const resultados = await Promise.allSettled([
+    supabase.from("sugerencias_ia").insert([
+      {
+        id_usuario,
+        texto_actual,
+        sugerencia,
+        origen
+      }
+    ]),
+    supabase.from("historial_uso").insert([
+      {
+        id_usuario,
+        accion,
+        detalle
+      }
+    ])
+  ]);
+
+  for (const resultado of resultados) {
+    if (resultado.status === "rejected") {
+      console.error(
+        "Error guardando historial IA:",
+        resultado.reason
+      );
+    } else if (resultado.value.error) {
+      console.error(
+        "Error guardando historial IA:",
+        resultado.value.error.message
+      );
+    }
   }
 };
 
+// =====================
+// GET /ia/ping
+// =====================
+
+const pingIA = async (req, res) => {
+  try {
+    const respuesta = await fetch(
+      `${obtenerUrlIA()}/ping`,
+      {
+        signal: AbortSignal.timeout(60000)
+      }
+    );
+
+    const dataIA = await leerRespuestaIA(respuesta);
+
+    if (!respuesta.ok) {
+      return responderError(
+        res,
+        502,
+        "La API de IA respondió con error",
+        dataIA
+      );
+    }
+
+    return responderOk(res, dataIA);
+  } catch (error) {
+    console.error("Error ping IA:", error);
+    return responderError(
+      res,
+      502,
+      "No se pudo conectar con la API de IA"
+    );
+  }
+};
+
+// =====================
 // POST /ia/predecir
+// =====================
+
 const predecirSiguientePalabra = async (req, res) => {
   try {
-    const IA_API_URL = obtenerUrlIA();
     const id_usuario = req.usuario.id_usuario;
 
-    const { categoria, palabra } = req.body;
+    // Nuevo formato: { palabras: [...] }
+    // Formato anterior: { categoria, palabra }
+    // La categoría ya no se envía a la IA.
+    const { palabras, palabra } = req.body || {};
 
-    if (!categoria || !palabra) {
-      return res.status(400).json({
-        data: null,
-        error: "Faltan datos obligatorios: categoria y palabra"
-      });
+    const palabrasRecibidas =
+      palabras !== undefined
+        ? normalizarPalabras(palabras)
+        : normalizarPalabras(palabra);
+
+    const ultimasTres =
+      obtenerUltimasTresPalabras(palabrasRecibidas);
+
+    if (ultimasTres.length === 0) {
+      return responderError(
+        res,
+        400,
+        "Tenés que enviar al menos una palabra"
+      );
     }
 
     const payloadIA = {
       user_id: String(id_usuario),
-      categoria: String(categoria),
-      palabra: String(palabra)
+      palabras: ultimasTres
     };
 
-    const respuesta = await fetch(`${IA_API_URL}/predecir`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payloadIA)
-    });
+    const resultado = await consultarIA(
+      "/predecir",
+      payloadIA
+    );
 
-    const dataIA = await leerRespuestaIA(respuesta);
-
-    if (!respuesta.ok) {
-      return res.status(502).json({
-        data: null,
-        error: "Error al consultar predicción de IA",
-        detalle: dataIA
-      });
+    if (!resultado.ok) {
+      return responderError(
+        res,
+        502,
+        "Error al consultar predicción de IA",
+        resultado.data
+      );
     }
 
-    await supabase.from("sugerencias_ia").insert([
-      {
-        id_usuario,
-        texto_actual: palabra,
-        sugerencia: JSON.stringify(dataIA),
-        origen: "ia_predecir"
-      }
-    ]);
+    await guardarHistorialIA(
+      id_usuario,
+      palabrasRecibidas.join(" "),
+      JSON.stringify(resultado.data),
+      "ia_predecir",
+      "ia_predecir",
+      `Predicción IA para: ${ultimasTres.join(" ")}`
+    );
 
-    await supabase.from("historial_uso").insert([
-      {
-        id_usuario,
-        accion: "ia_predecir",
-        detalle: `Predicción IA para palabra: ${palabra}`
-      }
-    ]);
-
-    return res.json({
-      data: {
-        entrada: payloadIA,
-        predicciones: dataIA
-      },
-      error: null
+    return responderOk(res, {
+      entrada: payloadIA,
+      predicciones: resultado.data
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    console.error("Error predecir IA:", error);
+
+    return responderError(
+      res,
+      502,
+      "No se pudo completar la predicción de IA"
+    );
   }
 };
 
+// =====================
 // POST /ia/corregir
+// =====================
+
 const corregirFrase = async (req, res) => {
   try {
-    const IA_API_URL = obtenerUrlIA();
     const id_usuario = req.usuario.id_usuario;
+    const { palabras } = req.body || {};
 
-    const { palabras } = req.body;
+    if (!Array.isArray(palabras)) {
+      return responderError(
+        res,
+        400,
+        "Tenés que enviar palabras como array"
+      );
+    }
 
-    if (!palabras || !Array.isArray(palabras) || palabras.length === 0) {
-      return res.status(400).json({
-        data: null,
-        error: "Tenés que enviar palabras como array"
-      });
+    const palabrasNormalizadas =
+      normalizarPalabras(palabras);
+
+    if (palabrasNormalizadas.length === 0) {
+      return responderError(
+        res,
+        400,
+        "Tenés que enviar palabras como array"
+      );
     }
 
     const payloadIA = {
-      palabras: palabras.map((palabra) => String(palabra))
+      palabras: palabrasNormalizadas
     };
 
-    const respuesta = await fetch(`${IA_API_URL}/corregir`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payloadIA)
-    });
+    const resultado = await consultarIA(
+      "/corregir",
+      payloadIA
+    );
 
-    const dataIA = await leerRespuestaIA(respuesta);
-
-    if (!respuesta.ok) {
-      return res.status(502).json({
-        data: null,
-        error: "Error al corregir frase con IA",
-        detalle: dataIA
-      });
+    if (!resultado.ok) {
+      return responderError(
+        res,
+        502,
+        "Error al corregir frase con IA",
+        resultado.data
+      );
     }
 
     const fraseCorregida =
-      dataIA && dataIA.frase
-        ? dataIA.frase
-        : palabras.join(" ");
-
-    await supabase.from("sugerencias_ia").insert([
-      {
-        id_usuario,
-        texto_actual: palabras.join(" "),
-        sugerencia: fraseCorregida,
-        origen: "ia_corregir"
-      }
-    ]);
-
-    await supabase.from("historial_uso").insert([
-      {
-        id_usuario,
-        accion: "ia_corregir",
-        detalle: `Corrección IA: ${fraseCorregida}`
-      }
-    ]);
-
-    return res.json({
-      data: {
-        entrada: payloadIA,
-        frase_corregida: fraseCorregida,
-        respuesta_original: dataIA
-      },
-      error: null
-    });
-
-  } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
-  }
-};
-
-// POST /ia/procesar-frase
-const procesarFraseConIA = async (req, res) => {
-  try {
-    const IA_API_URL = obtenerUrlIA();
-    const id_usuario = req.usuario.id_usuario;
-
-    const { palabras, categoria } = req.body;
-
-    if (!palabras || !Array.isArray(palabras) || palabras.length === 0) {
-      return res.status(400).json({
-        data: null,
-        error: "Tenés que enviar palabras como array"
-      });
-    }
-
-    const palabrasNormalizadas = palabras
-      .map((palabra) => String(palabra).trim())
-      .filter(Boolean);
-
-    if (palabrasNormalizadas.length === 0) {
-      return res.status(400).json({
-        data: null,
-        error: "No hay palabras válidas para procesar"
-      });
-    }
-
-    const categoriaFinal = categoria ? String(categoria) : "general";
-
-    // 1. Corregir frase con IA
-    const respuestaCorregir = await fetch(`${IA_API_URL}/corregir`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        palabras: palabrasNormalizadas
-      })
-    });
-
-    const dataCorregir = await leerRespuestaIA(respuestaCorregir);
-
-    if (!respuestaCorregir.ok) {
-      return res.status(502).json({
-        data: null,
-        error: "Error al corregir frase con IA",
-        detalle: dataCorregir
-      });
-    }
-
-    const fraseCorregida =
-      dataCorregir && dataCorregir.frase
-        ? dataCorregir.frase
+      resultado.data &&
+      typeof resultado.data.frase === "string"
+        ? resultado.data.frase
         : palabrasNormalizadas.join(" ");
 
-    // 2. Tomar última palabra para predecir la siguiente
-    const ultimaPalabra = palabrasNormalizadas[palabrasNormalizadas.length - 1];
+    await guardarHistorialIA(
+      id_usuario,
+      palabrasNormalizadas.join(" "),
+      fraseCorregida,
+      "ia_corregir",
+      "ia_corregir",
+      `Corrección IA: ${fraseCorregida}`
+    );
 
-    const respuestaPredecir = await fetch(`${IA_API_URL}/predecir`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        user_id: String(id_usuario),
-        categoria: categoriaFinal,
-        palabra: ultimaPalabra,
-        palabras: palabrasNormalizadas
-      })
-    });
-
-    const dataPredecir = await leerRespuestaIA(respuestaPredecir);
-    
-    console.log("ESTADO DE LA RESPUESTA IA:", respuestaPredecir.status);
-    console.log("DATOS RECIBIDOS DE LA IA:", dataPredecir);
-
-    if (!respuestaPredecir.ok) {
-      return res.status(502).json({
-        data: null,
-        error: "Error al predecir siguiente palabra con IA",
-        detalle: dataPredecir
-      });
-    }
-
-    // 3. Guardar sugerencia IA
-    await supabase.from("sugerencias_ia").insert([
-      {
-        id_usuario,
-        texto_actual: palabrasNormalizadas.join(" "),
-        sugerencia: JSON.stringify({
-          frase_corregida: fraseCorregida,
-          predicciones: dataPredecir
-        }),
-        origen: "ia_procesar_frase"
-      }
-    ]);
-
-    // 4. Guardar historial
-    await supabase.from("historial_uso").insert([
-      {
-        id_usuario,
-        accion: "ia_procesar_frase",
-        detalle: `Frase procesada con IA: ${fraseCorregida}`
-      }
-    ]);
-
-    return res.json({
-      data: {
-        frase_original: palabrasNormalizadas,
-        categoria: categoriaFinal,
-        frase_corregida: fraseCorregida,
-        palabra_base_prediccion: ultimaPalabra,
-        predicciones: dataPredecir
-      },
-      error: null
+    return responderOk(res, {
+      entrada: payloadIA,
+      frase_corregida: fraseCorregida,
+      respuesta_original: resultado.data
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    console.error("Error corregir IA:", error);
+
+    return responderError(
+      res,
+      502,
+      "No se pudo completar la corrección de IA"
+    );
   }
 };
+
+// =====================
+// POST /ia/procesar-frase
+// =====================
+
+const procesarFraseConIA = async (req, res) => {
+  try {
+    const id_usuario = req.usuario.id_usuario;
+    const { palabras, categoria } = req.body || {};
+
+    if (!Array.isArray(palabras)) {
+      return responderError(
+        res,
+        400,
+        "Tenés que enviar palabras como array"
+      );
+    }
+
+    const palabrasNormalizadas =
+      normalizarPalabras(palabras);
+
+    if (palabrasNormalizadas.length === 0) {
+      return responderError(
+        res,
+        400,
+        "No hay palabras válidas para procesar"
+      );
+    }
+
+    // Conservamos categoria en la respuesta al frontend
+    // para no romper el contrato existente.
+    const categoriaFinal =
+      categoria ? String(categoria) : "general";
+
+    // 1. CORREGIR LA FRASE COMPLETA
+    const resultadoCorregir = await consultarIA(
+      "/corregir",
+      {
+        palabras: palabrasNormalizadas
+      }
+    );
+
+    if (!resultadoCorregir.ok) {
+      return responderError(
+        res,
+        502,
+        "Error al corregir frase con IA",
+        resultadoCorregir.data
+      );
+    }
+
+    const fraseCorregida =
+      resultadoCorregir.data &&
+      typeof resultadoCorregir.data.frase === "string"
+        ? resultadoCorregir.data.frase
+        : palabrasNormalizadas.join(" ");
+
+    // 2. PREDECIR CON LAS ÚLTIMAS 3 PALABRAS
+    const ultimasTres =
+      obtenerUltimasTresPalabras(palabrasNormalizadas);
+
+    const payloadPrediccion = {
+      user_id: String(id_usuario),
+      palabras: ultimasTres
+    };
+
+    const resultadoPredecir = await consultarIA(
+      "/predecir",
+      payloadPrediccion
+    );
+
+    if (!resultadoPredecir.ok) {
+      return responderError(
+        res,
+        502,
+        "Error al predecir siguiente palabra con IA",
+        resultadoPredecir.data
+      );
+    }
+
+    const ultimaPalabra =
+      ultimasTres[ultimasTres.length - 1];
+
+    // 3. GUARDAR SUGERENCIA E HISTORIAL
+    await guardarHistorialIA(
+      id_usuario,
+      palabrasNormalizadas.join(" "),
+      JSON.stringify({
+        frase_corregida: fraseCorregida,
+        predicciones: resultadoPredecir.data
+      }),
+      "ia_procesar_frase",
+      "ia_procesar_frase",
+      `Frase procesada con IA: ${fraseCorregida}`
+    );
+
+    // 4. RESPUESTA AL FRONTEND
+    return responderOk(res, {
+      frase_original: palabrasNormalizadas,
+      categoria: categoriaFinal,
+      frase_corregida: fraseCorregida,
+      palabra_base_prediccion: ultimaPalabra,
+      predicciones: resultadoPredecir.data
+    });
+
+  } catch (error) {
+    console.error("Error procesar frase IA:", error);
+
+    return responderError(
+      res,
+      502,
+      "No se pudo procesar la frase con IA"
+    );
+  }
+};
+
+// =====================
+// EXPORTS
+// =====================
 
 module.exports = {
   pingIA,
