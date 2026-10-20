@@ -40,6 +40,12 @@ export default function Categories() {
   const [loadingPictograms, setLoadingPictograms] =
     useState(false);
 
+  // =========================
+  // SUGERENCIAS DE LA IA
+  // =========================
+
+  const [sugerenciasIA, setSugerenciasIA] = useState<any[]>([]);
+
   const [mostrarAgregarPalabra, setMostrarAgregarPalabra] =
     useState(false);
 
@@ -212,6 +218,7 @@ export default function Categories() {
     category: any
   ) => {
     setSelectedCategory(category);
+    setSugerenciasIA([]);
 
     setMostrarAgregarPalabra(false);
     setNuevoNombre("");
@@ -252,7 +259,15 @@ export default function Categories() {
       );
 
       console.log("Respuesta de la IA:", respuesta);
+
+      // Guardar las palabras sugeridas para mostrarlas en pantalla.
+      setSugerenciasIA(
+        Array.isArray(respuesta?.predicciones)
+          ? respuesta.predicciones
+          : []
+      );
     } catch (error: any) {
+      setSugerenciasIA([]);
       console.error(
         "Error al consultar la IA:",
         JSON.stringify(
@@ -559,6 +574,56 @@ export default function Categories() {
           <ConstructionBar />
 
           {/* =========================
+              SUGERENCIAS DE LA IA
+          ========================= */}
+          {sugerenciasIA.length > 0 && (
+            <View style={styles.sugerenciasContainer}>
+              <Text style={styles.sugerenciasTitulo}>
+                Recientes y sugeridos
+              </Text>
+
+              <View style={styles.sugerenciasLista}>
+                {sugerenciasIA.map((sugerencia, index) => {
+                  const palabra = String(sugerencia.palabra || "");
+                  const palabraLower = palabra.toLowerCase();
+                  const icono = /si|sí|bueno|bien|quiero|gracias/.test(palabraLower)
+                    ? "checkmark"
+                    : /no|nunca|mal/.test(palabraLower)
+                    ? "close"
+                    : /hola|salud|chau|adiós/.test(palabraLower)
+                    ? "hand-left-outline"
+                    : "chatbubble-ellipses-outline";
+
+                  return (
+                    <TouchableOpacity
+                      key={`${sugerencia.palabra}-${index}`}
+                      activeOpacity={0.75}
+                      style={styles.sugerenciaChip}
+                      onPress={() => {
+                        // Las sugerencias de IA son palabras de texto,
+                        // no pictogramas guardados en la base de datos.
+                        agregarPalabra({
+                          nombre: sugerencia.palabra,
+                          id_pictogramas: null,
+                          es_sugerencia_ia: true,
+                        } as any);
+                        setSugerenciasIA((prev) =>
+                          prev.filter((_, i) => i !== index)
+                        );
+                      }}
+                    >
+                      <Ionicons name={icono as any} size={17} color="#356879" />
+                      <Text style={styles.sugerenciaTexto} numberOfLines={1}>
+                        {sugerencia.palabra}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {/* =========================
               TÍTULO CATEGORÍAS
           ========================= */}
 
@@ -617,36 +682,26 @@ export default function Categories() {
                 </TouchableOpacity>
               );
             })}
-          </View>
-
-          {/* =========================
-              AGREGAR NUEVA CATEGORÍA
-          ========================= */}
-
-          {!mostrarAgregarCategoria && (
-            <TouchableOpacity
-              style={styles.newCategoryButton}
-              activeOpacity={0.75}
-              onPress={() => {
-                setMostrarAgregarCategoria(true);
-                setColorSeleccionado("#356879");
-              }}
-            >
-              <Ionicons
-                name="add-circle-outline"
-                size={22}
-                color="#356879"
-              />
-
-              <Text
-                style={
-                  styles.newCategoryButtonText
-                }
+            {!mostrarAgregarCategoria && (
+              <TouchableOpacity
+                style={styles.newCategoryButton}
+                activeOpacity={0.75}
+                onPress={() => {
+                  setMostrarAgregarCategoria(true);
+                  setColorSeleccionado("#356879");
+                }}
               >
-                Agregar nueva categoría
-              </Text>
-            </TouchableOpacity>
-          )}
+                <Ionicons
+                  name="add-circle-outline"
+                  size={22}
+                  color="#356879"
+                />
+                <Text style={styles.newCategoryButtonText}>
+                  Agregar nueva categoría
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
           {/* =========================
               FORMULARIO CATEGORÍA
@@ -891,12 +946,11 @@ export default function Categories() {
                 </View>
               ) : (
                 <>
-                  {pictograms.length > 0 && (
-                    <View
-                      style={
-                        styles.pictogramsContainer
-                      }
-                    >
+                  <View
+                    style={
+                      styles.pictogramsContainer
+                    }
+                  >
                       {pictograms.map(
                         (pictogram) => (
                           <TouchableOpacity
@@ -948,8 +1002,39 @@ export default function Categories() {
                           </TouchableOpacity>
                         )
                       )}
-                    </View>
-                  )}
+                      {!mostrarAgregarPalabra && (
+                        <TouchableOpacity
+                          style={[
+                            styles.newWordButton,
+                            {
+                              borderColor:
+                                selectedCategory.color || "#356879",
+                            },
+                          ]}
+                          activeOpacity={0.75}
+                          onPress={() => {
+                            setMostrarAgregarPalabra(true);
+                            setImagenNuevaPalabra(null);
+                          }}
+                        >
+                          <Ionicons
+                            name="add-circle-outline"
+                            size={22}
+                            color={selectedCategory.color || "#356879"}
+                          />
+                          <Text
+                            style={[
+                              styles.newWordButtonText,
+                              {
+                                color: selectedCategory.color || "#356879",
+                              },
+                            ]}
+                          >
+                            Agregar nueva palabra
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                  </View>
 
                   {pictograms.length ===
                     0 && (
@@ -973,54 +1058,6 @@ export default function Categories() {
                         no tiene pictogramas
                       </Text>
                     </View>
-                  )}
-
-                  {/* =========================
-                      AGREGAR NUEVA PALABRA
-                  ========================= */}
-
-                  {!mostrarAgregarPalabra && (
-                    <TouchableOpacity
-                      style={[
-                        styles.newWordButton,
-                        {
-                          borderColor:
-                            selectedCategory.color ||
-                            "#356879",
-                        },
-                      ]}
-                      activeOpacity={0.75}
-                      onPress={() => {
-                        setMostrarAgregarPalabra(
-                          true
-                        );
-                        setImagenNuevaPalabra(
-                          null
-                        );
-                      }}
-                    >
-                      <Ionicons
-                        name="add-circle-outline"
-                        size={22}
-                        color={
-                          selectedCategory.color ||
-                          "#356879"
-                        }
-                      />
-
-                      <Text
-                        style={[
-                          styles.newWordButtonText,
-                          {
-                            color:
-                              selectedCategory.color ||
-                              "#356879",
-                          },
-                        ]}
-                      >
-                        Agregar nueva palabra
-                      </Text>
-                    </TouchableOpacity>
                   )}
 
                   {/* =========================
@@ -1326,23 +1363,25 @@ const styles = StyleSheet.create({
   // =========================
 
   newCategoryButton: {
-    marginTop: 15,
-    minHeight: 52,
-    borderWidth: 2,
+    width: "31%",
+    minHeight: 82,
+    borderWidth: 1,
     borderColor: "#356879",
     borderRadius: 14,
     backgroundColor: "#FFFFFF",
-    flexDirection: "row",
+    flexDirection: "column",
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 15,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
   },
 
   newCategoryButtonText: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 10,
+    fontWeight: "600",
     color: "#356879",
-    marginLeft: 7,
+    marginTop: 4,
+    textAlign: "center",
   },
 
   newCategoryContainer: {
@@ -1520,6 +1559,51 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
+  sugerenciasContainer: {
+    // Mantiene el mismo espaciado general que la sección Categorías.
+    marginTop: 0,
+    marginBottom: 8,
+    width: "100%",
+  },
+
+  sugerenciasTitulo: {
+    color: "#789097",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 8,
+    marginLeft: 2,
+  },
+
+  sugerenciasLista: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-start",
+    gap: 10,
+  },
+
+  sugerenciaChip: {
+    // Mismo tamaño y distribución que las casillas de Categorías.
+    width: "31%",
+    minHeight: 82,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderWidth: 2,
+    borderColor: "#D9C8C8",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+
+  sugerenciaTexto: {
+    color: "#356879",
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
   pictogramImage: {
     width: 75,
     height: 75,
@@ -1580,21 +1664,23 @@ const styles = StyleSheet.create({
   // =========================
 
   newWordButton: {
-    marginTop: 20,
-    minHeight: 52,
-    borderWidth: 2,
+    width: "31%",
+    minHeight: 82,
+    borderWidth: 1,
     borderRadius: 14,
     backgroundColor: "#FFFFFF",
-    flexDirection: "row",
+    flexDirection: "column",
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 15,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
   },
 
   newWordButtonText: {
-    fontSize: 14,
-    fontWeight: "700",
-    marginLeft: 7,
+    fontSize: 10,
+    fontWeight: "600",
+    marginTop: 4,
+    textAlign: "center",
   },
 
   newWordContainer: {

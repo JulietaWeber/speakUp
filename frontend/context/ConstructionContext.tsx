@@ -1,9 +1,16 @@
 import React, { createContext, useContext, useState } from "react";
 import { Pictograma } from "../services/api";
 
+// Las palabras sugeridas por la IA no tienen un ID de pictograma en la base.
+export type PalabraConstruccion = Pictograma | {
+  nombre: string;
+  id_pictogramas: number | null;
+  es_sugerencia_ia: true;
+};
+
 type ConstructionContextType = {
-  palabras: Pictograma[];
-  agregarPalabra: (palabra: Pictograma) => void;
+  palabras: PalabraConstruccion[];
+  agregarPalabra: (palabra: PalabraConstruccion) => void;
   eliminarPalabra: (index: number) => void;
   borrarUltimaPalabra: () => void;
   limpiar: () => void;
@@ -18,9 +25,9 @@ export function ConstructionProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const [palabras, setPalabras] = useState<Pictograma[]>([]);
+  const [palabras, setPalabras] = useState<PalabraConstruccion[]>([]);
 
-  const agregarPalabra = (palabra: Pictograma) => {
+  const agregarPalabra = (palabra: PalabraConstruccion) => {
     setPalabras((prev) => [...prev, palabra]);
   };
 
