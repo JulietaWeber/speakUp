@@ -1,176 +1,73 @@
-import spacy
-import numpy as np
-import joblib
-import os
-import torch
-from sklearn.neural_network import MLPClassifier
-from modelo_correccion import (
-    Encoder as EncoderCorreccion,
-    Decoder as DecoderCorreccion,
-    Vocabulario as VocabularioCorreccion,
-    corregir_frase as _corregir_frase_modelo,
-)
+"""
+Carga los modelos UNA sola vez al arrancar la API y expone las tres funciones
+que usa api.py: predecir_top3, reentrenar y corregir_frase.
 
-# ── Cargar spaCy (una sola vez al arrancar) ───────────────────────────────────
+- spaCy (es_core_news_md): vectores de palabras y análisis morfológico.
+  Se cargan solo los componentes que se usan (sin parser ni NER) para
+  ahorrar memoria y tiempo.
+- prediccion.Predictor: n-gramas Kneser-Ney (modelo_prediccion.npz/.json)
+  + historial por usuario en modelos_usuarios/.
+- correccion.Corrector: etiquetador de ediciones (modelo_correccion.npz/.json
+  + lexico_correccion.json).
+"""
+
+import os
+
+import spacy
+
+from correccion import Corrector, correccion_basica
+from prediccion import Predictor
+
+AQUI = os.path.dirname(os.path.abspath(__file__))
+# Carpeta donde se guarda el historial de cada usuario (/reentrenar). Se
+# puede cambiar con la variable de entorno SPEAKUP_DIR_USUARIOS.
+DIR_USUARIOS = os.environ.get("SPEAKUP_DIR_USUARIOS", os.path.join(AQUI, "modelos_usuarios"))
 
 print("Cargando spaCy...")
-nlp = spacy.load("es_core_news_md")
-print("spaCy cargado\n")
+nlp = spacy.load("es_core_news_md", exclude=["parser", "ner", "lemmatizer"])
+_vectores = nlp.vocab.vectors
 
-# ── Cargar modelo base y encoders ─────────────────────────────────────────────
 
-encoder_salida = joblib.load("encoder_salida.pkl")
-modelo_base    = joblib.load("modelo_base.pkl")
-X_base, y_base = joblib.load("base_pares.pkl")
+def vector_de(palabra):
+    """Vector de spaCy de una palabra, o None (sin agregarla al vocabulario)."""
+    fila = _vectores.key2row.get(nlp.vocab.strings[palabra])
+    return None if fila is None else _vectores.data[fila]
 
-# ── Cargar modelo de corrección de frases ─────────────────────────────────────
+
+print("Cargando modelo de predicción...")
+predictor = Predictor(os.path.join(AQUI, "modelo_prediccion"), DIR_USUARIOS, vector_de)
 
 print("Cargando modelo de corrección...")
-_checkpoint_correccion = torch.load("modelo_correccion.pt", map_location="cpu", weights_only=False)
+_ARCHIVOS_CORRECCION = [os.path.join(AQUI, n) for n in
+                        ("modelo_correccion.npz", "modelo_correccion.json", "lexico_correccion.json")]
+if all(os.path.exists(p) for p in _ARCHIVOS_CORRECCION):
+    corrector = Corrector(nlp, *_ARCHIVOS_CORRECCION)
+else:
+    # Respaldo: sin el modelo, /corregir igual responde (las palabras del
+    # usuario con contracciones, mayúscula y puntuación; nunca inventa nada).
+    print("AVISO: faltan los archivos del modelo de corrección, se usa la corrección básica")
+    corrector = None
 
-_vocab_correccion = VocabularioCorreccion([])
-_vocab_correccion.tok2idx = _checkpoint_correccion["tok2idx"]
-_vocab_correccion.idx2tok = _checkpoint_correccion["idx2tok"]
-_vocab_correccion.generos = _checkpoint_correccion.get("generos", {})
+# Precalentar: la primera llamada inicializa cachés internas de spaCy/numpy.
+predictor.predecir("_calentamiento", ["quiero"])
+if corrector is not None:
+    corrector.corregir(["quiero", "ir", "parque"])
+print("Modelos listos\n")
 
-_encoder_correccion = EncoderCorreccion(_checkpoint_correccion["dim_spacy"], _checkpoint_correccion["hidden_size"])
-_decoder_correccion = DecoderCorreccion(len(_vocab_correccion), _checkpoint_correccion["hidden_size"], _checkpoint_correccion["emb_size"])
-_encoder_correccion.load_state_dict(_checkpoint_correccion["encoder_state"])
-_decoder_correccion.load_state_dict(_checkpoint_correccion["decoder_state"])
-_encoder_correccion.eval()
-_decoder_correccion.eval()
-print("Modelo de corrección cargado\n")
-
-# Precalentar: la primera corrección lematiza todo el vocabulario de salida
-# (~segundos); mejor pagar ese costo al arrancar y no en la primera request.
-_corregir_frase_modelo(nlp, _encoder_correccion, _decoder_correccion, _vocab_correccion, ["querer", "comer"])
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-DIM_SPACY = 300      # dimensión de los vectores de es_core_news_md
-MAX_CONTEXTO = 3      # cantidad máxima de palabras de contexto que usa el modelo
-
-def palabra_a_vector(palabra):
-    """Convierte una palabra a su vector spaCy de DIM_SPACY dimensiones."""
-    return nlp(palabra.lower()).vector
-
-def contexto_a_vector(palabras):
-    """Convierte la lista de hasta las últimas 3 palabras escritas por el
-    usuario en un único vector de tamaño fijo (igual esquema que
-    modelo_final.py): si hay menos de 3 palabras, se rellena con ceros a la
-    izquierda, así la palabra más reciente siempre cae en la misma posición
-    final del vector."""
-    palabras = palabras[-MAX_CONTEXTO:]
-    faltantes = MAX_CONTEXTO - len(palabras)
-    bloques = [np.zeros(DIM_SPACY, dtype=np.float32) for _ in range(faltantes)]
-    bloques += [palabra_a_vector(p) for p in palabras]
-    return np.concatenate(bloques)
-
-def cargar_modelo_usuario(user_id):
-    """Carga el modelo del usuario si existe, sino usa el base."""
-    path = f"modelos/modelo_{user_id}.pkl"
-    if os.path.exists(path):
-        return joblib.load(path)
-    return modelo_base
-
-# ── Función 1: Predecir Top 3 ─────────────────────────────────────────────────
 
 def predecir_top3(user_id, palabras):
-    """Predice las 3 palabras más probables a partir del contexto: las
-    últimas hasta 3 palabras que escribió el usuario (si escribió menos de
-    3, se usan las que haya)."""
-    modelo = cargar_modelo_usuario(user_id)
+    """Las 3 palabras más probables después de `palabras` (hasta las últimas
+    3 que escribió el usuario), con su probabilidad en porcentaje."""
+    return predictor.predecir(user_id, palabras)
 
-    entrada = contexto_a_vector(palabras).reshape(1, -1)
-
-    probs = modelo.predict_proba(entrada)[0]
-    top3  = probs.argsort()[-3:][::-1]
-
-    return [
-        {
-            "palabra":      encoder_salida.inverse_transform([modelo.classes_[i]])[0],
-            "probabilidad": round(float(probs[i]) * 100, 2)
-        }
-        for i in top3
-    ]
-
-# ── Función 2: Reentrenar ─────────────────────────────────────────────────────
 
 def reentrenar(user_id, datos):
-    nuevos_X = []
-    nuevos_y = []
+    """Suma las frases del usuario a su historial personal (acumulativo)."""
+    return predictor.reentrenar(user_id, datos)
 
-    for registro in datos:
-        frase = registro["frase"]
-
-        # Ventana deslizante: para cada posición, el contexto son las
-        # palabras anteriores (hasta 3) y el objetivo es la palabra
-        # siguiente. Igual esquema que dataset_predictivo.py / modelo_final.py.
-        for i in range(1, len(frase)):
-            contexto          = frase[max(0, i - 3):i]
-            palabra_siguiente = frase[i]
-
-            if palabra_siguiente not in encoder_salida.classes_:
-                print(f"'{palabra_siguiente}' no está en el vocabulario, se omite.")
-                continue
-
-            nuevos_X.append(contexto_a_vector(contexto))
-            nuevos_y.append(encoder_salida.transform([palabra_siguiente])[0])
-
-    if not nuevos_X:
-        return {"status": "sin_datos"}
-
-    nuevos_X = np.array(nuevos_X)
-    nuevos_y = np.array(nuevos_y)
-
-    os.makedirs("modelos", exist_ok=True)
-    modelo_path    = f"modelos/modelo_{user_id}.pkl"
-    historial_path = f"modelos/historial_{user_id}.pkl"
-
-    # Reentrenamiento acumulativo: se guarda el historial completo de pares
-    # (categoría+palabra -> palabra siguiente) de TODOS los reentrenamientos
-    # anteriores del usuario, y en cada llamada se reentrena un modelo FRESCO
-    # sobre la unión de los pares base (A) + histórico del usuario + lote
-    # nuevo. Así, si el usuario reentrena con B y después con C, el modelo
-    # final tiene A+B+C en vez de perder B (que es lo que pasaba al partir
-    # siempre del modelo base con solo el lote nuevo).
-    #
-    # No se usa partial_fit ni fit(warm_start=True): en MLPClassifier ambos
-    # exigen que el conjunto de clases de cada llamada sea EXACTAMENTE igual
-    # al de la llamada anterior (ValueError en caso contrario), algo que no
-    # se puede garantizar de antemano porque cada usuario puede introducir
-    # palabras nuevas en cualquier reentrenamiento. Al incluir siempre los
-    # pares base A en el fit, un modelo fresco por reentrenamiento no pierde
-    # el conocimiento general y evita por completo esa restricción de clases.
-    if os.path.exists(historial_path):
-        hist_X, hist_y = joblib.load(historial_path)
-        hist_X = np.concatenate([hist_X, nuevos_X])
-        hist_y = np.concatenate([hist_y, nuevos_y])
-    else:
-        hist_X, hist_y = nuevos_X, nuevos_y
-
-    joblib.dump((hist_X, hist_y), historial_path)
-
-    X_total = np.concatenate([X_base, hist_X])
-    y_total = np.concatenate([y_base, hist_y])
-
-    modelo = MLPClassifier(
-        hidden_layer_sizes=(128, 64),
-        activation='relu',
-        max_iter=15,
-        random_state=42
-    )
-    modelo.fit(X_total, y_total)
-
-    joblib.dump(modelo, modelo_path)
-
-    print(f"Modelo del usuario '{user_id}' actualizado con {len(nuevos_X)} pares nuevos ({len(hist_X)} acumulados del usuario + {len(X_base)} base).")
-    return {"status": "ok", "pares_entrenados": len(nuevos_X)}
-
-# ── Función 3: Corregir frase ─────────────────────────────────────────────────
 
 def corregir_frase(palabras):
-    """Convierte una lista de palabras sueltas (sin orden ni conjugar) en una
-    frase natural y correcta en español, usando el modelo entrenado en
-    modelo_correccion.py."""
-    return _corregir_frase_modelo(nlp, _encoder_correccion, _decoder_correccion, _vocab_correccion, palabras)
+    """Frase casi correcta (lista de palabras) -> frase corregida."""
+    if corrector is None:
+        return correccion_basica(palabras)
+    return corrector.corregir(palabras)

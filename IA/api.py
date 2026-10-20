@@ -1,105 +1,113 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from funciones import predecir_top3, reentrenar, corregir_frase
+
+from funciones import corregir_frase, predecir_top3, reentrenar
 
 # ── Crear la app ──────────────────────────────────────────────────────────────
-# "app" es la variable que Railway busca cuando ejecuta "uvicorn api:app"
+# "app" es la variable que busca el servidor cuando ejecuta "uvicorn api:app".
+# Los modelos se cargan una sola vez al importar funciones.py.
 
-app = FastAPI()
+app = FastAPI(title="SpeakUp IA")
 
 # ── Modelos de datos ──────────────────────────────────────────────────────────
 # Le decimos a FastAPI exactamente qué datos esperamos recibir en cada endpoint.
-# Si el back manda algo mal formado, FastAPI lo rechaza automáticamente.
+# Si el back manda algo mal formado, FastAPI lo rechaza automáticamente (422).
+
 
 class PredecirRequest(BaseModel):
-    user_id:  str
-    palabras: list[str]  # últimas hasta 3 palabras escritas por el usuario, en orden
+    user_id: str
+    palabras: list[str] = []  # últimas hasta 3 palabras escritas por el usuario, en orden
+
 
 class ReentrenarRequest(BaseModel):
     user_id: str
-    datos:   list  # lista de {"categoria": "Casa", "frase": ["quiero", "comer"]}
+    datos: list  # lista de {"categoria": "Casa", "frase": ["quiero", "comer"]}
+
 
 class CorregirRequest(BaseModel):
-    palabras: list  # lista de palabras sueltas, ej: ["mamá", "agua", "querer"]
+    palabras: list  # palabras de la frase, en orden, ej: ["quiero", "ir", "parque"]
+
 
 # ── Endpoint 1: Predecir ──────────────────────────────────────────────────────
 # El back llama a este endpoint con un user_id y las últimas hasta 3 palabras
-# que escribió el usuario (si escribió menos de 3, manda las que tenga).
-# Devuelve las 3 palabras más probables para ese usuario.
+# que escribió el usuario (si escribió menos de 3, manda las que tenga; si
+# todavía no escribió nada, una lista vacía). Devuelve SIEMPRE 3 palabras.
 #
 # Ejemplo de request:
-#   POST https://tuapp.railway.app/predecir
-#   {"user_id": "001", "palabras": ["quiero", "tomar", "agua"]}
+#   POST /predecir
+#   {"user_id": "001", "palabras": ["quiero", "ir", "al"]}
 #
 # Ejemplo de response:
 #   [
-#     {"palabra": "fría",       "probabilidad": 45.2},
-#     {"palabra": "ahora",      "probabilidad": 30.1},
-#     {"palabra": "por favor",  "probabilidad": 24.7}
+#     {"palabra": "baño",   "probabilidad": 18.4},
+#     {"palabra": "parque", "probabilidad": 12.9},
+#     {"palabra": "club",   "probabilidad": 9.7}
 #   ]
+
 
 @app.post("/predecir")
 def predecir(request: PredecirRequest):
     return predecir_top3(request.user_id, request.palabras)
 
+
 # ── Endpoint 2: Reentrenar ────────────────────────────────────────────────────
-# El back llama a este endpoint una vez por semana con todas las frases
-# que usó el usuario desde la última actualización.
-# Reentrena el modelo personalizado del usuario con esos datos.
+# El back llama a este endpoint (por ejemplo una vez por semana) con las
+# frases que usó el usuario. Se suman a su historial personal y desde ese
+# momento /predecir le da más peso a lo que ese usuario suele decir.
 #
 # Ejemplo de request:
-#   POST https://tuapp.railway.app/reentrenar
+#   POST /reentrenar
 #   {
 #     "user_id": "001",
 #     "datos": [
 #       {"categoria": "Casa",    "frase": ["quiero", "ver", "televisión"]},
-#       {"categoria": "Escuela", "frase": ["necesito", "ayuda"]},
-#       {"categoria": "Médico",  "frase": ["me", "duele", "cabeza"]}
+#       {"categoria": "Escuela", "frase": ["necesito", "ayuda"]}
 #     ]
 #   }
 #
 # Ejemplo de response:
 #   {"status": "ok", "pares_entrenados": 5}
 
+
 @app.post("/reentrenar")
 def reentrenar_modelo(request: ReentrenarRequest):
     return reentrenar(request.user_id, request.datos)
 
-# ── Endpoint 3: Corregir frase ─────────────────────────────────────────────────
-# El back llama a este endpoint con las palabras sueltas que seleccionó el
-# usuario y recibe la frase natural correspondiente en español.
+
+# ── Endpoint 3: Corregir frase ────────────────────────────────────────────────
+# El back manda la frase que armó el usuario, palabra por palabra, y recibe la
+# misma frase con correcciones mínimas (artículos, preposiciones,
+# concordancia, tildes, mayúscula y puntuación). Nunca agrega palabras de
+# contenido ni cambia el orden.
 #
 # Ejemplo de request:
-#   POST https://tuapp.railway.app/corregir
-#   {"palabras": ["mamá", "agua", "querer"]}
+#   POST /corregir
+#   {"palabras": ["quiero", "ir", "parque", "con", "mi", "mamá"]}
 #
 # Ejemplo de response:
-#   {"frase": "Quiero tomar agua, mamá."}
+#   {"frase": "Quiero ir al parque con mi mamá."}
+
 
 @app.post("/corregir")
 def corregir(request: CorregirRequest):
     return {"frase": corregir_frase(request.palabras)}
 
+
 # ── Endpoint 4: Health check ──────────────────────────────────────────────────
-# Endpoint simple para verificar que la API está corriendo.
-# Railway lo usa para saber si el servidor está vivo.
-# También útil para que tu amiga pruebe que la conexión funciona.
-#
-# Ejemplo:
-#   GET https://tuapp.railway.app/
-#   → {"status": "ok"}
+# Para verificar que la API está corriendo.
+#   GET /  ->  {"status": "ok"}
+
 
 @app.get("/")
 def health_check():
     return {"status": "ok"}
 
-# ── Endpoint 5: Ping ───────────────────────────────────────────────────────────
+
+# ── Endpoint 5: Ping ──────────────────────────────────────────────────────────
 # Endpoint liviano para que un servicio externo (UptimeRobot) le pegue cada
-# pocos minutos y evite que Render duerma el servidor por inactividad.
-#
-# Ejemplo:
-#   GET https://tuapp.onrender.com/ping
-#   → {"status": "ok"}
+# pocos minutos y evite que el servidor gratuito se duerma por inactividad.
+#   GET /ping  ->  {"status": "ok"}
+
 
 @app.get("/ping")
 def ping():
