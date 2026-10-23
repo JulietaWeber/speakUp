@@ -5,15 +5,18 @@ FastAPI, sin levantar un servidor).
 - /predecir: 36+ contextos de 1, 2 y 3 palabras sacados de frases que NO están
   en ningún dataset de entrenamiento. Verifica que siempre vuelvan 3 palabras
   distintas con probabilidad, ordenadas, y en menos de 100 ms.
-- /corregir: 30+ frases casi correctas que NO están en los datasets. Verifica
+- /corregir: 39 frases casi correctas que NO están en los datasets. Verifica
   que la respuesta llegue en menos de 2 s, que no se reordene ni se invente
-  ninguna palabra de contenido, y la compara con la corrección esperada.
+  ninguna palabra de contenido, que no quede mal armada (artículos o
+  preposiciones duplicados o colgando) y la compara con la corrección
+  esperada.
 - /reentrenar, / y /ping.
 
 Uso (desde IA/):  python scripts/probar_endpoints.py
 Sale con código 1 si falla algún chequeo obligatorio.
 """
 
+import json
 import os
 import re
 import sys
@@ -28,7 +31,8 @@ os.environ["SPEAKUP_DIR_USUARIOS"] = tempfile.mkdtemp(prefix="speakup_test_")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from morfologia import quitar_tildes  # noqa: E402
+from correccion import problemas  # noqa: E402
+from morfologia import IndiceVerbal, quitar_tildes  # noqa: E402
 
 T0 = time.time()
 import api  # noqa: E402
@@ -188,20 +192,27 @@ CASOS_CORRECCION = [
     ("no quiero ir escuela hoy porque estoy enfermo", ["No quiero ir a la escuela hoy porque estoy enfermo."]),
     ("la maestra me felicitó porque hice tarea", ["La maestra me felicitó porque hice la tarea."]),
     ("podés prender luz", ["¿Podés prender la luz?", "Podés prender la luz."]),
-    ("quiero un vaso agua", ["Quiero un vaso de agua."]),
+    ("quiero tomar un vaso agua con hielo", ["Quiero tomar un vaso de agua con hielo."]),
     ("mis zapatillas están sucio", ["Mis zapatillas están sucias."]),
     ("hoy comí fideos con queso en lo de mi abuela", ["Hoy comí fideos con queso en lo de mi abuela."]),
     ("el colectivo tarda mucho y tengo frio", ["El colectivo tarda mucho y tengo frío."]),
     ("quiero ir al plaza con mi perro", ["Quiero ir a la plaza con mi perro."]),
     ("mi papa esta trabajando en la oficina", ["Mi papá está trabajando en la oficina."]),
     ("nosotros fue al cine el domingo", ["Nosotros fuimos al cine el domingo."]),
-    ("me duelen la panza", ["Me duele la panza."]),
+    ("desde el lunes me duelen la espalda", ["Desde el lunes me duele la espalda."]),
     ("quiero jugar con la tablet un rato mas", ["Quiero jugar con la tablet un rato más."]),
     ("gracias por ayudarme con la mochila", ["Gracias por ayudarme con la mochila."]),
     ("tengo turno con dentista el lunes", ["Tengo turno con el dentista el lunes."]),
     ("vamos a la plaza despues de comer", ["Vamos a la plaza después de comer."]),
     ("mi abuelo me regaló un auto rojo", ["Mi abuelo me regaló un auto rojo."]),
     ("estoy triste porque se rompió mi bici", ["Estoy triste porque se rompió mi bici."]),
+    # Frases que ya están bien y no hay que tocar (sujeto después del verbo,
+    # "papas" la comida).
+    ("el domingo vienen mis padrinos a almorzar", ["El domingo vienen mis padrinos a almorzar."]),
+    ("recién llegó la seño de música", ["Recién llegó la seño de música."]),
+    ("mi tía hizo tortilla de papas", ["Mi tía hizo tortilla de papas.", "Mi tía hizo una tortilla de papas."]),
+    ("yo prefiere jugar en el patio", ["Yo prefiero jugar en el patio."]),
+    ("a mi hermana le encanta los gatos", ["A mi hermana le encantan los gatos."]),
 ]
 
 FUNCIONALES = {
@@ -209,30 +220,32 @@ FUNCIONALES = {
     "para", "por", "que", "y", "e", "o", "u", "me", "te", "se", "le", "mi", "mis", "nos",
 }
 
+_ruta_lexico = os.path.join(RAIZ, "lexico_correccion.json")
+INDICE = IndiceVerbal(json.load(open(_ruta_lexico, encoding="utf-8"))["verbos"]) \
+    if os.path.exists(_ruta_lexico) else IndiceVerbal([])
+
 
 def raiz(w):
     return quitar_tildes(w)[:3]
 
 
+def misma_palabra(a, b):
+    """Otra forma de la misma palabra: misma raíz de 3 letras ('cansado' /
+    'cansada', 'esta' / 'está') u otra persona del mismo verbo ('fue' /
+    'fuimos')."""
+    if a == b or raiz(a) == raiz(b):
+        return True
+    return bool({x[0] for x in INDICE.analizar(a)} & {x[0] for x in INDICE.analizar(b)})
+
+
 def respeta_entrada(entrada, salida):
-    """La salida tiene las palabras de contenido de la entrada, en el mismo
-    orden (se permite otra forma de la misma palabra: misma raíz de 3
-    letras), y todo lo agregado es una palabra funcional."""
-    ent = palabras(entrada)
-    sal = palabras(salida)
-    i = 0
-    for w in sal:
-        if i < len(ent) and (w == ent[i] or raiz(w) == raiz(ent[i])
-                             or (ent[i] in ("al", "del") and w in ("a", "de"))):
-            i += 1
-        elif i > 0 and ent[i - 1] in ("al", "del") and w in ("la", "los", "las"):
-            continue
-        elif w in FUNCIONALES:
-            continue
-        else:
-            return False
-    resto = [w for w in ent[i:] if w not in FUNCIONALES]
-    return not resto
+    """Las palabras de contenido de la salida son las de la entrada, en el
+    mismo orden (se permite otra forma de la misma palabra). Las funcionales
+    (artículos, preposiciones, 'que'...) se pueden agregar, sacar o cambiar:
+    'la perro' -> 'el perro', 'a el' -> 'al'."""
+    ent = [w for w in palabras(entrada) if w not in FUNCIONALES]
+    sal = [w for w in palabras(salida) if w not in FUNCIONALES]
+    return len(ent) == len(sal) and all(misma_palabra(a, b) for a, b in zip(ent, sal))
 
 
 print("\n== POST /corregir ==")
@@ -250,6 +263,8 @@ for entrada, esperadas in CASOS_CORRECCION:
     chequear(r.status_code == 200 and frase, f"/corregir {entrada!r} no devolvió frase")
     chequear(ms < 2000, f"/corregir {entrada!r} tardó {ms:.0f} ms")
     chequear(respeta_entrada(entrada, frase), f"/corregir {entrada!r} cambió/inventó palabras: {frase!r}")
+    chequear(problemas(palabras(frase)) <= problemas(palabras(entrada)),
+             f"/corregir {entrada!r} dejó la frase mal armada: {frase!r}")
     print(f"{'OK ' if ok else '-- '} {ms:5.0f} ms  {entrada!r:55s} -> {frase!r}" + ("" if ok else f"   (esperado: {esperadas[0]!r})"))
 
 for especial, esperado in [([], ""), (["agua"], "agua"), (["  ", ""], ""), (["por favor"], None),

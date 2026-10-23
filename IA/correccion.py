@@ -440,8 +440,11 @@ class Corrector:
                 forma = trans[i]
                 if t[:1].isupper() and i > 0:
                     forma = forma[0].upper() + forma[1:]
-                bloq.add(len(salida))
-                salida.append(forma)
+                # "al" -> "a la" se separa en dos tokens para que problemas()
+                # vea, por ejemplo, un "a la" insertado al lado ("a la a la").
+                for w in forma.split():
+                    bloq.add(len(salida))
+                    salida.append(w)
             else:
                 if i in bloqueados:
                     bloq.add(len(salida))

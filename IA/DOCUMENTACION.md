@@ -9,15 +9,12 @@ de SpeakUp usa para:
    (`POST /reentrenar`).
 3. **Corregir** la frase armada con correcciones mínimas (`POST /corregir`).
 
-> **Estado (al hacer este commit):** todos los endpoints están terminados y
-> probados. El corrector de `/corregir` está entrenado con la **versión
-> rápida** (10.000 ejemplos, ~9 min en CPU, sin Tatoeba): en
-> `probar_endpoints.py` da 28/34 correcciones iguales a la esperada. Para
-> más precisión se puede entrenar con el dataset completo (ver
-> [Pendientes](#pendientes)). Si faltaran `modelo_correccion.npz`,
-> `modelo_correccion.json` o `lexico_correccion.json`, la API arranca igual
-> y `/corregir` usa la **corrección básica** (las palabras del usuario, en su
-> orden, con contracciones, mayúscula inicial y puntuación final).
+> **Estado:** los cuatro endpoints están terminados, entrenados y probados
+> (`scripts/probar_endpoints.py` pasa todos los chequeos obligatorios). Si
+> faltaran `modelo_correccion.npz`, `modelo_correccion.json` o
+> `lexico_correccion.json`, la API arranca igual y `/corregir` usa la
+> **corrección básica** (las palabras del usuario con contracciones, mayúscula
+> y punto). Ver [Limitaciones conocidas](#limitaciones-conocidas).
 
 ---
 
@@ -45,6 +42,9 @@ IA/
 ├── morfologia.py             # conjugación, género/número, tildes, plurales (reglas, sin aprendizaje)
 ├── modelo_prediccion.npz     # pesos del modelo de predicción (arrays numpy)
 ├── modelo_prediccion.json    # vocabulario y contextos del modelo de predicción
+├── modelo_correccion.npz     # pesos de la red de corrección (arrays numpy)
+├── modelo_correccion.json    # vocabularios, etiquetas de inserción y umbrales del corrector
+├── lexico_correccion.json    # léxico del corrector: género, tildes, verbos
 ├── requirements.txt          # dependencias de producción
 ├── Procfile                  # comando de arranque (Railway/Heroku)
 ├── DOCUMENTACION.md          # este archivo
@@ -52,11 +52,11 @@ IA/
 │   ├── corpus_caa.py             # genera datos/corpus_caa.txt (frases correctas de CAA)
 │   ├── entrenar_prediccion.py    # entrena modelo_prediccion.{npz,json}
 │   ├── entrenar_correccion.py    # entrena modelo_correccion.{npz,json} + lexico_correccion.json
-│   ├── descargar_tatoeba.py      # OPCIONAL: descarga oraciones de Tatoeba (solo para entrenar el corrector)
+│   ├── descargar_tatoeba.py      # descarga oraciones de Tatoeba (opcional, solo para entrenar el corrector)
 │   ├── probar_endpoints.py       # prueba de punta a punta de todos los endpoints
 │   ├── requirements-entrenamiento.txt
 │   └── datos/
-│       ├── corpus_caa.txt        # 45.000 frases generadas
+│       ├── corpus_caa.txt        # 47.995 frases generadas
 │       └── frases_curadas.txt    # 2.602 frases escritas a mano (de los datasets anteriores)
 └── archivos_viejos/          # modelos y código de versiones anteriores (no se usan)
     ├── prediccion_mlp/           # MLP de scikit-learn (modelo_base.pkl, ...) y sus scripts
@@ -82,8 +82,7 @@ api.py ──importa──> funciones.py ──carga──> spaCy es_core_news_m
 
 scripts/corpus_caa.py ──> datos/corpus_caa.txt ──┬──> entrenar_prediccion.py ──> modelo_prediccion.*
 datos/frases_curadas.txt ────────────────────────┤
-descargar_tatoeba.py ··> datos/externos/ ········┴──> entrenar_correccion.py ──> modelo_correccion.*, lexico_correccion.json
-(opcional, ver abajo)
+descargar_tatoeba.py ──> datos/externos/ ────────┴──> entrenar_correccion.py ──> modelo_correccion.*, lexico_correccion.json
 ```
 
 `morfologia.py` lo usan tanto los scripts de entrenamiento (para generar
@@ -173,16 +172,16 @@ plantillas: `["quiero","tomar","un"]` → "nuevo" 90%; ver `archivos_viejos/`).
 - **Personalización:** la distribución base se mezcla con la del usuario con
   peso `c / (c + 2)`, donde `c` = veces que el usuario usó ese contexto.
 - **Entrenamiento:** `python scripts/entrenar_prediccion.py`. Cuenta n-gramas
-  sobre `corpus_caa.txt` (45.000 frases) + `frases_curadas.txt` (2.602, peso
-  3). Descuentos de Ney por orden. Resultado: 2.437 palabras, 99.144
-  contextos, ~2,7 MB.
+  sobre `corpus_caa.txt` (47.995 frases) + `frases_curadas.txt` (2.602, peso
+  3). Descuentos de Ney por orden. Resultado: 2.479 palabras, 103.231
+  contextos, ~2,8 MB.
 - **Velocidad:** la predicción es una suma de arrays numpy, < 1 ms.
 
 ### Corrección: etiquetador de ediciones (`correccion.py`)
 **Reemplaza** al seq2seq anterior, que generaba la frase desde cero y producía
 frases incoherentes ("Quiero la agua, el fría y por el favor.").
 
-- **Qué es:** una red BiGRU de 2 capas (1,48 M parámetros) que, en vez de
+- **Qué es:** una red BiGRU de 2 capas (1.480.470 parámetros) que, en vez de
   reescribir la frase, predice para cada palabra del usuario:
   1. qué palabra funcional falta antes (nada, "el", "a la", "de", "que", una
      coma, ...: 72 opciones cerradas aprendidas del corpus);
@@ -201,24 +200,65 @@ frases incoherentes ("Quiero la agua, el fría y por el favor.").
   por frase y chequeos estructurales (no "la el", no terminar en
   preposición). Si algo falla, se devuelve la frase del usuario solo con
   mayúscula y punto.
-- **Entrenamiento:** `python scripts/entrenar_correccion.py`. Toma frases
-  correctas (corpus CAA, frases curadas y 90.000 oraciones de
-  [Tatoeba](https://tatoeba.org), CC BY 2.0 FR), las rompe a propósito con
-  errores típicos (falta un artículo/preposición/contracción/"que"/coma,
-  género o número equivocado, verbo en otra persona que su sujeto explícito,
-  falta una tilde, sobra una palabra funcional, preposición cambiada) y la
-  red aprende a deshacerlos. Como las roturas son nuestras, cada etiqueta se
-  conoce exactamente. Por defecto se usa la versión rápida
-  (`MAX_EJEMPLOS = 10000` en el script): una rotura por frase, 10.000
-  ejemplos de entrenamiento y 1.000 de validación (frases nunca vistas), 12
-  epochs, ~9 min en CPU; 75 % de las frases de validación quedan exactamente
-  bien con los umbrales finales. Con `MAX_EJEMPLOS = None` se usa el dataset
-  completo (~175.000 ejemplos, ~75 min). El léxico se arma siempre con todas
-  las frases; los verbos salen de los infinitivos del corpus y de los lemas
-  de spaCy de los verbos conjugados (solo si el lema tiene vector, para
-  descartar lemas inventados como "querrir"). Se entrena en PyTorch y se
-  exporta a numpy: la inferencia no necesita torch y tarda pocos
-  milisegundos.
+- **Entrenamiento:** `python scripts/entrenar_correccion.py --rehacer`
+  (~40 min en CPU; sin `--rehacer` reusa el dataset de `scripts/datos/cache/`
+  y, si el entrenamiento se cortó, sigue desde el checkpoint de la última
+  época). Toma frases correctas (corpus CAA, frases curadas y 90.000
+  oraciones de [Tatoeba](https://tatoeba.org), CC BY 2.0 FR), las rompe a
+  propósito con errores típicos (falta un artículo/preposición/contracción/
+  "que"/coma, género o número equivocado, verbo en otra persona que su sujeto
+  explícito, falta una tilde, sobra una palabra funcional, preposición
+  cambiada) y la red aprende a deshacerlos. Como las roturas son nuestras,
+  cada etiqueta se conoce exactamente. 185.431 ejemplos de entrenamiento y
+  6.000 de validación (frases nunca vistas), 12 épocas. Se entrena en
+  PyTorch y se exporta a numpy: la inferencia no necesita torch y tarda
+  pocos milisegundos.
+  - Tatoeba es **opcional**: si falta `scripts/datos/externos/tatoeba_es.txt`
+    (p. ej. en una red que bloquea la descarga) el script entrena solo con el
+    corpus CAA y las frases curadas, con más roturas por frase.
+  - `--rapido`: versión de prueba (10.000 ejemplos, una rotura por frase,
+    1.000 de validación, ~10 min). Corrige bastante peor: comparada con el
+    modelo completo en las 39 frases de `probar_endpoints.py` dio 31/39 contra
+    36/39, y en 46 frases nuevas 37/46 contra 42/46, con 8 correcciones mal
+    hechas contra 1 ("con papas" → "con los papás", "viene mi abuela" →
+    "viene a mi abuela", "Gracias, por ayudarme"...). El modelo que está en el
+    repo es el del dataset completo.
+- **Frases complementarias del corpus CAA** (`complementarias` en
+  `corpus_caa.py`, ~3.000): construcciones que faltaban y producían
+  correcciones malas. Sujeto después del verbo ("hoy viene mi abuela", "ya
+  llegó el colectivo"): sin ellas el corrector agregaba la "a" personal ("viene
+  a mi abuela"). "Papas" la comida ("pollo con papas"): sin ellas cambiaba
+  "papas" por "papás". Se generan con otra semilla, así las 45.000 frases
+  originales no cambian.
+- **Léxico y verbos falsos:** el script arma `lexico_correccion.json` con el
+  género de los sustantivos, las tildes y los verbos del corpus (de ahí sale
+  el índice verbal que permite pasar "quiere" → "quiero"). Los verbos salen
+  de los infinitivos que etiquetó spaCy y de los lemas de los verbos
+  conjugados, para los que casi nunca aparecen en infinitivo ("duele" →
+  doler, "prefiero" → preferir, "encanta" → encantar). Un lema solo cuenta si
+  es una palabra real (tiene vector en spaCy) y tiene usos propios: el
+  lematizador inventa lemas como "hayar" (de "haya", que ya es de haber).
+  `filtrar_verbos` descarta los **verbos falsos**, que harían que palabras
+  comunes se analicen como conjugaciones: sustantivos y nombres que spaCy
+  etiquetó como infinitivo ("pajar" haría de "paja" un verbo, "billar",
+  "caviar", "itziar"), variantes sin tilde ("reir" si está "reír") y verbos
+  poco usados cuyas formas son casi siempre otras palabras ("piar" → "pie",
+  "orar" → "oro", "mediar" → "media", "listar" → "listo"). Un verbo con al
+  menos 10 usos conjugados en el corpus nunca se descarta ("ganar" aunque
+  exista "ganas", "tardar" aunque exista "tarde"). Resultado: 1.110 verbos
+  (321 encontrados por sus formas conjugadas) y 35 descartados.
+- **Umbrales y métricas** (6.000 frases de validación nunca vistas, con la
+  red numpy de producción): el script elige los umbrales más bajos que dan
+  ≥ 97 % de precisión.
+
+  | Edición | Umbral | Precisión | Recall |
+  |---|---|---|---|
+  | Insertar palabra funcional | 0,95 | 98,0 % | 38,2 % |
+  | Transformar (género, persona, tilde, preposición) o borrar una palabra sobrante | 0,90 | 97,2 % | 77,9 % |
+
+  Frases de validación que quedan exactamente bien: 53,0 % (el resto queda
+  con alguna corrección sin hacer, casi nunca con una corrección mal hecha).
+  Pregunta / exclamación: 95,4 % de acierto.
 
 ---
 
@@ -231,29 +271,32 @@ python scripts/probar_endpoints.py
 ```
 Prueba todos los endpoints con frases que **no están** en ningún dataset de
 entrenamiento (el script lo verifica): 54 contextos de `/predecir` (1, 2 y 3
-palabras, < 100 ms, siempre 3 palabras), 34 frases de `/corregir` (< 2 s, sin
-reordenar ni inventar palabras, comparadas con la corrección esperada),
+palabras, < 100 ms, siempre 3 palabras), 39 frases de `/corregir`,
 `/reentrenar` (acumulativo, palabras nuevas, `user_id` malicioso), `/` y
 `/ping`. Sale con código 1 si algo falla.
 
+Chequeos obligatorios de `/corregir`: responde en < 2 s; las palabras de
+contenido de la salida son las del usuario, en su orden (se acepta otra
+forma de la misma palabra: "cansado" → "cansada", "fue" → "fuimos"; los
+artículos y preposiciones se pueden agregar, sacar o cambiar); y la salida no
+queda peor armada que la entrada (artículos o preposiciones duplicados o
+colgando, como "a la a la plaza").
+
+Último resultado: todos los chequeos obligatorios pasan; 36/39 correcciones
+iguales a la esperada; ~15 ms por frase. Las 3 restantes quedan sin corregir
+(nunca mal corregidas): "mi mamá está cansado", "una muñeca nuevo" y "un vaso
+agua con hielo".
+
 ---
 
-## Pendientes
+## Limitaciones conocidas
 
-1. **Entrenar el corrector con el dataset completo** (más preciso que la
-   versión rápida actual): poner `MAX_EJEMPLOS = None` en
-   `scripts/entrenar_correccion.py` y
-   ```bash
-   cd IA
-   python -I scripts/descargar_tatoeba.py                # opcional
-   python -I scripts/entrenar_correccion.py --rehacer    # ~75 min en CPU
-   python scripts/probar_endpoints.py                    # verificar antes de subir
-   ```
-2. Casos de `probar_endpoints.py` que todavía no salen como se espera con la
-   versión rápida: "yo quiere comer una milanesa con papas" → "...con los
-   papás", "viene mi abuela" → "viene a mi abuela", "una muñeca nuevo",
-   "mi mamá está cansado", "nosotros fue", "Gracias, por ayudarme".
-3. Arreglar `probar_endpoints.py`: el chequeo `respeta_entrada` marca como
-   falla reemplazar una palabra funcional por otra ("la perro" → "El
-   perro", "a el" → "al"), y dos frases de prueba ("Quiero un vaso de
-   agua.", "Me duele la panza.") están en el corpus.
+- El corrector prefiere no corregir a corregir mal: con los umbrales actuales
+  hace ~38 % de las inserciones y ~78 % de las transformaciones que haría
+  falta. Bajar los umbrales en `modelo_correccion.json` corrige más a costa de
+  más errores.
+- La concordancia de un adjetivo lejos de su sustantivo ("mi mamá está
+  cansado") todavía no alcanza la confianza necesaria.
+- Las palabras con y sin tilde que existen las dos ("papas" / "papás",
+  "esta" / "está") dependen del contexto; con poco contexto la red puede
+  dudar y deja la palabra como está.

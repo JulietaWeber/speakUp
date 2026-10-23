@@ -8,10 +8,10 @@ correccion.py en producción:
 Datos: frases CORRECTAS de
   - scripts/datos/corpus_caa.txt      frases de CAA generadas (corpus_caa.py)
   - scripts/datos/frases_curadas.txt  frases escritas a mano
-  - scripts/datos/externos/tatoeba_es.txt  (OPCIONAL) muestra de oraciones
-    reales de Tatoeba (descargar_tatoeba.py), para variedad de estructuras.
-    Si no está (p. ej. en una red que bloquea la descarga) se entrena solo con
-    las dos primeras, generando más roturas distintas de cada frase.
+  - scripts/datos/externos/tatoeba_es.txt  muestra de oraciones reales de
+    Tatoeba (descargar_tatoeba.py), para variedad de estructuras. Es
+    OPCIONAL: si no está (p. ej. en una red que bloquea la descarga) se
+    entrena solo con las dos primeras, generando más roturas de cada frase.
 Cada frase se "rompe" a propósito con los errores típicos de un usuario que
 arma la frase palabra por palabra, y la red aprende a deshacerlos:
   - falta un artículo, preposición, contracción, "que", "y", "me" o una coma
@@ -23,8 +23,20 @@ arma la frase palabra por palabra, y la red aprende a deshacerlos:
 Como las roturas las hacemos nosotros, la etiqueta correcta de cada palabra
 se conoce exactamente (no hace falta alinear frases).
 
+El léxico guarda los verbos que encontró spaCy, menos los "verbos falsos"
+(sustantivos como "pajar" o verbos como "piar", cuyas formas son casi siempre
+otras palabras: "pie"), ver filtrar_verbos.
+
 Uso (desde IA/):  python scripts/entrenar_correccion.py
-(--rehacer para regenerar el dataset en caché, p. ej. después de descargar Tatoeba)
+  --rehacer     regenera el dataset (si no, usa scripts/datos/cache/; hace
+                falta, p. ej., después de descargar Tatoeba)
+  --solo-datos  arma el dataset y muestra ejemplos, sin entrenar
+  --rapido      versión rápida para probar (~10 min en vez de ~75): una sola
+                rotura por frase y MAX_EJEMPLOS_RAPIDO ejemplos. Corrige
+                bastante peor que el dataset completo: no usarla para el
+                modelo que se sube.
+Si el entrenamiento se corta, volver a correrlo (sin --rehacer) sigue desde
+la última época completa.
 Requiere torch (solo para entrenar): pip install -r scripts/requirements-entrenamiento.txt
 """
 
@@ -36,6 +48,7 @@ import re
 import sys
 import time
 from collections import Counter, defaultdict
+from functools import lru_cache
 
 import numpy as np
 from spacy.tokens import Doc
@@ -50,23 +63,22 @@ from correccion import (  # noqa: E402
 )
 from morfologia import (  # noqa: E402
     DETERMINANTES, FEMENINAS_A_TONICA, PERSONAS, IndiceVerbal, base_adjetivo, es_infinitivo,
-    flexionar_determinante, formas_adjetivo, paradigma, quitar_tildes, rasgos_adjetivo,
-    rasgos_determinante, tiene_tilde,
+    flexionar_determinante, formas_adjetivo, gerundio, paradigma, participio, quitar_tildes,
+    rasgos_adjetivo, rasgos_determinante, tiene_tilde,
 )
 
 SEMILLA = 13
 N_TATOEBA = 90000
-# Roturas distintas que se generan de cada frase de entrenamiento. Sin Tatoeba
-# hay ~3 veces menos frases: se generan más por frase para llegar a una
-# cantidad de ejemplos parecida.
 VARIANTES = {"caa": 2, "curadas": 3, "tatoeba": 1}
+# Sin Tatoeba hay ~3 veces menos frases: se generan más roturas distintas de
+# cada una para llegar a una cantidad de ejemplos parecida.
 VARIANTES_SIN_TATOEBA = {"caa": 4, "curadas": 6}
 N_VAL = 6000
-# Versión rápida (~10 min en vez de ~75): una sola rotura por frase y como
-# mucho MAX_EJEMPLOS ejemplos de entrenamiento. None = dataset completo.
-# El léxico se arma igual con todas las frases.
-MAX_EJEMPLOS = 10000
-N_VAL_RAPIDO = 1000
+# --rapido: como mucho MAX_EJEMPLOS ejemplos de entrenamiento (una rotura por
+# frase). None = dataset completo. El léxico se arma igual con todas las frases.
+RAPIDO = "--rapido" in sys.argv
+MAX_EJEMPLOS_RAPIDO, N_VAL_RAPIDO = 10000, 1000
+MAX_EJEMPLOS = MAX_EJEMPLOS_RAPIDO if RAPIDO else None
 DATOS = os.path.join(AQUI, "datos")
 CACHE = os.path.join(DATOS, "cache")
 FUENTES = {
@@ -77,6 +89,7 @@ FUENTES = {
 SALIDA_PESOS = os.path.join(RAIZ, "modelo_correccion.npz")
 SALIDA_CONFIG = os.path.join(RAIZ, "modelo_correccion.json")
 SALIDA_LEXICO = os.path.join(RAIZ, "lexico_correccion.json")
+RUTA_CHECKPOINT = os.path.join(CACHE, "checkpoint_correccion.pt")
 
 MAX_VOCAB = 9000
 MAX_SUFIJOS = 2500
@@ -100,6 +113,22 @@ CONFUSION_PERSONA = {"1s": ["3s", "3s", "1p", "2v"], "2s": ["3s", "1s"], "2v": [
 ESPURIAS = ["el", "la", "un", "los", "las", "una"]
 ANTES_DE_ESPURIA = {"mi", "mis", "tu", "tus", "su", "sus", "el", "la", "los", "las", "este", "esta",
                     "estos", "estas", "ese", "esa", "un", "una"}
+
+# Palabras terminadas en -ar/-er/-ir que spaCy a veces etiqueta como infinitivo
+# pero no son verbos (sustantivos, adjetivos, adverbios y nombres propios, que
+# en el corpus van en minúscula). Las reglas de filtrar_verbos atrapan la
+# mayoría; esta lista cubre los que aparecen pocas veces y siempre mal
+# etiquetados.
+NO_SON_VERBOS = {
+    "almíbar", "altar", "azúcar", "bar", "billar", "caviar", "collar", "dólar", "hangar", "henar",
+    "hogar", "lugar", "mar", "néctar", "pajar", "par", "radar", "familiar", "particular", "popular",
+    "similar", "polar", "ayer", "mujer", "taller", "cáncer", "carácter", "líder", "súper", "chófer",
+    "póster", "máster", "alfiler", "menester", "elixir", "faquir", "emir", "itziar", "omar", "óscar",
+    "edgar", "peter", "walter", "oliver", "esther", "jennifer",
+}
+# Con al menos esta cantidad de usos conjugados en el corpus, un verbo no se
+# descarta aunque sus formas coincidan con otras palabras ("ganas", "tarde").
+MIN_EVIDENCIA_VERBO = 10
 
 
 # ── Lectura ───────────────────────────────────────────────────────────────────
@@ -133,17 +162,82 @@ def tokenizar_limpia(frase):
 
 # ── Léxico ────────────────────────────────────────────────────────────────────
 
-def construir_lexico(docs, vocab):
+@lru_cache(maxsize=None)
+def _formas(v):
+    """Formas conjugadas de un infinitivo (sin el infinitivo)."""
+    return frozenset(f for fs in paradigma(v).values() for f in fs) - {v}
+
+
+def filtrar_verbos(infinitivos, lemas, frec, conjugados, es_palabra_real):
+    """Arma la lista de verbos del índice verbal sin "verbos falsos".
+
+    Candidatos: los infinitivos que spaCy etiquetó al menos 2 veces y los
+    lemas de verbos conjugados, para los verbos que casi nunca aparecen en
+    infinitivo ("duele" -> "doler", "prefiero" -> "preferir"). El lematizador
+    inventa lemas ("dijiste" -> "dijistar", "haya" -> "hayar"), así que un lema
+    solo cuenta si es una palabra real (tiene vector en spaCy) y si al menos 3
+    de sus usos son formas suyas que no explica otro candidato ("haya" ya es
+    de "haber").
+
+    Un verbo falso en el índice verbal hace que palabras comunes se analicen
+    como conjugaciones ("pajar" -> "paja", "piar" -> "pie") y el corrector
+    podría cambiarles la persona ("paja" -> "pajo"). Se descarta:
+      - lo que está en NO_SON_VERBOS;
+      - la variante sin tilde de otro infinitivo ("reir" si está "reír");
+      - lo que spaCy leyó como infinitivo menos de la mitad de las veces y
+        nunca aparece conjugado ("billar");
+      - el verbo poco usado (menos de MIN_EVIDENCIA_VERBO usos conjugados)
+        cuyas formas son casi siempre otras palabras del corpus ("mediar" ->
+        "media", "orar" -> "oro"). Los participios no cuentan: "dorado" es
+        adjetivo y "dorar" es un verbo legítimo.
+    `conjugados[w]`: veces que w aparece como verbo conjugado, gerundio o
+    participio; `lemas[lema][forma]`: usos de cada forma conjugada por lema.
+    Devuelve (verbos, {descartado: motivo}, cantidad sumada por lemas)."""
+    candidatos = {w for w, c in infinitivos.items() if c >= 2}
+    explicadas = set().union(*(_formas(v) for v in candidatos))
+    por_lema = set()
+    for lema, usos in lemas.items():
+        if lema in candidatos or not es_infinitivo(lema) or not es_palabra_real(lema):
+            continue
+        propios = sum(c for f, c in usos.items() if f in _formas(lema) and f not in explicadas)
+        if propios >= 3:
+            por_lema.add(lema)
+    candidatos |= por_lema
+    verbos, descartados = [], {}
+    for v in sorted(candidatos):
+        formas = _formas(v)
+        evidencia = sum(conjugados[f] for f in formas | {gerundio(v), participio(v)})
+        choques = sum(frec[f] - conjugados[f] for f in formas
+                      if frec[f] >= 3 and conjugados[f] < 0.2 * frec[f])
+        if v in NO_SON_VERBOS:
+            descartados[v] = "no es verbo"
+        elif not tiene_tilde(v) and any(x != v and quitar_tildes(x) == v for x in candidatos):
+            descartados[v] = "falta la tilde"
+        elif evidencia == 0 and infinitivos[v] < 0.5 * frec[v]:
+            descartados[v] = "casi nunca es verbo"
+        elif evidencia < MIN_EVIDENCIA_VERBO and choques >= 3 and choques > 5 * evidencia:
+            descartados[v] = "sus formas son otras palabras"
+        else:
+            verbos.append(v)
+    return verbos, descartados, len(por_lema - set(descartados))
+
+
+def construir_lexico(docs):
     frec = Counter()
     votos_genero = defaultdict(Counter)
     infinitivos = Counter()
-    lemas = Counter()
+    conjugados = Counter()
+    lemas = defaultdict(Counter)
     for doc in docs:
         for i, t in enumerate(doc):
             w = t.text
             if not w.isalpha():
                 continue
             frec[w] += 1
+            if t.pos_ in ("VERB", "AUX") and set(t.morph.get("VerbForm")) & {"Fin", "Ger", "Part"}:
+                conjugados[w] += 1
+                if "Fin" in t.morph.get("VerbForm"):
+                    lemas[t.lemma_.lower()][w] += 1
             if t.pos_ == "NOUN":
                 g = t.morph.get("Gender")
                 if g:
@@ -157,13 +251,6 @@ def construir_lexico(docs, vocab):
                         votos_genero[w][gd] += 2
             if "Inf" in t.morph.get("VerbForm") and es_infinitivo(w) and t.pos_ in ("VERB", "AUX"):
                 infinitivos[w] += 1
-            # Verbos que solo aparecen conjugados ("quiero", "tengo"): se usa
-            # el lema de spaCy, que a veces inventa lemas ("querrir"); solo se
-            # acepta si es una palabra real (tiene vector) y genera la forma.
-            l = t.lemma_.lower()
-            if "Fin" in t.morph.get("VerbForm") and t.pos_ in ("VERB", "AUX") and es_infinitivo(l) \
-                    and vocab.has_vector(l) and w in {f for fs in paradigma(l).values() for f in fs}:
-                lemas[l] += 1
     genero = {}
     for w, votos in votos_genero.items():
         total = sum(votos.values())
@@ -172,9 +259,16 @@ def construir_lexico(docs, vocab):
             genero[w] = g
     for w in FEMENINAS_A_TONICA:
         genero[w] = "f"
-    verbos = sorted({w for w, c in infinitivos.items() if c >= 2} | {l for l, c in lemas.items() if c >= 2})
-    indice = IndiceVerbal(verbos)
-    formas_verbales = set(indice.formas())
+    vocab = docs[0].vocab
+    verbos, descartados, n_lemas = filtrar_verbos(
+        infinitivos, lemas, frec, conjugados, lambda w: vocab.strings[w] in vocab.vectors.key2row)
+    print(f"Verbos: {len(verbos)} ({n_lemas} encontrados por sus formas conjugadas)")
+    print(f"Verbos falsos descartados ({len(descartados)}): "
+          + ", ".join(f"{v} ({m})" for v, m in descartados.items()))
+    formas_verbales = set(IndiceVerbal(verbos).formas())
+    # Para las tildes seguras se usan también las formas de los descartados:
+    # ante la duda ("cosecho" / "cosechó") mejor no tildar automáticamente.
+    formas_dudosas = formas_verbales | set(IndiceVerbal(descartados).formas())
 
     acentos, acentos_seguros = {}, {}
     por_clave = defaultdict(list)
@@ -184,7 +278,7 @@ def construir_lexico(docs, vocab):
     for clave, lista in por_clave.items():
         c, w = max(lista)
         acentos[clave] = w
-        if frec.get(clave, 0) == 0 and c >= 3 and clave not in formas_verbales and len(lista) == 1:
+        if frec.get(clave, 0) == 0 and c >= 3 and clave not in formas_dudosas and len(lista) == 1:
             acentos_seguros[clave] = w
     palabras = sorted({w for w, c in frec.items() if c >= 2} | formas_verbales)
     return {
@@ -446,7 +540,7 @@ def preparar():
                                  batch_size=512, disable=["ner"]))
     print(f"  {time.time() - t0:.0f}s")
 
-    lexico, frec = construir_lexico(docs_limpios, nlp.vocab)
+    lexico, frec = construir_lexico(docs_limpios)
     lexico["palabras_set"] = set(lexico["palabras"])
     indice = IndiceVerbal(lexico["verbos"])
     print(f"Léxico: {len(lexico['genero'])} géneros, {len(lexico['acentos'])} tildes "
@@ -575,8 +669,21 @@ def entrenar(datos, meta, vectores):
     print(f"Parámetros: {sum(p.numel() for p in modelo.parameters()):,}")
     opt = torch.optim.Adam(modelo.parameters(), lr=2e-3)
     ce = nn.CrossEntropyLoss(ignore_index=-100)
-    EPOCHS, BATCH = (9 if MAX_EJEMPLOS is None else 12), 128
+    EPOCHS, BATCH = 12, 128
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=3e-3, total_steps=EPOCHS * (len(train) // BATCH + 1))
+
+    # Checkpoint al final de cada época: si el proceso se corta, al volver a
+    # correr el script (sin --rehacer) sigue desde la última época completa.
+    firma = [len(train), len(val), len(meta["vocab_palabras"]), len(meta["inserciones"])]
+    inicio = 1
+    if os.path.exists(RUTA_CHECKPOINT):
+        ck = torch.load(RUTA_CHECKPOINT, weights_only=False)
+        if ck["firma"] == firma:
+            modelo.load_state_dict(ck["modelo"])
+            opt.load_state_dict(ck["opt"])
+            sched.load_state_dict(ck["sched"])
+            inicio = ck["epoch"] + 1
+            print(f"Retomando desde el checkpoint de la época {ck['epoch']}")
 
     def evaluar():
         modelo.eval()
@@ -593,8 +700,7 @@ def entrenar(datos, meta, vectores):
         modelo.train()
         return preds
 
-    mejor = None
-    for epoch in range(1, EPOCHS + 1):
+    for epoch in range(inicio, EPOCHS + 1):
         random.Random(epoch).shuffle(train)
         # lotes de largo parecido (más rápido) en orden aleatorio
         orden = sorted(range(len(train)), key=lambda i: (len(train[i][1]), random.random()))
@@ -617,8 +723,8 @@ def entrenar(datos, meta, vectores):
         print(f"Epoch {epoch} | loss {total / len(lotes):.4f} | {time.time() - t0:.0f}s | "
               f"ins P={m['ins_p']:.3f} R={m['ins_r']:.3f} | tr P={m['tr_p']:.3f} R={m['tr_r']:.3f} | "
               f"frases exactas {m['exactas']:.3f} | tipo {m['tipo']:.3f}", flush=True)
-        mejor = {k: v.detach().clone() for k, v in modelo.state_dict().items()}
-    modelo.load_state_dict(mejor)
+        torch.save({"firma": firma, "epoch": epoch, "modelo": modelo.state_dict(), "opt": opt.state_dict(),
+                    "sched": sched.state_dict()}, RUTA_CHECKPOINT)
     return modelo, evaluar()
 
 
@@ -702,12 +808,14 @@ def exportar(modelo, meta, lexico, umbrales):
 
 def main():
     os.makedirs(CACHE, exist_ok=True)
-    ruta_cache = os.path.join(CACHE, "dataset_correccion.pkl")
+    ruta_cache = os.path.join(CACHE, "dataset_correccion_rapido.pkl" if RAPIDO else "dataset_correccion.pkl")
     if os.path.exists(ruta_cache) and "--rehacer" not in sys.argv:
         print(f"Usando dataset en caché ({ruta_cache}); --rehacer para regenerarlo")
         with open(ruta_cache, "rb") as f:
             datos, meta, lexico, vectores = pickle.load(f)
     else:
+        if os.path.exists(RUTA_CHECKPOINT):   # era de otro dataset
+            os.remove(RUTA_CHECKPOINT)
         datos, meta, lexico, vectores = preparar()
         with open(ruta_cache, "wb") as f:
             pickle.dump((datos, meta, lexico, vectores), f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -723,6 +831,7 @@ def main():
     val = [d for d in datos if d[0]]
     umbrales = elegir_umbrales(val, preds, meta)
     exportar(modelo, meta, lexico, umbrales)
+    os.remove(RUTA_CHECKPOINT)
 
 
 if __name__ == "__main__":
