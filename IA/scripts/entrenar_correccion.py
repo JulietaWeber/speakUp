@@ -5,11 +5,13 @@ correccion.py en producción:
   IA/modelo_correccion.json     vocabularios, etiquetas de inserción y umbrales
   IA/lexico_correccion.json     léxico: género de sustantivos, tildes, verbos
 
-Datos: frases CORRECTAS de tres fuentes
+Datos: frases CORRECTAS de
   - scripts/datos/corpus_caa.txt      frases de CAA generadas (corpus_caa.py)
   - scripts/datos/frases_curadas.txt  frases escritas a mano
-  - scripts/datos/externos/tatoeba_es.txt  muestra de oraciones reales de
-    Tatoeba (descargar_tatoeba.py), para variedad de estructuras
+  - scripts/datos/externos/tatoeba_es.txt  (OPCIONAL) muestra de oraciones
+    reales de Tatoeba (descargar_tatoeba.py), para variedad de estructuras.
+    Si no está (p. ej. en una red que bloquea la descarga) se entrena solo con
+    las dos primeras, generando más roturas distintas de cada frase.
 Cada frase se "rompe" a propósito con los errores típicos de un usuario que
 arma la frase palabra por palabra, y la red aprende a deshacerlos:
   - falta un artículo, preposición, contracción, "que", "y", "me" o una coma
@@ -22,6 +24,7 @@ Como las roturas las hacemos nosotros, la etiqueta correcta de cada palabra
 se conoce exactamente (no hace falta alinear frases).
 
 Uso (desde IA/):  python scripts/entrenar_correccion.py
+(--rehacer para regenerar el dataset en caché, p. ej. después de descargar Tatoeba)
 Requiere torch (solo para entrenar): pip install -r scripts/requirements-entrenamiento.txt
 """
 
@@ -47,13 +50,23 @@ from correccion import (  # noqa: E402
 )
 from morfologia import (  # noqa: E402
     DETERMINANTES, FEMENINAS_A_TONICA, PERSONAS, IndiceVerbal, base_adjetivo, es_infinitivo,
-    flexionar_determinante, formas_adjetivo, quitar_tildes, rasgos_adjetivo, rasgos_determinante,
-    tiene_tilde,
+    flexionar_determinante, formas_adjetivo, paradigma, quitar_tildes, rasgos_adjetivo,
+    rasgos_determinante, tiene_tilde,
 )
 
 SEMILLA = 13
 N_TATOEBA = 90000
+# Roturas distintas que se generan de cada frase de entrenamiento. Sin Tatoeba
+# hay ~3 veces menos frases: se generan más por frase para llegar a una
+# cantidad de ejemplos parecida.
 VARIANTES = {"caa": 2, "curadas": 3, "tatoeba": 1}
+VARIANTES_SIN_TATOEBA = {"caa": 4, "curadas": 6}
+N_VAL = 6000
+# Versión rápida (~10 min en vez de ~75): una sola rotura por frase y como
+# mucho MAX_EJEMPLOS ejemplos de entrenamiento. None = dataset completo.
+# El léxico se arma igual con todas las frases.
+MAX_EJEMPLOS = 10000
+N_VAL_RAPIDO = 1000
 DATOS = os.path.join(AQUI, "datos")
 CACHE = os.path.join(DATOS, "cache")
 FUENTES = {
@@ -120,10 +133,11 @@ def tokenizar_limpia(frase):
 
 # ── Léxico ────────────────────────────────────────────────────────────────────
 
-def construir_lexico(docs):
+def construir_lexico(docs, vocab):
     frec = Counter()
     votos_genero = defaultdict(Counter)
     infinitivos = Counter()
+    lemas = Counter()
     for doc in docs:
         for i, t in enumerate(doc):
             w = t.text
@@ -143,6 +157,13 @@ def construir_lexico(docs):
                         votos_genero[w][gd] += 2
             if "Inf" in t.morph.get("VerbForm") and es_infinitivo(w) and t.pos_ in ("VERB", "AUX"):
                 infinitivos[w] += 1
+            # Verbos que solo aparecen conjugados ("quiero", "tengo"): se usa
+            # el lema de spaCy, que a veces inventa lemas ("querrir"); solo se
+            # acepta si es una palabra real (tiene vector) y genera la forma.
+            l = t.lemma_.lower()
+            if "Fin" in t.morph.get("VerbForm") and t.pos_ in ("VERB", "AUX") and es_infinitivo(l) \
+                    and vocab.has_vector(l) and w in {f for fs in paradigma(l).values() for f in fs}:
+                lemas[l] += 1
     genero = {}
     for w, votos in votos_genero.items():
         total = sum(votos.values())
@@ -151,7 +172,7 @@ def construir_lexico(docs):
             genero[w] = g
     for w in FEMENINAS_A_TONICA:
         genero[w] = "f"
-    verbos = sorted(w for w, c in infinitivos.items() if c >= 2)
+    verbos = sorted({w for w, c in infinitivos.items() if c >= 2} | {l for l, c in lemas.items() if c >= 2})
     indice = IndiceVerbal(verbos)
     formas_verbales = set(indice.formas())
 
@@ -400,8 +421,14 @@ def preparar():
     print("Cargando spaCy...")
     nlp = spacy.load("es_core_news_md")
 
+    if os.path.exists(FUENTES["tatoeba"]):
+        variantes = VARIANTES
+    else:
+        print(f"No está {FUENTES['tatoeba']}: se entrena solo con corpus_caa y frases_curadas")
+        variantes = VARIANTES_SIN_TATOEBA
+
     frases = []
-    for fuente in ("caa", "curadas", "tatoeba"):
+    for fuente in variantes:
         lista = leer(fuente)
         print(f"{fuente}: {len(lista)} frases")
         for f in lista:
@@ -410,16 +437,16 @@ def preparar():
                 frases.append((fuente, toks, tipo))
     # División por frase: las de validación nunca se ven al entrenar.
     rng.shuffle(frases)
-    n_val = 6000
+    n_val = min(N_VAL if MAX_EJEMPLOS is None else N_VAL_RAPIDO, len(frases) // 10)
     val_ids = set(range(n_val))
 
     print(f"Analizando {len(frases)} frases limpias con spaCy...")
     t0 = time.time()
     docs_limpios = list(nlp.pipe((Doc(nlp.vocab, words=t) for _, t, _ in frases),
-                                 batch_size=512, disable=["ner", "lemmatizer"]))
+                                 batch_size=512, disable=["ner"]))
     print(f"  {time.time() - t0:.0f}s")
 
-    lexico, frec = construir_lexico(docs_limpios)
+    lexico, frec = construir_lexico(docs_limpios, nlp.vocab)
     lexico["palabras_set"] = set(lexico["palabras"])
     indice = IndiceVerbal(lexico["verbos"])
     print(f"Léxico: {len(lexico['genero'])} géneros, {len(lexico['acentos'])} tildes "
@@ -427,12 +454,16 @@ def preparar():
           f"{len(lexico['palabras'])} palabras")
 
     ejemplos = []   # (es_val, entrada, ins, tr, tipo)
+    n_train = 0
     for k, ((fuente, toks, tipo), doc) in enumerate(zip(frases, docs_limpios)):
         es_val = k in val_ids
-        for _ in range(1 if es_val else VARIANTES[fuente]):
+        if not es_val and MAX_EJEMPLOS is not None and n_train >= MAX_EJEMPLOS:
+            break
+        for _ in range(1 if es_val or MAX_EJEMPLOS is not None else variantes[fuente]):
             r = corromper(doc, tipo, rng, lexico, indice)
             if r:
                 ejemplos.append((es_val,) + r)
+                n_train += not es_val
     print(f"Ejemplos corruptos: {len(ejemplos)}")
 
     print("Calculando rasgos de las entradas corruptas...")
@@ -446,7 +477,8 @@ def preparar():
     vocab_palabras = ["<pad>", "<unk>"] + [w for w, _ in frec_palabras.most_common(MAX_VOCAB)]
     vocab_sufijos = ["<pad>", "<unk>"] + [s for s, _ in frec_sufijos.most_common(MAX_SUFIJOS)]
     frec_ins = Counter(x for e in ejemplos if not e[0] for x in e[2] if x != NADA)
-    inserciones = [NADA] + [x for x, c in frec_ins.most_common(MAX_INSERCIONES) if c >= MIN_FREC_INSERCION]
+    min_frec = MIN_FREC_INSERCION if MAX_EJEMPLOS is None else 10
+    inserciones = [NADA] + [x for x, c in frec_ins.most_common(MAX_INSERCIONES) if c >= min_frec]
     print(f"Etiquetas de inserción: {len(inserciones)} (más comunes: {inserciones[1:16]})")
     vp = {w: i for i, w in enumerate(vocab_palabras)}
     vs = {s: i for i, s in enumerate(vocab_sufijos)}
@@ -543,7 +575,7 @@ def entrenar(datos, meta, vectores):
     print(f"Parámetros: {sum(p.numel() for p in modelo.parameters()):,}")
     opt = torch.optim.Adam(modelo.parameters(), lr=2e-3)
     ce = nn.CrossEntropyLoss(ignore_index=-100)
-    EPOCHS, BATCH = 9, 128
+    EPOCHS, BATCH = (9 if MAX_EJEMPLOS is None else 12), 128
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=3e-3, total_steps=EPOCHS * (len(train) // BATCH + 1))
 
     def evaluar():

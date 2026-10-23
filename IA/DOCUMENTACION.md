@@ -9,15 +9,15 @@ de SpeakUp usa para:
    (`POST /reentrenar`).
 3. **Corregir** la frase armada con correcciones mínimas (`POST /corregir`).
 
-> **Estado (al hacer este commit):** `/predecir`, `/reentrenar`, `/` y `/ping`
-> están terminados y probados. El modelo nuevo de `/corregir` (etiquetador de
-> ediciones) está implementado en `correccion.py` pero **sus pesos todavía no
-> están en el repo** (el entrenamiento estaba en curso). Mientras falten
-> `modelo_correccion.npz`, `modelo_correccion.json` y `lexico_correccion.json`,
-> la API arranca igual y `/corregir` usa la **corrección básica**: devuelve las
-> palabras del usuario, en su orden, con contracciones ("a el" → "al"),
-> mayúscula inicial y puntuación final. Nunca inventa ni reordena palabras.
-> Ver [Pendientes](#pendientes).
+> **Estado (al hacer este commit):** todos los endpoints están terminados y
+> probados. El corrector de `/corregir` está entrenado con la **versión
+> rápida** (10.000 ejemplos, ~9 min en CPU, sin Tatoeba): en
+> `probar_endpoints.py` da 28/34 correcciones iguales a la esperada. Para
+> más precisión se puede entrenar con el dataset completo (ver
+> [Pendientes](#pendientes)). Si faltaran `modelo_correccion.npz`,
+> `modelo_correccion.json` o `lexico_correccion.json`, la API arranca igual
+> y `/corregir` usa la **corrección básica** (las palabras del usuario, en su
+> orden, con contracciones, mayúscula inicial y puntuación final).
 
 ---
 
@@ -52,7 +52,7 @@ IA/
 │   ├── corpus_caa.py             # genera datos/corpus_caa.txt (frases correctas de CAA)
 │   ├── entrenar_prediccion.py    # entrena modelo_prediccion.{npz,json}
 │   ├── entrenar_correccion.py    # entrena modelo_correccion.{npz,json} + lexico_correccion.json
-│   ├── descargar_tatoeba.py      # descarga oraciones de Tatoeba (solo para entrenar el corrector)
+│   ├── descargar_tatoeba.py      # OPCIONAL: descarga oraciones de Tatoeba (solo para entrenar el corrector)
 │   ├── probar_endpoints.py       # prueba de punta a punta de todos los endpoints
 │   ├── requirements-entrenamiento.txt
 │   └── datos/
@@ -82,7 +82,8 @@ api.py ──importa──> funciones.py ──carga──> spaCy es_core_news_m
 
 scripts/corpus_caa.py ──> datos/corpus_caa.txt ──┬──> entrenar_prediccion.py ──> modelo_prediccion.*
 datos/frases_curadas.txt ────────────────────────┤
-descargar_tatoeba.py ──> datos/externos/ ────────┴──> entrenar_correccion.py ──> modelo_correccion.*, lexico_correccion.json
+descargar_tatoeba.py ··> datos/externos/ ········┴──> entrenar_correccion.py ──> modelo_correccion.*, lexico_correccion.json
+(opcional, ver abajo)
 ```
 
 `morfologia.py` lo usan tanto los scripts de entrenamiento (para generar
@@ -207,9 +208,17 @@ frases incoherentes ("Quiero la agua, el fría y por el favor.").
   género o número equivocado, verbo en otra persona que su sujeto explícito,
   falta una tilde, sobra una palabra funcional, preposición cambiada) y la
   red aprende a deshacerlos. Como las roturas son nuestras, cada etiqueta se
-  conoce exactamente. 179.505 ejemplos de entrenamiento y 6.000 de
-  validación (frases nunca vistas). Se entrena en PyTorch y se exporta a
-  numpy: la inferencia no necesita torch y tarda pocos milisegundos.
+  conoce exactamente. Por defecto se usa la versión rápida
+  (`MAX_EJEMPLOS = 10000` en el script): una rotura por frase, 10.000
+  ejemplos de entrenamiento y 1.000 de validación (frases nunca vistas), 12
+  epochs, ~9 min en CPU; 75 % de las frases de validación quedan exactamente
+  bien con los umbrales finales. Con `MAX_EJEMPLOS = None` se usa el dataset
+  completo (~175.000 ejemplos, ~75 min). El léxico se arma siempre con todas
+  las frases; los verbos salen de los infinitivos del corpus y de los lemas
+  de spaCy de los verbos conjugados (solo si el lema tiene vector, para
+  descartar lemas inventados como "querrir"). Se entrena en PyTorch y se
+  exporta a numpy: la inferencia no necesita torch y tarda pocos
+  milisegundos.
 
 ---
 
@@ -231,15 +240,20 @@ reordenar ni inventar palabras, comparadas con la corrección esperada),
 
 ## Pendientes
 
-1. **Terminar de entrenar el corrector y subir sus archivos:**
+1. **Entrenar el corrector con el dataset completo** (más preciso que la
+   versión rápida actual): poner `MAX_EJEMPLOS = None` en
+   `scripts/entrenar_correccion.py` y
    ```bash
    cd IA
-   python -I scripts/descargar_tatoeba.py      # solo la primera vez
-   python -I scripts/entrenar_correccion.py    # ~35 min en CPU; genera los 3 archivos
-   python scripts/probar_endpoints.py          # verificar antes de subir
-   git add modelo_correccion.npz modelo_correccion.json lexico_correccion.json
+   python -I scripts/descargar_tatoeba.py                # opcional
+   python -I scripts/entrenar_correccion.py --rehacer    # ~75 min en CPU
+   python scripts/probar_endpoints.py                    # verificar antes de subir
    ```
-   Con esos archivos presentes, `funciones.py` usa el corrector completo
-   automáticamente (sin cambiar código).
-2. Correr `scripts/probar_endpoints.py` completo con el corrector entrenado y
-   ajustar umbrales o el corpus según los casos que no salgan como se espera.
+2. Casos de `probar_endpoints.py` que todavía no salen como se espera con la
+   versión rápida: "yo quiere comer una milanesa con papas" → "...con los
+   papás", "viene mi abuela" → "viene a mi abuela", "una muñeca nuevo",
+   "mi mamá está cansado", "nosotros fue", "Gracias, por ayudarme".
+3. Arreglar `probar_endpoints.py`: el chequeo `respeta_entrada` marca como
+   falla reemplazar una palabra funcional por otra ("la perro" → "El
+   perro", "a el" → "al"), y dos frases de prueba ("Quiero un vaso de
+   agua.", "Me duele la panza.") están en el corpus.
