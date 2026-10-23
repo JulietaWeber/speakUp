@@ -14,7 +14,6 @@ import {
   Modal,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -39,13 +38,8 @@ export default function Categories() {
 
   const [categories, setCategories] = useState<any[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<any | null>(null);
-
   const [pictograms, setPictograms] = useState<any[]>([]);
   const [loadingPictograms, setLoadingPictograms] = useState(false);
-
-  // =========================
-  // CONFIGURACIÓN DE VOZ
-  // =========================
 
   const [mostrarConfiguracion, setMostrarConfiguracion] = useState(false);
   const [voces, setVoces] = useState<VozDisponible[]>([]);
@@ -53,34 +47,19 @@ export default function Categories() {
   const [cargandoVoces, setCargandoVoces] = useState(false);
   const [guardandoVoz, setGuardandoVoz] = useState(false);
 
-  // =========================
-  // SUGERENCIAS DE LA IA
-  // =========================
-
   const [sugerenciasIA, setSugerenciasIA] = useState<any[]>([]);
   const [fraseCorregidaIA, setFraseCorregidaIA] = useState<string | null>(null);
   const [consultandoFraseIA, setConsultandoFraseIA] = useState(false);
+  const [sugerenciasCargadas, setSugerenciasCargadas] = useState(false);
 
   const [mostrarAgregarPalabra, setMostrarAgregarPalabra] = useState(false);
   const [nuevoNombre, setNuevoNombre] = useState("");
-
   const [mostrarAgregarCategoria, setMostrarAgregarCategoria] = useState(false);
   const [nuevoNombreCategoria, setNuevoNombreCategoria] = useState("");
-
   const [guardandoPalabra, setGuardandoPalabra] = useState(false);
   const [guardandoCategoria, setGuardandoCategoria] = useState(false);
 
-  // =========================
-  // IMAGEN DE NUEVA PALABRA
-  // =========================
-
-  const [imagenNuevaPalabra, setImagenNuevaPalabra] = useState<any | null>(
-    null
-  );
-
-  // =========================
-  // COLORES
-  // =========================
+  const [imagenNuevaPalabra, setImagenNuevaPalabra] = useState<any | null>(null);
 
   const coloresDisponibles = [
     "#FF6B6B",
@@ -99,9 +78,72 @@ export default function Categories() {
 
   const [colorSeleccionado, setColorSeleccionado] = useState("#356879");
 
-  // =========================
-  // ABRIR CONFIGURACIÓN
-  // =========================
+  // RECUPERAR SUGERENCIAS Y FRASE CORREGIDA GUARDADAS
+
+  useEffect(() => {
+    const cargarDatosIA = async () => {
+      try {
+        const datosGuardados = await AsyncStorage.getItem("datos_ia");
+
+        if (datosGuardados) {
+          const datos = JSON.parse(datosGuardados);
+
+          if (Array.isArray(datos.sugerencias)) {
+            setSugerenciasIA(datos.sugerencias);
+          }
+
+          if (
+            typeof datos.fraseCorregida === "string" &&
+            datos.fraseCorregida.trim()
+          ) {
+            setFraseCorregidaIA(datos.fraseCorregida);
+          }
+        } else {
+          const sugerenciasAnteriores = await AsyncStorage.getItem(
+            "sugerencias_ia"
+          );
+
+          if (sugerenciasAnteriores) {
+            const sugerencias = JSON.parse(sugerenciasAnteriores);
+
+            if (Array.isArray(sugerencias)) {
+              setSugerenciasIA(sugerencias);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error recuperando los datos de IA:", error);
+      } finally {
+        setSugerenciasCargadas(true);
+      }
+    };
+
+    cargarDatosIA();
+  }, []);
+
+  // GUARDAR SUGERENCIAS Y FRASE CORREGIDA CADA VEZ QUE CAMBIAN
+
+  useEffect(() => {
+    if (!sugerenciasCargadas) return;
+
+    const guardarDatosIA = async () => {
+      try {
+        await AsyncStorage.setItem(
+          "datos_ia",
+          JSON.stringify({
+            sugerencias: sugerenciasIA,
+            fraseCorregida: fraseCorregidaIA,
+          })
+        );
+      } catch (error) {
+        console.error("Error guardando los datos de IA:", error);
+      }
+    };
+
+    guardarDatosIA();
+  }, [sugerenciasIA, fraseCorregidaIA, sugerenciasCargadas]);
+
+  // CONFIGURACIÓN DE VOZ
 
   const abrirConfiguracion = async () => {
     setMostrarConfiguracion(true);
@@ -125,17 +167,12 @@ export default function Categories() {
       ]);
 
       if (!Array.isArray(vocesDisponibles)) {
-        throw new Error(
-          "La respuesta de voces no tiene el formato esperado."
-        );
+        throw new Error("La respuesta de voces no tiene el formato esperado.");
       }
 
       setVoces(vocesDisponibles);
 
-      if (
-        vozGuardada &&
-        vocesDisponibles.some((voz) => voz.id === vozGuardada)
-      ) {
+      if (vozGuardada && vocesDisponibles.some((voz) => voz.id === vozGuardada)) {
         setVozSeleccionada(vozGuardada);
       } else {
         setVozSeleccionada(null);
@@ -145,7 +182,6 @@ export default function Categories() {
         "Error al cargar las voces:",
         error?.response?.data || error?.message || error
       );
-
       Alert.alert(
         "Error",
         "No se pudieron cargar las voces. Revisá tu conexión e intentá nuevamente."
@@ -155,18 +191,11 @@ export default function Categories() {
     }
   };
 
-  // =========================
-  // GUARDAR VOZ PREFERIDA
-  // =========================
-
   const guardarVoz = async (vozId: string) => {
-    if (guardandoVoz) {
-      return;
-    }
+    if (guardandoVoz) return;
 
     try {
       setGuardandoVoz(true);
-
       const token = await AsyncStorage.getItem("token");
 
       if (!token) {
@@ -177,16 +206,10 @@ export default function Categories() {
         return;
       }
 
-      const usuarioActualizado = await actualizarVozPreferida(
-        vozId,
-        token
-      );
-
-      const vozConfirmada =
-        usuarioActualizado?.voz_preferida || vozId;
+      const usuarioActualizado = await actualizarVozPreferida(vozId, token);
+      const vozConfirmada = usuarioActualizado?.voz_preferida || vozId;
 
       await AsyncStorage.setItem("voz_preferida", vozConfirmada);
-
       setVozSeleccionada(vozConfirmada);
 
       Alert.alert(
@@ -198,20 +221,16 @@ export default function Categories() {
         "Error al guardar la voz:",
         error?.response?.data || error?.message || error
       );
-
       Alert.alert(
         "Error",
-        error?.response?.data?.error ||
-          "No se pudo guardar tu voz preferida."
+        error?.response?.data?.error || "No se pudo guardar tu voz preferida."
       );
     } finally {
       setGuardandoVoz(false);
     }
   };
 
-  // =========================
   // CARGAR CATEGORÍAS
-  // =========================
 
   useEffect(() => {
     const cargarCategorias = async () => {
@@ -224,7 +243,6 @@ export default function Categories() {
         }
 
         const data = await obtenerCategorias(token);
-
         setCategories(data);
         setSelectedCategory(null);
         setPictograms([]);
@@ -236,9 +254,7 @@ export default function Categories() {
     cargarCategorias();
   }, []);
 
-  // =========================
-  // CARGAR PICTOGRAMAS
-  // =========================
+  // CARGAR PICTOGRAMAS DE LA CATEGORÍA SELECCIONADA
 
   useEffect(() => {
     const cargarPictogramas = async () => {
@@ -249,7 +265,6 @@ export default function Categories() {
 
       try {
         setLoadingPictograms(true);
-
         const token = await AsyncStorage.getItem("token");
 
         if (!token) {
@@ -274,18 +289,13 @@ export default function Categories() {
     cargarPictogramas();
   }, [selectedCategory]);
 
-  // =========================
-  // COLOR SUAVE
-  // =========================
+  // COLOR SUAVE PARA LA VISTA PREVIA
 
   const getBackgroundColor = (color: string) => {
-    if (!color) {
-      return "#F2F6F7";
-    }
+    if (!color) return "#F2F6F7";
 
     if (color.startsWith("#")) {
       const hex = color.replace("#", "");
-
       const r = parseInt(hex.substring(0, 2), 16);
       const g = parseInt(hex.substring(2, 4), 16);
       const b = parseInt(hex.substring(4, 6), 16);
@@ -300,27 +310,31 @@ export default function Categories() {
     return "#F2F6F7";
   };
 
-  // =========================
-  // SELECCIONAR CATEGORÍA
-  // =========================
+  // ENTRAR A UNA CATEGORÍA
 
   const seleccionarCategoria = (category: any) => {
     setSelectedCategory(category);
-    setSugerenciasIA([]);
-    setFraseCorregidaIA(null);
-
     setMostrarAgregarPalabra(false);
     setNuevoNombre("");
     setImagenNuevaPalabra(null);
-
     setMostrarAgregarCategoria(false);
     setNuevoNombreCategoria("");
     setColorSeleccionado("#356879");
   };
 
-  // =========================
-  // AGREGAR PICTOGRAMA A FRASE
-  // =========================
+  // VOLVER A LA GRILLA DE CATEGORÍAS
+
+  const volverACategorias = () => {
+    setSelectedCategory(null);
+    setPictograms([]);
+    setMostrarAgregarPalabra(false);
+    setNuevoNombre("");
+    setImagenNuevaPalabra(null);
+    setMostrarAgregarCategoria(false);
+    setNuevoNombreCategoria("");
+  };
+
+  // AGREGAR PICTOGRAMA A LA FRASE Y CONSULTAR LA IA
 
   const agregarPictograma = async (pictogram: any) => {
     const palabrasActualizadas = [...palabras, pictogram];
@@ -340,9 +354,7 @@ export default function Categories() {
         .map((palabra: any) => palabra.nombre)
         .filter(Boolean);
 
-      if (palabrasTexto.length === 0) {
-        return;
-      }
+      if (palabrasTexto.length === 0) return;
 
       setConsultandoFraseIA(true);
       console.log("Consultando IA para la frase:", palabrasTexto);
@@ -363,9 +375,7 @@ export default function Categories() {
       );
 
       setSugerenciasIA(
-        Array.isArray(respuesta?.predicciones)
-          ? respuesta.predicciones
-          : []
+        Array.isArray(respuesta?.predicciones) ? respuesta.predicciones : []
       );
     } catch (error: any) {
       setSugerenciasIA([]);
@@ -373,11 +383,7 @@ export default function Categories() {
 
       console.error(
         "Error al consultar la IA:",
-        JSON.stringify(
-          error?.response?.data || error?.message || error,
-          null,
-          2
-        )
+        JSON.stringify(error?.response?.data || error?.message || error, null, 2)
       );
     } finally {
       setConsultandoFraseIA(false);
@@ -385,9 +391,7 @@ export default function Categories() {
   };
 
   const aceptarFraseCorregida = () => {
-    if (!fraseCorregidaIA) {
-      return;
-    }
+    if (!fraseCorregidaIA) return;
 
     const palabrasOriginales = [...palabras];
 
@@ -404,9 +408,7 @@ export default function Categories() {
             normalizar(String(palabra.nombre || "")) === normalizar(texto)
         );
 
-        if (coincidencia) {
-          return coincidencia;
-        }
+        if (coincidencia) return coincidencia;
 
         return {
           nombre: texto,
@@ -420,14 +422,11 @@ export default function Categories() {
     setSugerenciasIA([]);
   };
 
-  // =========================
-  // ELEGIR FOTO
-  // =========================
+  // ELEGIR FOTO PARA UNA PALABRA
 
   const elegirFoto = async () => {
     try {
-      const permiso =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const permiso = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (!permiso.granted) {
         Alert.alert(
@@ -444,51 +443,29 @@ export default function Categories() {
         quality: 0.8,
       });
 
-      if (resultado.canceled) {
-        return;
-      }
+      if (resultado.canceled) return;
 
       const asset = resultado.assets[0];
-
-      if (!asset) {
-        return;
-      }
-
-      const nombreArchivo =
-        asset.fileName || `pictograma-${Date.now()}.jpg`;
-
-      const tipoArchivo = asset.mimeType || "image/jpeg";
+      if (!asset) return;
 
       setImagenNuevaPalabra({
         uri: asset.uri,
-        name: nombreArchivo,
-        type: tipoArchivo,
+        name: asset.fileName || `pictograma-${Date.now()}.jpg`,
+        type: asset.mimeType || "image/jpeg",
       });
     } catch (error) {
       console.error("Error seleccionando imagen:", error);
-
       Alert.alert("Error", "No se pudo seleccionar la imagen.");
     }
   };
 
-  // =========================
-  // QUITAR FOTO
-  // =========================
+  const quitarFoto = () => setImagenNuevaPalabra(null);
 
-  const quitarFoto = () => {
-    setImagenNuevaPalabra(null);
-  };
-
-  // =========================
   // CREAR NUEVA PALABRA
-  // =========================
 
   const guardarNuevaPalabra = async () => {
     if (!nuevoNombre.trim()) {
-      Alert.alert(
-        "Falta el nombre",
-        "Escribí el nombre de la nueva palabra."
-      );
+      Alert.alert("Falta el nombre", "Escribí el nombre de la nueva palabra.");
       return;
     }
 
@@ -502,7 +479,6 @@ export default function Categories() {
 
     try {
       setGuardandoPalabra(true);
-
       const token = await AsyncStorage.getItem("token");
 
       if (!token) {
@@ -528,7 +504,6 @@ export default function Categories() {
       }
 
       setPictograms((prev) => [...prev, nuevaPalabra]);
-
       setNuevoNombre("");
       setImagenNuevaPalabra(null);
       setMostrarAgregarPalabra(false);
@@ -543,30 +518,23 @@ export default function Categories() {
 
       Alert.alert(
         "Error",
-        error?.response?.data?.error ||
-          "No se pudo crear la nueva palabra."
+        error?.response?.data?.error || "No se pudo crear la nueva palabra."
       );
     } finally {
       setGuardandoPalabra(false);
     }
   };
 
-  // =========================
   // CREAR NUEVA CATEGORÍA
-  // =========================
 
   const guardarNuevaCategoria = async () => {
     if (!nuevoNombreCategoria.trim()) {
-      Alert.alert(
-        "Falta el nombre",
-        "Escribí el nombre de la nueva categoría."
-      );
+      Alert.alert("Falta el nombre", "Escribí el nombre de la nueva categoría.");
       return;
     }
 
     try {
       setGuardandoCategoria(true);
-
       const token = await AsyncStorage.getItem("token");
 
       if (!token) {
@@ -583,7 +551,6 @@ export default function Categories() {
       setCategories((prev) => [...prev, nuevaCategoria]);
       setSelectedCategory(nuevaCategoria);
       setPictograms([]);
-
       setNuevoNombreCategoria("");
       setColorSeleccionado("#356879");
       setMostrarAgregarCategoria(false);
@@ -598,8 +565,7 @@ export default function Categories() {
 
       Alert.alert(
         "Error",
-        error?.response?.data?.error ||
-          "No se pudo crear la nueva categoría."
+        error?.response?.data?.error || "No se pudo crear la nueva categoría."
       );
     } finally {
       setGuardandoCategoria(false);
@@ -625,11 +591,7 @@ export default function Categories() {
             accessibilityRole="button"
             accessibilityLabel="Configuración de voz"
           >
-            <Ionicons
-              name="settings-outline"
-              size={25}
-              color="#FFFFFF"
-            />
+            <Ionicons name="settings-outline" size={25} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
@@ -640,9 +602,7 @@ export default function Categories() {
           transparent
           animationType="fade"
           onRequestClose={() => {
-            if (!guardandoVoz) {
-              setMostrarConfiguracion(false);
-            }
+            if (!guardandoVoz) setMostrarConfiguracion(false);
           }}
         >
           <View style={styles.modalFondo}>
@@ -667,9 +627,7 @@ export default function Categories() {
               {cargandoVoces ? (
                 <View style={styles.modalCargando}>
                   <ActivityIndicator size="large" color="#356879" />
-                  <Text style={styles.modalCargandoTexto}>
-                    Cargando voces...
-                  </Text>
+                  <Text style={styles.modalCargandoTexto}>Cargando voces...</Text>
                 </View>
               ) : voces.length === 0 ? (
                 <View style={styles.modalVacio}>
@@ -693,18 +651,14 @@ export default function Categories() {
                     key={voz.id}
                     style={[
                       styles.opcionVoz,
-                      vozSeleccionada === voz.id &&
-                        styles.opcionVozSeleccionada,
+                      vozSeleccionada === voz.id && styles.opcionVozSeleccionada,
                     ]}
                     disabled={guardandoVoz}
                     activeOpacity={0.75}
                     onPress={() => guardarVoz(voz.id)}
                   >
                     <View style={styles.opcionVozTexto}>
-                      <Text style={styles.nombreVoz}>
-                        {voz.nombre}
-                      </Text>
-
+                      <Text style={styles.nombreVoz}>{voz.nombre}</Text>
                       <Text style={styles.descripcionVoz}>
                         {voz.descripcion}
                       </Text>
@@ -746,21 +700,14 @@ export default function Categories() {
           {consultandoFraseIA && (
             <View style={styles.fraseIACargando}>
               <ActivityIndicator size="small" color="#356879" />
-              <Text style={styles.fraseIATexto}>
-                Revisando la frase...
-              </Text>
+              <Text style={styles.fraseIATexto}>Revisando la frase...</Text>
             </View>
           )}
 
           {fraseCorregidaIA && (
             <View style={styles.fraseIASugerida}>
-              <Text style={styles.fraseIATitulo}>
-                Sugerencia de Speak Up
-              </Text>
-
-              <Text style={styles.fraseIATexto}>
-                {fraseCorregidaIA}
-              </Text>
+              <Text style={styles.fraseIATitulo}>Sugerencia de Speak Up</Text>
+              <Text style={styles.fraseIATexto}>{fraseCorregidaIA}</Text>
 
               <View style={styles.fraseIABotones}>
                 <TouchableOpacity
@@ -833,11 +780,7 @@ export default function Categories() {
                         size={17}
                         color="#356879"
                       />
-
-                      <Text
-                        style={styles.sugerenciaTexto}
-                        numberOfLines={1}
-                      >
+                      <Text style={styles.sugerenciaTexto} numberOfLines={1}>
                         {sugerencia.palabra}
                       </Text>
                     </TouchableOpacity>
@@ -847,207 +790,180 @@ export default function Categories() {
             </View>
           )}
 
-          {/* TÍTULO CATEGORÍAS */}
+          {/* PANTALLA PRINCIPAL: CATEGORÍAS */}
 
-          <Text style={styles.categoriesTitle}>Categorías</Text>
+          {!selectedCategory && (
+            <>
+              <Text style={styles.categoriesTitle}>Categorías</Text>
 
-          {/* CATEGORÍAS */}
-
-          <View style={styles.categoriesContainer}>
-            {categories.map((cat) => {
-              const categoryColor = cat.color || "#356879";
-
-              const isSelected =
-                selectedCategory?.id_categorias === cat.id_categorias;
-
-              return (
-                <TouchableOpacity
-                  key={cat.id_categorias}
-                  activeOpacity={0.75}
-                  onPress={() => seleccionarCategoria(cat)}
-                  style={[
-                    styles.categoryButton,
-                    {
-                      backgroundColor: isSelected
-                        ? categoryColor
-                        : "#FFFFFF",
-                      borderColor: isSelected ? categoryColor : "#D9C8C8",
-                    },
-                  ]}
-                >
-                  <Text
+              <View style={styles.categoriesContainer}>
+                {categories.map((cat) => (
+                  <TouchableOpacity
+                    key={cat.id_categorias}
+                    activeOpacity={0.75}
+                    onPress={() => seleccionarCategoria(cat)}
                     style={[
-                      styles.categoryText,
+                      styles.categoryButton,
                       {
-                        color: isSelected ? "#FFFFFF" : "#5F6B70",
+                        backgroundColor: "#FFFFFF",
+                        borderColor: "#D9C8C8",
                       },
                     ]}
                   >
-                    {cat.nombre}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+                    <Text style={styles.categoryText}>{cat.nombre}</Text>
+                  </TouchableOpacity>
+                ))}
 
-            {!mostrarAgregarCategoria && (
-              <TouchableOpacity
-                style={styles.newCategoryButton}
-                activeOpacity={0.75}
-                onPress={() => {
-                  setMostrarAgregarCategoria(true);
-                  setColorSeleccionado("#356879");
-                }}
-              >
-                <Ionicons
-                  name="add-circle-outline"
-                  size={22}
-                  color="#356879"
-                />
-
-                <Text style={styles.newCategoryButtonText}>
-                  Agregar nueva categoría
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* FORMULARIO CATEGORÍA */}
-
-          {mostrarAgregarCategoria && (
-            <View style={styles.newCategoryContainer}>
-              <Text style={styles.newCategoryTitle}>
-                Nueva categoría
-              </Text>
-
-              <TextInput
-                value={nuevoNombreCategoria}
-                onChangeText={setNuevoNombreCategoria}
-                placeholder="Escribí el nombre de la categoría"
-                placeholderTextColor="#9AA8AD"
-                style={styles.newCategoryInput}
-              />
-
-              <Text style={styles.colorTitle}>Elegí un color</Text>
-
-              <View style={styles.colorsContainer}>
-                {coloresDisponibles.map((color) => {
-                  const seleccionado = colorSeleccionado === color;
-
-                  return (
-                    <TouchableOpacity
-                      key={color}
-                      activeOpacity={0.7}
-                      onPress={() => setColorSeleccionado(color)}
-                      style={[
-                        styles.colorCircle,
-                        { backgroundColor: color },
-                        seleccionado && styles.selectedColorCircle,
-                      ]}
-                    >
-                      {seleccionado && (
-                        <Ionicons
-                          name="checkmark"
-                          size={21}
-                          color="#FFFFFF"
-                        />
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
+                {!mostrarAgregarCategoria && (
+                  <TouchableOpacity
+                    style={styles.newCategoryButton}
+                    activeOpacity={0.75}
+                    onPress={() => {
+                      setMostrarAgregarCategoria(true);
+                      setColorSeleccionado("#356879");
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Agregar nueva categoría"
+                  >
+                    <Ionicons name="add" size={34} color="#356879" />
+                  </TouchableOpacity>
+                )}
               </View>
 
-              <View style={styles.previewContainer}>
-                <Text style={styles.previewLabel}>Vista previa</Text>
+              {/* FORMULARIO DE NUEVA CATEGORÍA */}
 
-                <View
-                  style={[
-                    styles.previewCategory,
-                    {
-                      backgroundColor: getBackgroundColor(
-                        colorSeleccionado
-                      ),
-                      borderColor: colorSeleccionado,
-                    },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.previewDot,
-                      { backgroundColor: colorSeleccionado },
-                    ]}
+              {mostrarAgregarCategoria && (
+                <View style={styles.newCategoryContainer}>
+                  <Text style={styles.newCategoryTitle}>Nueva categoría</Text>
+
+                  <TextInput
+                    value={nuevoNombreCategoria}
+                    onChangeText={setNuevoNombreCategoria}
+                    placeholder="Escribí el nombre de la categoría"
+                    placeholderTextColor="#9AA8AD"
+                    style={styles.newCategoryInput}
                   />
 
-                  <Text
-                    style={[
-                      styles.previewText,
-                      { color: colorSeleccionado },
-                    ]}
-                  >
-                    {nuevoNombreCategoria.trim() || "Mi categoría"}
-                  </Text>
-                </View>
-              </View>
+                  <Text style={styles.colorTitle}>Elegí un color</Text>
 
-              <View style={styles.newCategoryButtons}>
-                <TouchableOpacity
-                  style={styles.cancelButton}
-                  activeOpacity={0.75}
-                  onPress={() => {
-                    setMostrarAgregarCategoria(false);
-                    setNuevoNombreCategoria("");
-                    setColorSeleccionado("#356879");
-                  }}
-                >
-                  <Text style={styles.cancelButtonText}>Cancelar</Text>
-                </TouchableOpacity>
+                  <View style={styles.colorsContainer}>
+                    {coloresDisponibles.map((color) => {
+                      const seleccionado = colorSeleccionado === color;
 
-                <TouchableOpacity
-                  style={[
-                    styles.saveButton,
-                    guardandoCategoria && styles.disabledButton,
-                  ]}
-                  activeOpacity={0.75}
-                  disabled={guardandoCategoria}
-                  onPress={guardarNuevaCategoria}
-                >
-                  {guardandoCategoria ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <Ionicons
-                        name="checkmark"
-                        size={18}
-                        color="#FFFFFF"
+                      return (
+                        <TouchableOpacity
+                          key={color}
+                          activeOpacity={0.7}
+                          onPress={() => setColorSeleccionado(color)}
+                          style={[
+                            styles.colorCircle,
+                            { backgroundColor: color },
+                            seleccionado && styles.selectedColorCircle,
+                          ]}
+                        >
+                          {seleccionado && (
+                            <Ionicons
+                              name="checkmark"
+                              size={21}
+                              color="#FFFFFF"
+                            />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  <View style={styles.previewContainer}>
+                    <Text style={styles.previewLabel}>Vista previa</Text>
+
+                    <View
+                      style={[
+                        styles.previewCategory,
+                        {
+                          backgroundColor: getBackgroundColor(colorSeleccionado),
+                          borderColor: colorSeleccionado,
+                        },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.previewDot,
+                          { backgroundColor: colorSeleccionado },
+                        ]}
                       />
-                      <Text style={styles.saveButtonText}>Guardar</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
+                      <Text
+                        style={[
+                          styles.previewText,
+                          { color: colorSeleccionado },
+                        ]}
+                      >
+                        {nuevoNombreCategoria.trim() || "Mi categoría"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.newCategoryButtons}>
+                    <TouchableOpacity
+                      style={styles.cancelButton}
+                      activeOpacity={0.75}
+                      onPress={() => {
+                        setMostrarAgregarCategoria(false);
+                        setNuevoNombreCategoria("");
+                        setColorSeleccionado("#356879");
+                      }}
+                    >
+                      <Text style={styles.cancelButtonText}>Cancelar</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.saveButton,
+                        guardandoCategoria && styles.disabledButton,
+                      ]}
+                      activeOpacity={0.75}
+                      disabled={guardandoCategoria}
+                      onPress={guardarNuevaCategoria}
+                    >
+                      {guardandoCategoria ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <Ionicons
+                            name="checkmark"
+                            size={18}
+                            color="#FFFFFF"
+                          />
+                          <Text style={styles.saveButtonText}>Guardar</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </>
           )}
 
-          {/* CATEGORÍA SELECCIONADA */}
+          {/* PANTALLA INTERNA DE LA CATEGORÍA */}
 
           {selectedCategory && (
             <>
               <View style={styles.selectedCategoryContainer}>
-                <View
-                  style={[
-                    styles.selectedCategoryLine,
-                    {
-                      backgroundColor:
-                        selectedCategory.color || "#356879",
-                    },
-                  ]}
-                />
+                <TouchableOpacity
+                  style={styles.backButton}
+                  activeOpacity={0.75}
+                  onPress={volverACategorias}
+                  accessibilityRole="button"
+                  accessibilityLabel="Volver a las categorías"
+                >
+                  <Ionicons name="arrow-back" size={24} color="#356879" />
+                </TouchableOpacity>
 
                 <Text style={styles.selectedCategoryTitle}>
                   {selectedCategory.nombre}
                 </Text>
               </View>
 
-              {/* PICTOGRAMAS */}
+              {/* PICTOGRAMAS DE LA CATEGORÍA */}
 
               {loadingPictograms ? (
                 <View style={styles.loadingContainer}>
@@ -1082,10 +998,7 @@ export default function Categories() {
                           </View>
                         )}
 
-                        <Text
-                          style={styles.pictogramText}
-                          numberOfLines={2}
-                        >
+                        <Text style={styles.pictogramText} numberOfLines={2}>
                           {pictogram.nombre}
                         </Text>
                       </TouchableOpacity>
@@ -1093,36 +1006,16 @@ export default function Categories() {
 
                     {!mostrarAgregarPalabra && (
                       <TouchableOpacity
-                        style={[
-                          styles.newWordButton,
-                          {
-                            borderColor:
-                              selectedCategory.color || "#356879",
-                          },
-                        ]}
+                        style={styles.newWordButton}
                         activeOpacity={0.75}
                         onPress={() => {
                           setMostrarAgregarPalabra(true);
                           setImagenNuevaPalabra(null);
                         }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Agregar nueva palabra"
                       >
-                        <Ionicons
-                          name="add-circle-outline"
-                          size={22}
-                          color={selectedCategory.color || "#356879"}
-                        />
-
-                        <Text
-                          style={[
-                            styles.newWordButtonText,
-                            {
-                              color:
-                                selectedCategory.color || "#356879",
-                            },
-                          ]}
-                        >
-                          Agregar nueva palabra
-                        </Text>
+                        <Ionicons name="add" size={34} color="#356879" />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -1134,20 +1027,17 @@ export default function Categories() {
                         size={45}
                         color="#AAB7BC"
                       />
-
                       <Text style={styles.emptyText}>
                         Esta categoría todavía no tiene pictogramas
                       </Text>
                     </View>
                   )}
 
-                  {/* FORMULARIO NUEVA PALABRA */}
+                  {/* FORMULARIO DE NUEVA PALABRA */}
 
                   {mostrarAgregarPalabra && (
                     <View style={styles.newWordContainer}>
-                      <Text style={styles.newWordTitle}>
-                        Nueva palabra
-                      </Text>
+                      <Text style={styles.newWordTitle}>Nueva palabra</Text>
 
                       <TextInput
                         value={nuevoNombre}
@@ -1156,8 +1046,6 @@ export default function Categories() {
                         placeholderTextColor="#9AA8AD"
                         style={styles.newWordInput}
                       />
-
-                      {/* AGREGAR FOTO */}
 
                       <TouchableOpacity
                         style={styles.imagePickerButton}
@@ -1178,7 +1066,6 @@ export default function Categories() {
                                 size={22}
                                 color="#6BCB77"
                               />
-
                               <Text
                                 style={styles.imageSelectedText}
                                 numberOfLines={1}
@@ -1208,12 +1095,10 @@ export default function Categories() {
                                 color="#356879"
                               />
                             </View>
-
                             <View>
                               <Text style={styles.imagePickerTitle}>
                                 Agregar una foto
                               </Text>
-
                               <Text style={styles.imagePickerSubtitle}>
                                 Elegí una imagen de tu galería
                               </Text>
@@ -1232,9 +1117,7 @@ export default function Categories() {
                             setImagenNuevaPalabra(null);
                           }}
                         >
-                          <Text style={styles.cancelButtonText}>
-                            Cancelar
-                          </Text>
+                          <Text style={styles.cancelButtonText}>Cancelar</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -1247,10 +1130,7 @@ export default function Categories() {
                           onPress={guardarNuevaPalabra}
                         >
                           {guardandoPalabra ? (
-                            <ActivityIndicator
-                              size="small"
-                              color="#FFFFFF"
-                            />
+                            <ActivityIndicator size="small" color="#FFFFFF" />
                           ) : (
                             <>
                               <Ionicons
@@ -1258,9 +1138,7 @@ export default function Categories() {
                                 size={18}
                                 color="#FFFFFF"
                               />
-                              <Text style={styles.saveButtonText}>
-                                Guardar
-                              </Text>
+                              <Text style={styles.saveButtonText}>Guardar</Text>
                             </>
                           )}
                         </TouchableOpacity>
@@ -1278,26 +1156,10 @@ export default function Categories() {
 }
 
 const styles = StyleSheet.create({
-  keyboardContainer: {
-    flex: 1,
-  },
-
-  container: {
-    flex: 1,
-    backgroundColor: "#EEF3F5",
-  },
-
-  scroll: {
-    flex: 1,
-  },
-
-  content: {
-    paddingHorizontal: 8,
-    paddingTop: 10,
-    paddingBottom: 60,
-  },
-
-  // HEADER
+  keyboardContainer: { flex: 1 },
+  container: { flex: 1, backgroundColor: "#EEF3F5" },
+  scroll: { flex: 1 },
+  content: { paddingHorizontal: 8, paddingTop: 10, paddingBottom: 60 },
 
   header: {
     height: 90,
@@ -1308,21 +1170,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingBottom: 8,
   },
-
   headerTitle: {
     color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "bold",
     paddingBottom: 8,
   },
-
   settingsButton: {
     justifyContent: "center",
     alignItems: "center",
     paddingBottom: 8,
   },
-
-  // MODAL DE CONFIGURACIÓN
 
   modalFondo: {
     flex: 1,
@@ -1331,7 +1189,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 20,
   },
-
   modalContenido: {
     width: "100%",
     maxWidth: 420,
@@ -1339,49 +1196,27 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
   },
-
   modalEncabezado: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 10,
   },
-
-  modalTitulo: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#356879",
-  },
-
+  modalTitulo: { fontSize: 22, fontWeight: "700", color: "#356879" },
   modalSubtitulo: {
     fontSize: 14,
     color: "#5F6B70",
     marginBottom: 18,
     lineHeight: 20,
   },
-
-  modalCargando: {
-    alignItems: "center",
-    paddingVertical: 20,
-  },
-
-  modalCargandoTexto: {
-    marginTop: 10,
-    color: "#5F6B70",
-    fontSize: 13,
-  },
-
-  modalVacio: {
-    alignItems: "center",
-    paddingVertical: 15,
-  },
-
+  modalCargando: { alignItems: "center", paddingVertical: 20 },
+  modalCargandoTexto: { marginTop: 10, color: "#5F6B70", fontSize: 13 },
+  modalVacio: { alignItems: "center", paddingVertical: 15 },
   modalVacioTexto: {
     color: "#5F6B70",
     fontSize: 13,
     textAlign: "center",
   },
-
   reintentarButton: {
     marginTop: 12,
     backgroundColor: "#356879",
@@ -1389,13 +1224,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
   },
-
-  reintentarTexto: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-
+  reintentarTexto: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
   opcionVoz: {
     flexDirection: "row",
     alignItems: "center",
@@ -1406,29 +1235,18 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     backgroundColor: "#FFFFFF",
   },
-
   opcionVozSeleccionada: {
     borderColor: "#356879",
     backgroundColor: "#EEF5F6",
   },
-
-  opcionVozTexto: {
-    flex: 1,
-  },
-
-  nombreVoz: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#356879",
-  },
-
+  opcionVozTexto: { flex: 1 },
+  nombreVoz: { fontSize: 15, fontWeight: "700", color: "#356879" },
   descripcionVoz: {
     fontSize: 12,
     color: "#718187",
     marginTop: 4,
     lineHeight: 17,
   },
-
   guardandoVoz: {
     flexDirection: "row",
     alignItems: "center",
@@ -1436,13 +1254,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     gap: 8,
   },
-
-  guardandoVozTexto: {
-    color: "#5F6B70",
-    fontSize: 12,
-  },
-
-  // CATEGORÍAS
+  guardandoVozTexto: { color: "#5F6B70", fontSize: 12 },
 
   categoriesTitle: {
     fontSize: 13,
@@ -1451,14 +1263,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginLeft: 2,
   },
-
   categoriesContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "flex-start",
     gap: 10,
   },
-
   categoryButton: {
     width: "31%",
     minHeight: 82,
@@ -1474,14 +1284,12 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
-
   categoryText: {
     fontSize: 12,
     textAlign: "center",
     fontWeight: "600",
+    color: "#5F6B70",
   },
-
-  // NUEVA CATEGORÍA
 
   newCategoryButton: {
     width: "31%",
@@ -1490,13 +1298,11 @@ const styles = StyleSheet.create({
     borderColor: "#356879",
     borderRadius: 14,
     backgroundColor: "#FFFFFF",
-    flexDirection: "column",
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 8,
     paddingVertical: 8,
   },
-
   newCategoryButtonText: {
     fontSize: 10,
     fontWeight: "600",
@@ -1504,7 +1310,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: "center",
   },
-
   newCategoryContainer: {
     marginTop: 15,
     backgroundColor: "#FFFFFF",
@@ -1516,14 +1321,12 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
-
   newCategoryTitle: {
     fontSize: 16,
     color: "#356879",
     fontWeight: "700",
     marginBottom: 10,
   },
-
   newCategoryInput: {
     height: 45,
     borderWidth: 1,
@@ -1534,9 +1337,6 @@ const styles = StyleSheet.create({
     color: "#5F6B70",
     backgroundColor: "#F8FAFB",
   },
-
-  // SELECTOR COLOR
-
   colorTitle: {
     fontSize: 13,
     color: "#356879",
@@ -1544,14 +1344,12 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 10,
   },
-
   colorsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
     alignItems: "center",
   },
-
   colorCircle: {
     width: 38,
     height: 38,
@@ -1561,7 +1359,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#FFFFFF",
   },
-
   selectedColorCircle: {
     borderColor: "#FFFFFF",
     borderWidth: 3,
@@ -1571,19 +1368,8 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 4,
   },
-
-  // VISTA PREVIA COLOR
-
-  previewContainer: {
-    marginTop: 17,
-  },
-
-  previewLabel: {
-    fontSize: 11,
-    color: "#7A898F",
-    marginBottom: 7,
-  },
-
+  previewContainer: { marginTop: 17 },
+  previewLabel: { fontSize: 11, color: "#7A898F", marginBottom: 7 },
   previewCategory: {
     minHeight: 50,
     borderRadius: 12,
@@ -1592,19 +1378,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 12,
   },
-
   previewDot: {
     width: 14,
     height: 14,
     borderRadius: 7,
     marginRight: 9,
   },
-
-  previewText: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-
+  previewText: { fontSize: 13, fontWeight: "700" },
   newCategoryButtons: {
     flexDirection: "row",
     justifyContent: "flex-end",
@@ -1613,29 +1393,24 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
-  // CATEGORÍA SELECCIONADA
-
   selectedCategoryContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 22,
+    marginTop: 12,
     marginBottom: 12,
   },
-
-  selectedCategoryLine: {
-    width: 5,
-    height: 28,
-    borderRadius: 5,
+  backButton: {
+    width: 36,
+    height: 36,
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 8,
   },
-
   selectedCategoryTitle: {
     fontSize: 20,
     color: "#356879",
     fontWeight: "700",
   },
-
-  // PICTOGRAMAS
 
   pictogramsContainer: {
     flexDirection: "row",
@@ -1643,7 +1418,6 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
     gap: 10,
   },
-
   pictogramButton: {
     width: "31%",
     minHeight: 125,
@@ -1667,7 +1441,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
   },
-
   fraseIASugerida: {
     marginTop: 8,
     marginBottom: 12,
@@ -1677,27 +1450,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#B9D1D7",
   },
-
   fraseIATitulo: {
     fontSize: 13,
     fontWeight: "700",
     color: "#356879",
     marginBottom: 6,
   },
-
-  fraseIATexto: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: "#5F6B70",
-  },
-
+  fraseIATexto: { fontSize: 14, lineHeight: 20, color: "#5F6B70" },
   fraseIABotones: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
     marginTop: 12,
   },
-
   fraseIARechazar: {
     flexDirection: "row",
     alignItems: "center",
@@ -1708,13 +1473,11 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     backgroundColor: "#EEF3F5",
   },
-
   fraseIARechazarTexto: {
     color: "#5F6B70",
     fontSize: 11,
     fontWeight: "600",
   },
-
   fraseIAAceptar: {
     flexDirection: "row",
     alignItems: "center",
@@ -1725,7 +1488,6 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     backgroundColor: "#356879",
   },
-
   fraseIAAceptarTexto: {
     color: "#FFFFFF",
     fontSize: 11,
@@ -1737,7 +1499,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     width: "100%",
   },
-
   sugerenciasTitulo: {
     color: "#789097",
     fontSize: 13,
@@ -1745,14 +1506,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginLeft: 2,
   },
-
   sugerenciasLista: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "flex-start",
     gap: 10,
   },
-
   sugerenciaChip: {
     width: "31%",
     minHeight: 82,
@@ -1767,20 +1526,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 4,
   },
-
   sugerenciaTexto: {
     color: "#356879",
     fontSize: 12,
     fontWeight: "600",
     textAlign: "center",
   },
-
-  pictogramImage: {
-    width: 75,
-    height: 75,
-    marginBottom: 5,
-  },
-
+  pictogramImage: { width: 75, height: 75, marginBottom: 5 },
   noImageContainer: {
     width: 75,
     height: 75,
@@ -1788,7 +1540,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 5,
   },
-
   pictogramText: {
     fontSize: 12,
     color: "#5F6B70",
@@ -1796,29 +1547,18 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // CARGANDO
-
   loadingContainer: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 35,
   },
-
-  loadingText: {
-    marginTop: 10,
-    fontSize: 12,
-    color: "#356879",
-  },
-
-  // SIN PICTOGRAMAS
-
+  loadingText: { marginTop: 10, fontSize: 12, color: "#356879" },
   emptyPictogramsContainer: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 20,
     paddingHorizontal: 30,
   },
-
   emptyText: {
     marginTop: 10,
     fontSize: 12,
@@ -1826,28 +1566,24 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  // NUEVA PALABRA
-
   newWordButton: {
     width: "31%",
     minHeight: 82,
     borderWidth: 1,
+    borderColor: "#356879",
     borderRadius: 14,
     backgroundColor: "#FFFFFF",
-    flexDirection: "column",
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 8,
     paddingVertical: 8,
   },
-
   newWordButtonText: {
     fontSize: 10,
     fontWeight: "600",
     marginTop: 4,
     textAlign: "center",
   },
-
   newWordContainer: {
     marginTop: 20,
     backgroundColor: "#FFFFFF",
@@ -1859,14 +1595,12 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
-
   newWordTitle: {
     fontSize: 16,
     color: "#356879",
     fontWeight: "700",
     marginBottom: 10,
   },
-
   newWordInput: {
     height: 45,
     borderWidth: 1,
@@ -1877,9 +1611,6 @@ const styles = StyleSheet.create({
     color: "#5F6B70",
     backgroundColor: "#F8FAFB",
   },
-
-  // ELEGIR IMAGEN
-
   imagePickerButton: {
     minHeight: 75,
     marginTop: 12,
@@ -1893,7 +1624,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     position: "relative",
   },
-
   imageIconContainer: {
     width: 48,
     height: 48,
@@ -1903,32 +1633,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 12,
   },
-
   imagePickerTitle: {
     fontSize: 13,
     fontWeight: "700",
     color: "#356879",
   },
-
   imagePickerSubtitle: {
     fontSize: 11,
     color: "#7A898F",
     marginTop: 3,
   },
-
   selectedImage: {
     width: 55,
     height: 55,
     borderRadius: 10,
     marginRight: 10,
   },
-
-  imageInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-
+  imageInfo: { flexDirection: "row", alignItems: "center", flex: 1 },
   imageSelectedText: {
     fontSize: 12,
     color: "#5F6B70",
@@ -1936,11 +1657,7 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     flex: 1,
   },
-
-  removeImageButton: {
-    padding: 3,
-  },
-
+  removeImageButton: { padding: 3 },
   newWordButtons: {
     flexDirection: "row",
     justifyContent: "flex-end",
@@ -1949,21 +1666,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
-  // BOTONES
-
   cancelButton: {
     paddingHorizontal: 15,
     paddingVertical: 9,
     borderRadius: 9,
     backgroundColor: "#EEF3F5",
   },
-
   cancelButtonText: {
     color: "#5F6B70",
     fontSize: 12,
     fontWeight: "600",
   },
-
   saveButton: {
     paddingHorizontal: 15,
     paddingVertical: 9,
@@ -1974,11 +1687,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minWidth: 80,
   },
-
-  disabledButton: {
-    opacity: 0.6,
-  },
-
+  disabledButton: { opacity: 0.6 },
   saveButtonText: {
     color: "#FFFFFF",
     fontSize: 12,
