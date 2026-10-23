@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import {
   View,
@@ -857,7 +856,6 @@ export default function Categories() {
           <View style={styles.categoriesContainer}>
             {categories.map((cat) => {
               const categoryColor = cat.color || "#356879";
-              const backgroundColor = getBackgroundColor(categoryColor);
 
               const isSelected =
                 selectedCategory?.id_categorias === cat.id_categorias;
@@ -872,8 +870,8 @@ export default function Categories() {
                     {
                       backgroundColor: isSelected
                         ? categoryColor
-                        : backgroundColor,
-                      borderColor: categoryColor,
+                        : "#FFFFFF",
+                      borderColor: isSelected ? categoryColor : "#D9C8C8",
                     },
                   ]}
                 >
