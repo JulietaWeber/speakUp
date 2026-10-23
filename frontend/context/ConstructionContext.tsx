@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState } from "react";
 import { Pictograma } from "../services/api";
 
@@ -11,6 +12,7 @@ export type PalabraConstruccion = Pictograma | {
 type ConstructionContextType = {
   palabras: PalabraConstruccion[];
   agregarPalabra: (palabra: PalabraConstruccion) => void;
+  reemplazarPalabras: (nuevasPalabras: PalabraConstruccion[]) => void;
   eliminarPalabra: (index: number) => void;
   borrarUltimaPalabra: () => void;
   limpiar: () => void;
@@ -31,6 +33,10 @@ export function ConstructionProvider({
     setPalabras((prev) => [...prev, palabra]);
   };
 
+  const reemplazarPalabras = (nuevasPalabras: PalabraConstruccion[]) => {
+    setPalabras(nuevasPalabras);
+  };
+
   const eliminarPalabra = (index: number) => {
     setPalabras((prev) => prev.filter((_, i) => i !== index));
   };
@@ -48,6 +54,7 @@ export function ConstructionProvider({
       value={{
         palabras,
         agregarPalabra,
+        reemplazarPalabras,
         eliminarPalabra,
         borrarUltimaPalabra,
         limpiar,

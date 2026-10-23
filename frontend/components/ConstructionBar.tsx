@@ -1,3 +1,4 @@
+
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useState, useEffect } from "react";
@@ -27,14 +28,10 @@ export default function ConstructionBar() {
 
   const reproducirAudio = (audioUrl: string) => {
     try {
-      console.log("REPRODUCIENDO AUDIO:");
-      console.log(audioUrl);
-
+      console.log("REPRODUCIENDO AUDIO:", audioUrl);
       player.replace(audioUrl);
       player.volume = 1;
       player.play();
-
-      console.log("AUDIO REPRODUCIÉNDOSE");
     } catch (error) {
       console.log("ERROR REPRODUCIENDO AUDIO:", error);
     }
@@ -45,75 +42,75 @@ export default function ConstructionBar() {
 
     setSeleccionada(true);
 
-    // La oración completa incluye pictogramas y palabras sugeridas por IA.
-    const textoCompleto = palabras
-      .map((palabra) => palabra.nombre)
-      .filter((nombre) => typeof nombre === "string" && nombre.trim().length > 0)
-      .join(" ");
-
-    // El backend de armarFrase necesita IDs reales. Las sugerencias de IA
-    // son texto libre, por eso no se envían como IDs de pictogramas.
-    const idsPictogramas = palabras
-      .filter((p: any) => p.id_pictogramas !== null && p.id_pictogramas !== undefined)
-      .map((p: any) => p.id_pictogramas);
-
-    const token = await AsyncStorage.getItem("token");
-    const usuarioGuardado = await AsyncStorage.getItem("usuario");
-
-    const usuario = usuarioGuardado
-      ? JSON.parse(usuarioGuardado)
-      : null;
-
-    if (!usuario || !token) {
-      console.log("No hay sesión iniciada");
-      setSeleccionada(false);
-      return;
-    }
-
-    if (!textoCompleto.trim()) {
-      setSeleccionada(false);
-      return;
-    }
-
     try {
+      const palabrasTexto = palabras
+        .map((palabra) => palabra.nombre)
+        .filter(
+          (nombre) =>
+            typeof nombre === "string" && nombre.trim().length > 0
+        );
+
+      const textoCompleto = palabrasTexto.join(" ").trim();
+
+      const idsPictogramas = palabras.flatMap((palabra: any) => {
+        if (Array.isArray(palabra.ids_pictogramas_origen)) {
+          return palabra.ids_pictogramas_origen;
+        }
+
+        if (
+          palabra.id_pictogramas !== null &&
+          palabra.id_pictogramas !== undefined
+        ) {
+          return [palabra.id_pictogramas];
+        }
+
+        return [];
+      });
+
+      const token = await AsyncStorage.getItem("token");
+      const usuarioGuardado = await AsyncStorage.getItem("usuario");
+
+      const usuario = usuarioGuardado
+        ? JSON.parse(usuarioGuardado)
+        : null;
+
+      if (!usuario || !token) {
+        console.log("No hay sesión iniciada");
+        return;
+      }
+
+      if (!textoCompleto) return;
+
       if (idsPictogramas.length === 0) {
-        console.log("La oración no contiene pictogramas guardados para crear el registro.");
-        setSeleccionada(false);
+        console.log(
+          "La oración no contiene pictogramas guardados para crear el registro."
+        );
         return;
       }
 
       const respuesta = await armarFrase(
         usuario.id_usuario,
-        idsPictogramas,
+        [...new Set(idsPictogramas)],
         token
       );
 
-      console.log("=================================");
-      console.log("FRASE CREADA:");
-      console.log("Texto completo que se va a reproducir:", textoCompleto);
-      console.log(respuesta);
-      console.log("=================================");
+      console.log("FRASE CREADA:", respuesta);
 
-      // Importante: enviar el texto completo, no solo el texto que devuelve
-      // armarFrase basado en los pictogramas guardados.
       const audio = await generarAudio(
         respuesta.id_frase,
         textoCompleto,
         token
       );
 
-      console.log("=================================");
-      console.log("AUDIO GENERADO:");
-      console.log(audio);
-      console.log("=================================");
+      console.log("AUDIO GENERADO:", audio);
 
       if (audio?.audio_url) {
         reproducirAudio(audio.audio_url);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.log(
-        "Error enviando frase, generando audio o reproduciendo:",
-        error
+        "ERROR EN LA FRASE O EN LA GENERACIÓN DEL AUDIO:",
+        error?.response?.data ?? error?.message ?? error
       );
     } finally {
       setSeleccionada(false);
@@ -134,7 +131,8 @@ export default function ConstructionBar() {
           disabled={palabras.length === 0 || seleccionada}
           style={[
             styles.playButton,
-            (palabras.length === 0 || seleccionada) && styles.playButtonDisabled,
+            (palabras.length === 0 || seleccionada) &&
+              styles.playButtonDisabled,
           ]}
           accessibilityLabel="Reproducir oración completa"
         >
@@ -160,7 +158,11 @@ export default function ConstructionBar() {
             style={styles.deleteButton}
             accessibilityLabel="Borrar última palabra"
           >
-            <Ionicons name="trash-outline" size={22} color="#6F7C80" />
+            <Ionicons
+              name="trash-outline"
+              size={22}
+              color="#6F7C80"
+            />
           </TouchableOpacity>
         )}
       </View>

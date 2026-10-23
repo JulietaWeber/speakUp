@@ -22,6 +22,12 @@ export type ImagenExpo = {
   type: string;
 };
 
+export type VozDisponible = {
+  id: string;
+  nombre: string;
+  descripcion: string;
+};
+
 const getAuthHeaders = (token?: string) => {
   if (!token) return {};
 
@@ -40,10 +46,7 @@ export const login = async (
 ) => {
   const response = await axios.post(
     `${API_URL}/auth/login`,
-    {
-      email,
-      password,
-    }
+    { email, password }
   );
 
   return response.data.data;
@@ -56,11 +59,7 @@ export const register = async (
 ) => {
   const response = await axios.post(
     `${API_URL}/auth/register`,
-    {
-      nombre,
-      email,
-      password,
-    }
+    { nombre, email, password }
   );
 
   return response.data.data;
@@ -70,9 +69,7 @@ export const register = async (
 // CATEGORÍAS
 // =========================
 
-export const obtenerCategorias = async (
-  token: string
-) => {
+export const obtenerCategorias = async (token: string) => {
   const response = await axios.get(
     `${API_URL}/categorias/mis-categorias`,
     {
@@ -90,10 +87,7 @@ export const crearCategoria = async (
 ) => {
   const response = await axios.post(
     `${API_URL}/categorias`,
-    {
-      nombre,
-      color,
-    },
+    { nombre, color },
     {
       headers: getAuthHeaders(token),
     }
@@ -250,6 +244,36 @@ export const actualizarImagenPictogramaPersonalizado = async (
 // AUDIOS
 // =========================
 
+export const obtenerVoces = async (
+  token: string
+): Promise<VozDisponible[]> => {
+  const response = await axios.get(
+    `${API_URL}/audios/voces`,
+    {
+      headers: getAuthHeaders(token),
+    }
+  );
+
+  return response.data.data;
+};
+
+export const actualizarVozPreferida = async (
+  vozPreferida: string,
+  token: string
+) => {
+  const response = await axios.put(
+    `${API_URL}/usuarios/voz`,
+    {
+      voz_preferida: vozPreferida,
+    },
+    {
+      headers: getAuthHeaders(token),
+    }
+  );
+
+  return response.data.data;
+};
+
 export const generarAudio = async (
   idFrase: number,
   texto: string,
@@ -288,9 +312,7 @@ export const corregirFraseIA = async (
 ) => {
   const response = await axios.post(
     `${API_URL}/ia/corregir`,
-    {
-      palabras,
-    },
+    { palabras },
     {
       headers: getAuthHeaders(token),
     }
@@ -298,7 +320,6 @@ export const corregirFraseIA = async (
 
   return response.data.data;
 };
-
 
 export const predecirPalabraIA = async (
   palabra: string,
@@ -328,7 +349,6 @@ export const predecirPalabraIA = async (
 
   return response.data.data;
 };
-
 
 export const procesarFraseIA = async (
   palabras: string[],
