@@ -10,6 +10,12 @@ FastAPI, sin levantar un servidor).
   ninguna palabra de contenido, que no quede mal armada (artículos o
   preposiciones duplicados o colgando) y la compara con la corrección
   esperada.
+- /corregir completando frases con los pictogramas de la app: los ejemplos
+  del pedido (["triste"] -> "Estoy triste.", ...) tienen que salir exactos y,
+  en todas las secuencias de 1 y 2 pictogramas de completar_frases.tsv más
+  una muestra de las de 3 y 4, se verifica la regla fundamental (las
+  palabras del usuario aparecen todas, tal cual y en su orden) y se cuenta
+  cuántas salen iguales a la frase del dataset.
 - /reentrenar, / y /ping.
 
 Uso (desde IA/):  python scripts/probar_endpoints.py
@@ -18,10 +24,12 @@ Sale con código 1 si falla algún chequeo obligatorio.
 
 import json
 import os
+import random
 import re
 import sys
 import tempfile
 import time
+from collections import Counter
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.dirname(AQUI)
@@ -267,7 +275,7 @@ for entrada, esperadas in CASOS_CORRECCION:
              f"/corregir {entrada!r} dejó la frase mal armada: {frase!r}")
     print(f"{'OK ' if ok else '-- '} {ms:5.0f} ms  {entrada!r:55s} -> {frase!r}" + ("" if ok else f"   (esperado: {esperadas[0]!r})"))
 
-for especial, esperado in [([], ""), (["agua"], "agua"), (["  ", ""], ""), (["por favor"], None),
+for especial, esperado in [([], ""), (["agua"], "Quiero agua."), (["  ", ""], ""), (["por favor"], None),
                            (["Quiero", "ir", "al", "baño", "?"], None), ([1, "hola"], None)]:
     r = cliente.post("/corregir", json={"palabras": especial})
     print(f"   especial {especial!r} -> {r.status_code} {r.json()}")
@@ -277,6 +285,103 @@ for especial, esperado in [([], ""), (["agua"], "agua"), (["  ", ""], ""), (["po
 
 print(f"\nCorrecciones iguales a la esperada: {exactas}/{len(CASOS_CORRECCION)} | "
       f"tiempo máx {max(tiempos):.0f} ms, promedio {sum(tiempos) / len(tiempos):.0f} ms")
+
+# ── /corregir: completar frases con los pictogramas de la app ────────────────
+
+from dataset_completar import SEPARADOR, SALIDA as RUTA_COMPLETAR, frase as frase_gramatica  # noqa: E402
+
+# Los ejemplos del pedido: tienen que salir exactos.
+EJEMPLOS_PEDIDO = [
+    (["triste"], "Estoy triste."),
+    (["mamá", "agua"], "Mamá, quiero agua."),
+    (["pizza"], "Quiero pizza."),
+]
+# Más casos (se informan; los obligatorios son la regla fundamental y los de arriba).
+CASOS_COMPLETAR = [
+    ["tengo hambre", "pizza"], ["hola", "bien"], ["bien", "gracias"], ["voy a", "pizza"],
+    ["mañana", "trabajar"], ["ayer", "pizza"], ["ayer", "triste"], ["pizza", "por favor"],
+    ["agua", "jugo", "gaseosa"], ["pizza", "correr"], ["chau", "mañana"], ["tengo sed", "agua"],
+    ["mamá", "agua", "por favor"], ["hoy", "feliz"], ["quiero", "feliz"], ["yo soy", "feliz"],
+    ["agua", "tengo sed"], ["hola", "mamá", "tengo hambre"],
+    # sin sentido: quedan iguales
+    ["hola", "chau", "pizza", "triste"], ["yo soy", "pizza"], ["ayer", "voy a", "correr"],
+    ["feliz", "triste"], ["pizza", "quiero"], ["quiero"], ["hoy"],
+]
+
+
+def corregir(elementos):
+    t = time.perf_counter()
+    r = cliente.post("/corregir", json={"palabras": elementos})
+    return r, (time.perf_counter() - t) * 1000
+
+
+def regla_fundamental(elementos, salida):
+    """Las palabras del usuario están todas en la salida, tal cual y en su orden."""
+    resto = iter(palabras(salida))
+    return all(any(w == x for w in resto) for e in elementos for x in palabras(e))
+
+
+def identidad(elementos):
+    texto = " ".join(" ".join(e.split()) for e in elementos)
+    return texto[0].upper() + texto[1:] + "."
+
+
+print("\n== POST /corregir: completar frases ==")
+for elementos, esperada in EJEMPLOS_PEDIDO:
+    r, ms = corregir(elementos)
+    salida = r.json().get("frase", "")
+    print(f"{'OK ' if salida == esperada else '-- '} {ms:5.0f} ms  {SEPARADOR.join(elementos):45s} -> {salida!r}")
+    chequear(salida == esperada, f"/corregir {elementos} devolvió {salida!r} (esperado {esperada!r})")
+for elementos in CASOS_COMPLETAR:
+    r, ms = corregir(elementos)
+    salida = r.json().get("frase", "")
+    esperada = frase_gramatica(elementos)[0]
+    chequear(regla_fundamental(elementos, salida), f"/corregir {elementos} perdió o cambió palabras: {salida!r}")
+    print(f"{'OK ' if salida == esperada else '-- '} {ms:5.0f} ms  {SEPARADOR.join(elementos):45s} -> {salida!r}"
+          + ("" if salida == esperada else f"   (dataset: {esperada!r})"))
+
+# Barrido del dataset: todas las secuencias de 1 y 2 pictogramas de la app y
+# una muestra fija de las de 3 y 4.
+pares = []
+with open(RUTA_COMPLETAR, encoding="utf-8") as f:
+    next(f)
+    for linea in f:
+        p, fr = linea.rstrip("\n").split("\t")
+        pares.append((p.split(SEPARADOR), fr))
+cortos = [x for x in pares if len(x[0]) <= 2]
+largos = [x for x in pares if len(x[0]) > 2]
+muestra = cortos + random.Random(5).sample(largos, 1500)
+cuenta = Counter()
+tiempos = []
+ejemplos_mal = []
+for elementos, esperada in muestra:
+    r, ms = corregir(elementos)
+    tiempos.append(ms)
+    salida = r.json().get("frase", "")
+    # "igual": sin sentido o ya completa ("Quiero pizza."); "completar": hay que agregar palabras
+    clave = "igual" if esperada == identidad(elementos) else "completar"
+    cuenta[clave] += 1
+    if not regla_fundamental(elementos, salida):
+        chequear(False, f"/corregir {elementos} perdió o cambió palabras: {salida!r}")
+    if salida == esperada:
+        cuenta[clave + "_ok"] += 1
+    elif salida == identidad(elementos):
+        cuenta[clave + "_igual"] += 1        # no se animó a completar
+    else:
+        cuenta[clave + "_otra"] += 1
+        if len(ejemplos_mal) < 15:
+            ejemplos_mal.append((elementos, salida, esperada))
+    chequear(ms < 2000, f"/corregir {elementos} tardó {ms:.0f} ms")
+n_comp, n_igual = cuenta["completar"], cuenta["igual"]
+print(f"Barrido de completar_frases.tsv: {len(muestra)} secuencias ({len(cortos)} de 1-2 pictogramas, "
+      f"1500 de 3-4) | tiempo máx {max(tiempos):.0f} ms, promedio {sum(tiempos) / len(tiempos):.1f} ms")
+print(f"  para completar: {n_comp} -> {cuenta['completar_ok']} iguales al dataset "
+      f"({100 * cuenta['completar_ok'] / max(n_comp, 1):.1f} %), {cuenta['completar_igual']} sin completar, "
+      f"{cuenta['completar_otra']} distintas")
+print(f"  para dejar igual (sin sentido o ya completas): {n_igual} -> {cuenta['igual_ok']} quedan iguales "
+      f"({100 * cuenta['igual_ok'] / max(n_igual, 1):.1f} %), {cuenta['igual_otra']} cambiadas")
+for elementos, salida, esperada in ejemplos_mal:
+    print(f"   {SEPARADOR.join(elementos):45s} -> {salida!r}   (dataset: {esperada!r})")
 
 print("\n" + ("TODOS LOS CHEQUEOS OBLIGATORIOS PASARON" if not fallas else f"{len(fallas)} FALLAS:"))
 for f in fallas:

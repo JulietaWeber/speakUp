@@ -7,7 +7,10 @@ de SpeakUp usa para:
    el tablero de CAA (`POST /predecir`).
 2. **Personalizar** esa predicción con las frases de cada usuario
    (`POST /reentrenar`).
-3. **Corregir** la frase armada con correcciones mínimas (`POST /corregir`).
+3. **Completar y corregir** la frase armada (`POST /corregir`): deduce la
+   frase completa a partir de los pictogramas elegidos (`["triste"]` →
+   "Estoy triste.") y hace correcciones mínimas, sin perder nunca una
+   palabra del usuario.
 
 > **Estado:** los cuatro endpoints están terminados, entrenados y probados
 > (`scripts/probar_endpoints.py` pasa todos los chequeos obligatorios). Si
@@ -50,6 +53,7 @@ IA/
 ├── DOCUMENTACION.md          # este archivo
 ├── scripts/                  # todo lo que NO se usa en producción
 │   ├── corpus_caa.py             # genera datos/corpus_caa.txt (frases correctas de CAA)
+│   ├── dataset_completar.py      # genera datos/completar_frases.tsv (pictogramas -> frase completa)
 │   ├── entrenar_prediccion.py    # entrena modelo_prediccion.{npz,json}
 │   ├── entrenar_correccion.py    # entrena modelo_correccion.{npz,json} + lexico_correccion.json
 │   ├── descargar_tatoeba.py      # descarga oraciones de Tatoeba (opcional, solo para entrenar el corrector)
@@ -57,7 +61,8 @@ IA/
 │   ├── requirements-entrenamiento.txt
 │   └── datos/
 │       ├── corpus_caa.txt        # 47.995 frases generadas
-│       └── frases_curadas.txt    # 2.602 frases escritas a mano (de los datasets anteriores)
+│       ├── frases_curadas.txt    # 2.602 frases escritas a mano (de los datasets anteriores)
+│       └── completar_frases.tsv  # 115.853 pares pictogramas -> frase completa
 └── archivos_viejos/          # modelos y código de versiones anteriores (no se usan)
     ├── prediccion_mlp/           # MLP de scikit-learn (modelo_base.pkl, ...) y sus scripts
     ├── correccion_seq2seq/       # seq2seq GRU anterior (modelo_correccion.pt, ...) y sus datasets
@@ -82,7 +87,8 @@ api.py ──importa──> funciones.py ──carga──> spaCy es_core_news_m
 
 scripts/corpus_caa.py ──> datos/corpus_caa.txt ──┬──> entrenar_prediccion.py ──> modelo_prediccion.*
 datos/frases_curadas.txt ────────────────────────┤
-descargar_tatoeba.py ──> datos/externos/ ────────┴──> entrenar_correccion.py ──> modelo_correccion.*, lexico_correccion.json
+descargar_tatoeba.py ──> datos/externos/ ────────┼──> entrenar_correccion.py ──> modelo_correccion.*, lexico_correccion.json
+dataset_completar.py ──> datos/completar_frases.tsv ┘   (solo el corrector)
 ```
 
 `morfologia.py` lo usan tanto los scripts de entrenamiento (para generar
@@ -142,16 +148,33 @@ Las palabras nuevas del usuario (que no están en el vocabulario base) también
 se empiezan a sugerir.
 
 ### `POST /corregir`
-Entrada:
+Entrada: los pictogramas que fue eligiendo el usuario, en orden (cada
+elemento puede tener varias palabras: `"tengo hambre"`, `"por favor"`).
 ```json
-{"palabras": ["quiero", "ir", "parque", "con", "mi", "mamá"]}
+{"palabras": ["mamá", "agua"]}
 ```
-Salida: `{"frase": "Quiero ir al parque con mi mamá."}`
+Salida: `{"frase": "Mamá, quiero agua."}`
 
-- Lista vacía → `""`. Una sola palabra → se devuelve igual.
+| Entrada | Salida |
+|---|---|
+| `["triste"]` | `Estoy triste.` |
+| `["pizza"]` | `Quiero pizza.` |
+| `["mamá", "agua"]` | `Mamá, quiero agua.` |
+| `["tengo hambre", "pizza"]` | `Tengo hambre, quiero pizza.` |
+| `["quiero", "ir", "parque", "con", "mi", "mamá"]` | `Quiero ir al parque con mi mamá.` |
+| `["hola", "chau", "pizza", "triste"]` (sin sentido) | `Hola chau pizza triste.` |
+
+- **Regla fundamental:** las palabras del usuario aparecen siempre en la
+  respuesta, en su orden. Solo se agregan palabras para completar o
+  corregir; nunca se borra ni se reemplaza una palabra por otra. Lo único
+  que puede cambiar es la forma de una palabra escrita a mano ("cansado" →
+  "cansada", "mama" → "mamá"); las de los pictogramas de la app y las de un
+  elemento de varias palabras quedan tal cual.
+- Si no se puede deducir nada útil se devuelven las mismas palabras con
+  mayúscula y punto (también una sola palabra: `["pelota"]` → `Pelota.`).
+- Lista vacía → `""`.
 - Si alguna palabra trae `?` (o la frase empieza con un interrogativo) se
   devuelve entre `¿...?`.
-- La salida mantiene siempre las palabras del usuario en su orden.
 
 ---
 
@@ -181,38 +204,58 @@ plantillas: `["quiero","tomar","un"]` → "nuevo" 90%; ver `archivos_viejos/`).
 **Reemplaza** al seq2seq anterior, que generaba la frase desde cero y producía
 frases incoherentes ("Quiero la agua, el fría y por el favor.").
 
-- **Qué es:** una red BiGRU de 2 capas (1.480.470 parámetros) que, en vez de
+- **Qué es:** una red BiGRU de 2 capas (1.493.205 parámetros) que, en vez de
   reescribir la frase, predice para cada palabra del usuario:
-  1. qué palabra funcional falta antes (nada, "el", "a la", "de", "que", una
-     coma, ...: 72 opciones cerradas aprendidas del corpus);
+  1. qué falta antes de ella (nada, "el", "a la", "de", "que", una coma,
+     "quiero", "estoy", ", quiero", "y comer", "porque"...: 118 opciones
+     cerradas aprendidas del corpus y del dataset de completar frases);
   2. qué hacer con la palabra: dejarla, cambiarle género/número, cambiar la
-     persona del verbo, ponerle tilde, cambiar la preposición o borrarla si es
-     una palabra funcional sobrante;
+     persona del verbo o ponerle tilde;
   3. si la frase es una pregunta.
   Entradas por palabra: embedding propio, sufijo, vector de spaCy, POS y
   morfología de spaCy y rasgos de léxico (género conocido del sustantivo,
-  etc.).
-- **Por qué no puede devolver algo sin sentido:** la salida siempre son las
-  palabras del usuario en su orden; solo se insertan palabras funcionales de
-  la lista cerrada o se usa otra forma de la misma palabra (generada por
-  reglas en `morfologia.py`); cada edición necesita alta confianza (umbrales
-  elegidos para ≥ 97 % de precisión en validación); hay un tope de ediciones
+  etc.). Hace **una sola pasada** por frase: una segunda pasada sobre la
+  frase ya completada agregaba palabras de más ("Quiero estar porque estoy
+  feliz.") y no mejoraba nada.
+- **Por qué no puede devolver algo sin sentido ni perder palabras:** no
+  existen ediciones de borrar ni de reemplazar, así que la salida siempre
+  tiene las palabras del usuario en su orden. Solo se inserta texto de la
+  lista cerrada o se usa otra forma de la misma palabra (generada por reglas
+  en `morfologia.py`). Las palabras del vocabulario de la app
+  (`palabras_fijas` en `modelo_correccion.json`) nunca se transforman, y
+  nunca se inserta nada adentro de un elemento de varias palabras ("tengo
+  hambre", "mirar tv"). Cada edición necesita alta confianza (umbrales
+  elegidos para ≥ 97 % de precisión en validación), hay un tope de ediciones
   por frase y chequeos estructurales (no "la el", no terminar en
-  preposición). Si algo falla, se devuelve la frase del usuario solo con
+  preposición). Al final `conserva_palabras` vuelve a verificar la regla
+  fundamental. Si algo falla, se devuelve la frase del usuario solo con
   mayúscula y punto.
 - **Entrenamiento:** `python scripts/entrenar_correccion.py --rehacer`
-  (~40 min en CPU; sin `--rehacer` reusa el dataset de `scripts/datos/cache/`
-  y, si el entrenamiento se cortó, sigue desde el checkpoint de la última
-  época). Toma frases correctas (corpus CAA, frases curadas y 90.000
-  oraciones de [Tatoeba](https://tatoeba.org), CC BY 2.0 FR), las rompe a
-  propósito con errores típicos (falta un artículo/preposición/contracción/
-  "que"/coma, género o número equivocado, verbo en otra persona que su sujeto
-  explícito, falta una tilde, sobra una palabra funcional, preposición
-  cambiada) y la red aprende a deshacerlos. Como las roturas son nuestras,
-  cada etiqueta se conoce exactamente. 185.431 ejemplos de entrenamiento y
-  6.000 de validación (frases nunca vistas), 12 épocas. Se entrena en
-  PyTorch y se exporta a numpy: la inferencia no necesita torch y tarda
-  pocos milisegundos.
+  (~1 h 10 min en CPU; sin `--rehacer` reusa el dataset de
+  `scripts/datos/cache/` y, si el entrenamiento se cortó, sigue desde el
+  checkpoint de la última época). Usa dos fuentes:
+  1. **Frases correctas rotas a propósito:** corpus CAA, frases curadas y
+     90.000 oraciones de [Tatoeba](https://tatoeba.org) (CC BY 2.0 FR). Se
+     rompen con errores típicos (falta un artículo/preposición/contracción/
+     "que"/coma, género o número equivocado, verbo en otra persona que su
+     sujeto explícito, falta una tilde) y la red aprende a deshacerlos. Como
+     las roturas son nuestras, cada etiqueta se conoce exactamente.
+  2. **Completar frases** (`scripts/datos/completar_frases.tsv`, generado por
+     `scripts/dataset_completar.py`): 115.853 pares secuencia de pictogramas →
+     frase completa, con todas las combinaciones de 1 a 3 palabras del
+     vocabulario de la app y las de 4 que tienen sentido, más la mitad de esa
+     cantidad de combinaciones de 4 sin sentido (que quedan iguales), y
+     variantes con más comidas, bebidas, actividades, estados y vocativos.
+     Las etiquetas salen de alinear las palabras del usuario dentro de la
+     frase completa; el script verifica que todas aparezcan y que nada se
+     inserte adentro de un elemento de varias palabras. Las secuencias de 1 y
+     2 pictogramas se repiten (×30 y ×8) para que pesen en el entrenamiento.
+
+  317.617 ejemplos de entrenamiento y 11.582 de validación (frases y
+  secuencias nunca vistas), 12 épocas. Se entrena en PyTorch y se exporta a
+  numpy: la inferencia no necesita torch y tarda pocos milisegundos.
+  `--umbrales` recalcula solo los umbrales con el modelo exportado, sin
+  reentrenar.
   - Tatoeba es **opcional**: si falta `scripts/datos/externos/tatoeba_es.txt`
     (p. ej. en una red que bloquea la descarga) el script entrena solo con el
     corpus CAA y las frases curadas, con más roturas por frase.
@@ -245,20 +288,23 @@ frases incoherentes ("Quiero la agua, el fría y por el favor.").
   poco usados cuyas formas son casi siempre otras palabras ("piar" → "pie",
   "orar" → "oro", "mediar" → "media", "listar" → "listo"). Un verbo con al
   menos 10 usos conjugados en el corpus nunca se descarta ("ganar" aunque
-  exista "ganas", "tardar" aunque exista "tarde"). Resultado: 1.110 verbos
-  (321 encontrados por sus formas conjugadas) y 35 descartados.
-- **Umbrales y métricas** (6.000 frases de validación nunca vistas, con la
-  red numpy de producción): el script elige los umbrales más bajos que dan
-  ≥ 97 % de precisión.
+  exista "ganas", "tardar" aunque exista "tarde"). Resultado: 1.109 verbos
+  (326 encontrados por sus formas conjugadas) y 44 descartados.
+- **Umbrales y métricas** (validación nunca vista: 5.999 frases rotas del
+  corpus y 5.583 secuencias de 3-4 pictogramas, con la red numpy de
+  producción): el script elige los umbrales más bajos que dan ≥ 97 % de
+  precisión **en cada fuente por separado**, para que las secuencias de
+  pictogramas (más fáciles) no bajen la precisión en frases escritas a mano.
 
-  | Edición | Umbral | Precisión | Recall |
-  |---|---|---|---|
-  | Insertar palabra funcional | 0,95 | 98,0 % | 38,2 % |
-  | Transformar (género, persona, tilde, preposición) o borrar una palabra sobrante | 0,90 | 97,2 % | 77,9 % |
+  | Edición | Umbral | Precisión corpus | Recall corpus | Precisión completar | Recall completar |
+  |---|---|---|---|---|---|
+  | Insertar | 0,95 | 98,1 % | 32,5 % | 99,6 % | 99,4 % |
+  | Transformar (género, persona, tilde) | 0,90 | 97,3 % | 72,1 % | — | — |
 
-  Frases de validación que quedan exactamente bien: 53,0 % (el resto queda
-  con alguna corrección sin hacer, casi nunca con una corrección mal hecha).
-  Pregunta / exclamación: 95,4 % de acierto.
+  Quedan exactamente bien el 49,0 % de las frases del corpus (el resto queda
+  con alguna corrección sin hacer, casi nunca con una corrección mal hecha) y
+  el 98,8 % de las secuencias de pictogramas. Pregunta / exclamación: 97,4 %
+  de acierto.
 
 ---
 
@@ -282,19 +328,44 @@ artículos y preposiciones se pueden agregar, sacar o cambiar); y la salida no
 queda peor armada que la entrada (artículos o preposiciones duplicados o
 colgando, como "a la a la plaza").
 
-Último resultado: todos los chequeos obligatorios pasan; 36/39 correcciones
-iguales a la esperada; ~15 ms por frase. Las 3 restantes quedan sin corregir
-(nunca mal corregidas): "mi mamá está cansado", "una muñeca nuevo" y "un vaso
-agua con hielo".
+Completar frases: los 3 ejemplos de referencia (`["triste"]` → `Estoy
+triste.`, `["mamá", "agua"]` → `Mamá, quiero agua.`, `["pizza"]` → `Quiero
+pizza.`) tienen que salir exactos; 25 casos más se muestran como referencia;
+y un barrido sobre `completar_frases.tsv` (todas las secuencias de 1-2
+pictogramas y 1.500 de 3-4 al azar) exige la regla fundamental y < 2 s en
+cada una y muestra cuántas salen igual que el dataset.
+
+Último resultado: todos los chequeos obligatorios pasan.
+- Corrección: 34/39 iguales a la esperada, ~14 ms por frase (máx. 34 ms).
+  Las 5 restantes quedan sin corregir, nunca mal corregidas: "mi mamá está
+  cansado", "una muñeca nuevo", "un vaso agua con hielo", "podés prender luz"
+  y la coma de "quiero agua fría, por favor".
+- Completar: los 3 ejemplos exactos. En el barrido (4.238 secuencias,
+  ~11 ms promedio, máx. 64 ms), el 98,3 % de las que tienen sentido salen
+  igual que el dataset y el 99,9 % de las sin sentido quedan iguales. Las
+  diferencias son casi siempre una coma o una "y" de menos en secuencias de
+  4 pictogramas ("Estaba feliz contento ayer." en vez de "Estaba feliz y
+  contento ayer.").
 
 ---
 
 ## Limitaciones conocidas
 
-- El corrector prefiere no corregir a corregir mal: con los umbrales actuales
-  hace ~38 % de las inserciones y ~78 % de las transformaciones que haría
+- El corrector prefiere no corregir a corregir mal: en frases escritas a mano
+  hace ~33 % de las inserciones y ~72 % de las transformaciones que haría
   falta. Bajar los umbrales en `modelo_correccion.json` corrige más a costa de
-  más errores.
+  más errores (`--umbrales` los recalcula).
+- Completar frases solo sabe armar lo que aparece en la gramática de
+  `dataset_completar.py`: el vocabulario de la app y las palabras ampliadas
+  (comidas, bebidas, actividades, estados, vocativos). Una palabra fuera de
+  esa lista se completa solo si la red la asocia a una categoría por su vector
+  de spaCy ("hamburguesa" → "Quiero hamburguesa.", "sándwich" → "Quiero
+  sándwich."); si no, queda igual ("banana" → "Banana."). Un estado en la segunda
+  parte de la frase ("pizza" + "triste") queda igual a propósito: enseñarlo
+  hacía que la red agregara "porque estoy" delante de cualquier adjetivo
+  ("Quiero agua porque estoy fría.").
+- En secuencias de 4 pictogramas a veces falta una coma o una "y"
+  ("Ayer quería dormir escuchar música, tío."). Nunca se pierde una palabra.
 - La concordancia de un adjetivo lejos de su sustantivo ("mi mamá está
   cansado") todavía no alcanza la confianza necesaria.
 - Las palabras con y sin tilde que existen las dos ("papas" / "papás",

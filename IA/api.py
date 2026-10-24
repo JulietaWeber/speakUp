@@ -75,10 +75,13 @@ def reentrenar_modelo(request: ReentrenarRequest):
 
 
 # ── Endpoint 3: Corregir frase ────────────────────────────────────────────────
-# El back manda la frase que armó el usuario, palabra por palabra, y recibe la
-# misma frase con correcciones mínimas (artículos, preposiciones,
-# concordancia, tildes, mayúscula y puntuación). Nunca agrega palabras de
-# contenido ni cambia el orden.
+# El back manda las palabras (pictogramas) que fue eligiendo el usuario, en
+# orden, y recibe la frase completa y corregida: completa lo que se puede
+# deducir (["triste"] -> "Estoy triste.", ["mamá", "agua"] -> "Mamá, quiero
+# agua.") y corrige artículos, preposiciones, concordancia, tildes, mayúscula
+# y puntuación. Las palabras del usuario aparecen siempre, en su orden: solo
+# se agregan palabras, nunca se borran ni se cambian por otras. Si no se
+# puede deducir nada útil, vuelven las mismas palabras con mayúscula y punto.
 #
 # Ejemplo de request:
 #   POST /corregir

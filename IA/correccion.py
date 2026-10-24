@@ -1,26 +1,35 @@
 """
-Corrección de frases (/corregir).
+Corrección y completado de frases (/corregir).
 
-El usuario manda una frase casi correcta, palabra por palabra ("quiero ir
-parque", "mi mamá está cansado", "necesito ayuda con tarea") y la API
-devuelve la misma frase con correcciones MÍNIMAS: "Quiero ir al parque.",
-"Mi mamá está cansada.", "Necesito ayuda con la tarea."
+El usuario va eligiendo palabras (pictogramas) y la API devuelve la frase
+completa y corregida:
+  - completa lo que se puede deducir: ["triste"] -> "Estoy triste.",
+    ["mamá", "agua"] -> "Mamá, quiero agua.", ["pizza"] -> "Quiero pizza.";
+  - corrige lo mínimo: "quiero ir parque" -> "Quiero ir al parque.", "mi
+    mamá está cansado" -> "Mi mamá está cansada.";
+  - si no puede deducir nada útil devuelve las mismas palabras con mayúscula
+    y punto: ["hola", "chau", "pizza"] -> "Hola chau pizza."
 
 Cómo funciona: un etiquetador de ediciones (idea de GECToR, "Tag, not
 rewrite"). Para cada palabra de la entrada, una red BiGRU chica predice:
-  1. qué palabra funcional falta ANTES de ella (nada, "el", "a la", "de",
-     "que", una coma...: una lista cerrada aprendida del corpus), y
+  1. qué falta ANTES de ella: nada, una palabra funcional ("el", "a la",
+     "de", "que", una coma...) o lo que completa la frase ("estoy",
+     "quiero", ", quiero", "porque", "comer"...). Es una lista cerrada
+     aprendida del corpus y de scripts/datos/completar_frases.tsv, y
   2. qué hacer con la palabra: dejarla igual, cambiarle género/número
-     (concordancia), cambiarle la persona al verbo ("yo quiere" -> "quiero"),
-     ponerle la tilde, cambiar una preposición o borrar una palabra funcional
-     sobrante ("la mi casa").
+     (concordancia), cambiarle la persona al verbo ("yo quiere" -> "quiero")
+     o ponerle la tilde.
 Además predice si la frase es una pregunta (¿...?).
 
-Garantías de diseño (lo que hace que nunca devuelva algo sin sentido):
-- La salida siempre son las palabras del usuario, EN SU ORDEN. El modelo no
-  puede reordenar ni escribir palabras de contenido nuevas: solo insertar
-  palabras funcionales de una lista cerrada o devolver otra forma de la misma
-  palabra (generada por reglas en morfologia.py).
+Regla fundamental y garantías de diseño (lo que hace que nunca devuelva algo
+sin sentido):
+- Las palabras del usuario aparecen SIEMPRE, EN SU ORDEN: el modelo solo
+  puede agregar palabras de la lista cerrada. Nunca borra, reemplaza por
+  otra ni reordena una palabra; como mucho le corrige la forma (otra forma
+  de la MISMA palabra, generada por reglas en morfologia.py).
+- Las palabras de los pictogramas de la app ("palabras_fijas" del modelo) y
+  las de un elemento de varias palabras ("tengo hambre", "por favor") quedan
+  tal cual, y no se inserta nada en el medio de un elemento.
 - Solo se aplica una edición si el modelo está muy seguro (umbrales); ante
   la duda la palabra queda como la escribió el usuario.
 - Las ediciones se validan con reglas estructurales (no dos artículos
@@ -46,17 +55,15 @@ from morfologia import (
 # ── Etiquetas ─────────────────────────────────────────────────────────────────
 
 NADA = ""   # etiqueta de inserción "no insertar nada"
-PREPOSICIONES_REEMPLAZABLES = ["a", "en", "de", "con", "para", "por"]
 TRANSFORMACIONES = (
     ["KEEP"]
     + [f"AGR_{g}{n}" for g in "mf" for n in "sp"]
     + [f"V_{p}" for p in PERSONAS]
-    + ["ACC", "DEL"]
-    + [f"REPL_{p}" for p in PREPOSICIONES_REEMPLAZABLES]
+    + ["ACC"]
 )
 TIPOS_FRASE = ["declarativa", "pregunta", "exclamacion"]
 
-# Palabras funcionales que se pueden borrar si sobran (nunca contenido).
+# Palabras funcionales: repetidas seguidas ("de de") cuentan como problema.
 BORRABLES = {
     "el", "la", "los", "las", "un", "una", "unos", "unas", "al", "del", "a", "de", "en",
     "con", "para", "por", "que", "y", "lo", "le", "se", "me",
@@ -209,19 +216,25 @@ _SIGNOS = "¿?¡!.,;:\"'()[]{}«»“”…-"
 
 
 def normalizar_entrada(palabras):
-    """Lista del back -> (tokens originales, pregunta?, exclamación?).
-    Cada elemento puede traer varias palabras ("por favor") o puntuación."""
-    tokens, pregunta, exclamacion = [], False, False
+    """Lista del back -> (tokens originales, pegados, pregunta?, exclamación?).
+    Cada elemento puede traer varias palabras ("por favor") o puntuación.
+    `pegados`: posiciones de los tokens que siguen a otro del mismo elemento
+    ("favor" en "por favor"): delante de ellos no se inserta nada."""
+    tokens, pegados, pregunta, exclamacion = [], set(), False, False
     for p in palabras:
         if not isinstance(p, str):
             continue
         pregunta |= "?" in p or "¿" in p
         exclamacion |= "!" in p or "¡" in p
+        primera = True
         for parte in p.split():
             limpia = parte.strip(_SIGNOS)
             if limpia:
+                if not primera:
+                    pegados.add(len(tokens))
                 tokens.append(limpia)
-    return tokens, pregunta, exclamacion
+                primera = False
+    return tokens, pegados, pregunta, exclamacion
 
 
 def _contracciones(tokens):
@@ -295,15 +308,23 @@ def bien_formada(tokens):
     return problemas(tokens) == 0
 
 
+def conserva_palabras(original, final, protegidas):
+    """Regla fundamental: no se perdió ninguna palabra del usuario y las
+    protegidas (pictogramas) siguen tal cual y en su orden."""
+    if len(final) < len(original):
+        return False
+    resto = iter(t.lower() for t in final)
+    return all(any(w == t.lower() for w in resto) for i, t in enumerate(original) if i in protegidas)
+
+
 def correccion_basica(palabras):
     """Corrección sin modelo (respaldo si faltan los archivos del modelo):
     las mismas palabras del usuario, en su orden, con contracciones
-    ("a el" -> "al"), mayúscula inicial y puntuación final."""
-    tokens, pregunta, exclamacion = normalizar_entrada(palabras)
+    ("a el" -> "al"), mayúscula inicial y puntuación final (también una
+    palabra sola: "agua" -> "Agua.")."""
+    tokens, _, pregunta, exclamacion = normalizar_entrada(palabras)
     if not tokens:
         return ""
-    if len(tokens) == 1 and len(palabras) <= 1:
-        return palabras[0].strip()
     tokens = [t if (i > 0 and t[:1].isupper() and not t.isupper()) else t.lower()
               for i, t in enumerate(tokens)]
     tipo = "pregunta" if (pregunta or tokens[0] in INTERROGATIVOS) else (
@@ -314,7 +335,11 @@ def correccion_basica(palabras):
 # ── Corrector ─────────────────────────────────────────────────────────────────
 
 class Corrector:
-    MAX_PASADAS = 2
+    # Una sola pasada de la red: una segunda pasada sobre la frase ya
+    # completada (que la red nunca vio al entrenar) agregaba de más ("Quiero
+    # estar feliz." -> "Quiero estar porque estoy feliz.") y no mejoraba las
+    # correcciones del corpus.
+    MAX_PASADAS = 1
 
     def __init__(self, nlp, ruta_pesos, ruta_config, ruta_lexico):
         self.nlp = nlp
@@ -323,7 +348,9 @@ class Corrector:
         with open(ruta_lexico, encoding="utf-8") as f:
             self.lexico = json.load(f)
         self.inserciones = cfg["inserciones"]
+        self.transformaciones = cfg.get("transformaciones", TRANSFORMACIONES)
         self.umbrales = cfg["umbrales"]
+        self.fijas = set(cfg.get("palabras_fijas", []))
         self.vocab_palabras = {w: i for i, w in enumerate(cfg["vocab_palabras"])}
         self.vocab_sufijos = {s: i for i, s in enumerate(cfg["vocab_sufijos"])}
         self.red = RedEdiciones(np.load(ruta_pesos))
@@ -372,15 +399,15 @@ class Corrector:
             if tiene_tilde(t):
                 return t
             return self.acentos.get(t, t)
-        if etiqueta == "DEL":
-            return None if t in BORRABLES else t
-        if etiqueta.startswith("REPL_"):
-            return etiqueta[5:] if t in PREPOSICIONES_REEMPLAZABLES else t
+        # Etiqueta desconocida (p. ej. "DEL" o "REPL_*" de un modelo viejo):
+        # la palabra queda igual, nunca se borra ni se cambia por otra.
         return t
 
-    def _una_pasada(self, tokens, bloqueados):
+    def _una_pasada(self, tokens, bloqueados, pegados):
         """Una pasada de la red: devuelve (tokens nuevos, bloqueados nuevos,
-        tipo de frase, cantidad de ediciones)."""
+        pegados nuevos, tipo de frase, cantidad de ediciones). `bloqueados`:
+        posiciones que no se transforman; `pegados`: posiciones delante de
+        las que no se inserta (dentro de un elemento: "por | favor")."""
         doc, ins, tr, tipo = self._predecir([t.lower() for t in tokens])
         th = self.umbrales
         ediciones = []   # (confianza, posición, tipo, valor)
@@ -390,24 +417,25 @@ class Corrector:
             if i not in bloqueados:
                 siguiente = tokens[i + 1].lower() if i + 1 < len(tokens) else None
                 por_forma = {}
-                for j, etiqueta in enumerate(TRANSFORMACIONES):
+                for j, etiqueta in enumerate(self.transformaciones):
                     forma = self._aplicar(etiqueta, tl, doc[i], siguiente)
-                    clave = "<borrar>" if forma is None else forma
-                    por_forma[clave] = por_forma.get(clave, 0.0) + float(tr[i, j])
+                    por_forma[forma] = por_forma.get(forma, 0.0) + float(tr[i, j])
                 forma, prob = max(por_forma.items(), key=lambda x: x[1])
-                if forma != tl:
-                    umbral = th["borrar"] if forma == "<borrar>" else th["transformar"]
-                    if prob >= umbral:
-                        ediciones.append((prob, i, "tr", forma))
+                if forma != tl and prob >= th["transformar"]:
+                    ediciones.append((prob, i, "tr", forma))
             # 2) inserción antes de la palabra i
+            if i in pegados:
+                continue
             j = int(np.argmax(ins[i]))
             texto_ins = self.inserciones[j]
             if texto_ins != NADA and ins[i, j] >= th["insertar"]:
                 if not (i == 0 and texto_ins.startswith(",")):
                     ediciones.append((float(ins[i, j]), i, "ins", texto_ins))
 
-        # Tope de ediciones por pasada: las más seguras primero.
-        tope = max(2, (len(tokens) + 1) // 2)
+        # Tope de ediciones por pasada: las más seguras primero. Completar
+        # una frase corta puede necesitar una inserción por pictograma
+        # ("Quiero pizza, pasta y jugo.").
+        tope = max(4, (len(tokens) + 1) // 2)
         ediciones.sort(key=lambda e: -e[0])
         ediciones = ediciones[:tope]
 
@@ -419,64 +447,70 @@ class Corrector:
             if n <= actual:
                 aceptadas.append(e)
                 actual = n
-        nuevos, nuevos_bloqueados = self._construir(tokens, aceptadas, bloqueados)
+        nuevos, nuevos_bloqueados, nuevos_pegados = self._construir(tokens, aceptadas, bloqueados, pegados)
         idx_tipo = int(np.argmax(tipo))
         tipo_frase = TIPOS_FRASE[idx_tipo] if tipo[idx_tipo] >= th["tipo"] else "declarativa"
-        return nuevos, nuevos_bloqueados, tipo_frase, len(aceptadas)
+        return nuevos, nuevos_bloqueados, nuevos_pegados, tipo_frase, len(aceptadas)
 
     @staticmethod
-    def _construir(tokens, ediciones, bloqueados=frozenset()):
+    def _construir(tokens, ediciones, bloqueados=frozenset(), pegados=frozenset()):
+        """Aplica las ediciones. Devuelve (tokens, bloqueados, pegados) con
+        las posiciones ya corridas por las inserciones."""
         trans = {e[1]: e[3] for e in ediciones if e[2] == "tr"}
         inser = {e[1]: e[3] for e in ediciones if e[2] == "ins"}
-        salida, bloq = [], set()
+        salida, bloq, peg = [], set(), set()
         for i, t in enumerate(tokens):
             if i in inser:
                 for w in inser[i].replace(",", " , ").split():
                     bloq.add(len(salida))
                     salida.append(w)
+            if i in pegados:
+                peg.add(len(salida))
             if i in trans:
-                if trans[i] == "<borrar>":
-                    continue
                 forma = trans[i]
                 if t[:1].isupper() and i > 0:
                     forma = forma[0].upper() + forma[1:]
                 # "al" -> "a la" se separa en dos tokens para que problemas()
                 # vea, por ejemplo, un "a la" insertado al lado ("a la a la").
-                for w in forma.split():
+                for k, w in enumerate(forma.split()):
+                    if k:
+                        peg.add(len(salida))
                     bloq.add(len(salida))
                     salida.append(w)
             else:
                 if i in bloqueados:
                     bloq.add(len(salida))
                 salida.append(t)
-        return salida, bloq
+        return salida, bloq, peg
 
     # ── API ──────────────────────────────────────────────────────────────────
 
     def corregir(self, palabras):
-        tokens, pregunta, exclamacion = normalizar_entrada(palabras)
+        tokens, pegados, pregunta, exclamacion = normalizar_entrada(palabras)
         if not tokens:
             return ""
-        if len(tokens) == 1 and len(palabras) <= 1:
-            return palabras[0].strip() if isinstance(palabras[0], str) else ""
         # Minúsculas, salvo nombres propios (mayúscula fuera de la 1ª palabra).
         tokens = [t if (i > 0 and t[:1].isupper() and not t.isupper()) else t.lower()
                   for i, t in enumerate(tokens)]
         # Tildes que no tienen ambigüedad ("despues" -> "después").
         tokens = [self.acentos_seguros.get(t, t) for t in tokens]
         original = list(tokens)
+        # No se transforman las palabras de los pictogramas de la app ni las
+        # de un elemento de varias palabras ("tengo hambre"): ya vienen bien.
+        protegidas = {i for i, t in enumerate(tokens)
+                      if t.lower() in self.fijas or i in pegados or i + 1 in pegados}
         tipo = "declarativa"
-        bloqueados = set()
+        bloqueados = set(protegidas)
         try:
             for pasada in range(self.MAX_PASADAS):
-                tokens, bloqueados, tipo_pasada, cambios = self._una_pasada(tokens, bloqueados)
+                tokens, bloqueados, pegados, tipo_pasada, cambios = self._una_pasada(tokens, bloqueados, pegados)
                 if pasada == 0:
                     tipo = tipo_pasada
                 if not cambios:
                     break
         except Exception:      # nunca dejar al usuario sin respuesta
             tokens = original
-        if problemas(tokens) > problemas(original):
+        if problemas(tokens) > problemas(original) or not conserva_palabras(original, tokens, protegidas):
             tokens = original
         if pregunta or tokens[0].lower() in INTERROGATIVOS:
             tipo = "pregunta"
