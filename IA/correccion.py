@@ -1,58 +1,20 @@
-"""
-Corrección y completado de frases (/corregir).
-
-El usuario va eligiendo palabras (pictogramas) y la API devuelve la frase
-completa y corregida:
-  - completa lo que se puede deducir: ["triste"] -> "Estoy triste.",
-    ["mamá", "agua"] -> "Mamá, quiero agua.", ["pizza"] -> "Quiero pizza.";
-  - corrige lo mínimo: "quiero ir parque" -> "Quiero ir al parque.", "mi
-    mamá está cansado" -> "Mi mamá está cansada.";
-  - si no puede deducir nada útil devuelve las mismas palabras con mayúscula
-    y punto: ["hola", "chau", "pizza"] -> "Hola chau pizza."
-
-Cómo funciona: un etiquetador de ediciones (idea de GECToR, "Tag, not
-rewrite"). Para cada palabra de la entrada, una red BiGRU chica predice:
-  1. qué falta ANTES de ella: nada, una palabra funcional ("el", "a la",
-     "de", "que", una coma...) o lo que completa la frase ("estoy",
-     "quiero", ", quiero", "porque", "comer"...). Es una lista cerrada
-     aprendida del corpus y de scripts/datos/completar_frases.tsv, y
-  2. qué hacer con la palabra: dejarla igual, cambiarle género/número
-     (concordancia), cambiarle la persona al verbo ("yo quiere" -> "quiero")
-     o ponerle la tilde.
-Además predice si la frase es una pregunta (¿...?).
-
-Regla fundamental y garantías de diseño (lo que hace que nunca devuelva algo
-sin sentido):
-- Las palabras del usuario aparecen SIEMPRE, EN SU ORDEN: el modelo solo
-  puede agregar palabras de la lista cerrada. Nunca borra, reemplaza por
-  otra ni reordena una palabra; como mucho le corrige la forma (otra forma
-  de la MISMA palabra, generada por reglas en morfologia.py).
-- Las palabras de los pictogramas de la app ("palabras_fijas" del modelo) y
-  las de un elemento de varias palabras ("tengo hambre", "por favor") quedan
-  tal cual, y no se inserta nada en el medio de un elemento.
-- Solo se aplica una edición si el modelo está muy seguro (umbrales); ante
-  la duda la palabra queda como la escribió el usuario.
-- Las ediciones se validan con reglas estructurales (no dos artículos
-  seguidos, no terminar en preposición...) y hay un tope de ediciones por
-  frase. Si algo no cierra, se devuelve la frase del usuario solo con
-  mayúscula inicial y puntuación final.
-
-La red se entrenó con scripts/entrenar_correccion.py (PyTorch) pero acá corre
-en numpy puro: no hace falta torch en producción y tarda pocos milisegundos.
-"""
-
 import json
 import re
 
 import numpy as np
 from spacy.tokens import Doc
 
+# Reglas que generan otra forma de la MISMA palabra (género, persona, tilde):
+# el corrector nunca cambia una palabra por otra.
 from morfologia import (
     DETERMINANTES, PERSONAS, IndiceVerbal, flexionar_adjetivo, flexionar_determinante,
     quitar_tildes, tiene_tilde,
 )
 
 # ── Etiquetas ─────────────────────────────────────────────────────────────────
+# Por cada palabra la red predice qué insertar ANTES (lista cerrada de
+# modelo_correccion.json: "el", "a la", ", quiero", "estoy"...) y qué
+# transformación aplicarle. No hay etiquetas de borrar ni de reemplazar.
 
 NADA = ""   # etiqueta de inserción "no insertar nada"
 TRANSFORMACIONES = (
@@ -153,6 +115,8 @@ def doc_desde_palabras(nlp, palabras):
 
 
 # ── Red en numpy ──────────────────────────────────────────────────────────────
+# Se entrena en PyTorch (scripts/entrenar_correccion.py) y acá corre en numpy:
+# no hace falta torch en producción y tarda pocos milisegundos.
 
 def _sigmoide(x):
     return 1.0 / (1.0 + np.exp(-x))
@@ -333,6 +297,10 @@ def correccion_basica(palabras):
 
 
 # ── Corrector ─────────────────────────────────────────────────────────────────
+# Etiquetador de ediciones (idea de GECToR): completa lo que se puede deducir
+# (["mamá", "agua"] -> "Mamá, quiero agua.") y corrige lo mínimo ("quiero ir
+# parque" -> "Quiero ir al parque."). Si no deduce nada útil, devuelve las
+# mismas palabras con mayúscula y punto.
 
 class Corrector:
     # Una sola pasada de la red: una segunda pasada sobre la frase ya
@@ -409,6 +377,7 @@ class Corrector:
         posiciones que no se transforman; `pegados`: posiciones delante de
         las que no se inserta (dentro de un elemento: "por | favor")."""
         doc, ins, tr, tipo = self._predecir([t.lower() for t in tokens])
+        # solo se edita con mucha confianza: ante la duda la palabra queda igual
         th = self.umbrales
         ediciones = []   # (confianza, posición, tipo, valor)
         for i, t in enumerate(tokens):
@@ -510,6 +479,8 @@ class Corrector:
                     break
         except Exception:      # nunca dejar al usuario sin respuesta
             tokens = original
+        # Regla fundamental: si se perdió o cambió una palabra del usuario, o la
+        # frase quedó peor armada, vuelve la del usuario con mayúscula y punto.
         if problemas(tokens) > problemas(original) or not conserva_palabras(original, tokens, protegidas):
             tokens = original
         if pregunta or tokens[0].lower() in INTERROGATIVOS:

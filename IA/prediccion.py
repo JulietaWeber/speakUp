@@ -1,26 +1,3 @@
-"""
-Predicción de la siguiente palabra (/predecir) y personalización por usuario
-(/reentrenar).
-
-Modelo base: n-gramas con suavizado Kneser-Ney entrenados por
-scripts/entrenar_prediccion.py (archivos modelo_prediccion.npz/.json). Dado
-el contexto (hasta 3 palabras, con <s> si la frase recién empieza) se arma la
-distribución sobre todo el vocabulario partiendo del unigrama y refinándola
-con cada contexto más largo que el modelo conozca (interpolación KN). Es una
-cuenta de arrays de numpy: tarda bastante menos de 1 ms.
-
-Palabras que el modelo no conoce (sinónimos, palabras propias del usuario):
-se reemplazan por la palabra conocida más parecida según los vectores de
-spaCy (o por la misma palabra sin tildes, "mama" -> "mamá"); si no hay
-ninguna parecida, se ignora esa palabra y se usa el contexto que viene
-después de ella.
-
-Personalización: /reentrenar guarda, por usuario, cuántas veces usó cada
-palabra después de cada contexto (modelos_usuarios/<id>.json, acumulativo).
-Al predecir se mezcla la distribución base con la del usuario, con más peso
-para el usuario cuanto más veces haya usado ese contexto.
-"""
-
 import hashlib
 import json
 import os
@@ -31,7 +8,7 @@ import numpy as np
 
 from morfologia import quitar_tildes
 
-INICIO = "<s>"
+INICIO = "<s>"               # inicio de frase: se agrega si hay menos de 3 palabras
 MAX_CONTEXTO = 3
 TOP_K = 3
 SIMILITUD_MINIMA = 0.55      # coseno mínimo para reemplazar una palabra desconocida
@@ -63,6 +40,8 @@ def _id_seguro(user_id):
     return limpio
 
 
+# /predecir: n-gramas Kneser-Ney de scripts/entrenar_prediccion.py, mezclados
+# con el historial del usuario. /reentrenar: suma frases a ese historial.
 class Predictor:
     def __init__(self, ruta_base, dir_usuarios, vector_de=None):
         """`ruta_base`: ruta sin extensión de modelo_prediccion.{npz,json}.
@@ -106,6 +85,8 @@ class Predictor:
 
     def _mapear(self, palabra, vocab_usuario=()):
         """Palabra del vocabulario equivalente a `palabra`, o None."""
+        # una palabra desconocida se cambia por la misma sin tildes ("mama" ->
+        # "mamá") o por la más parecida según los vectores de spaCy
         if palabra in self.idx or palabra in vocab_usuario:
             return palabra
         if palabra in self._cache_mapeo:
@@ -141,6 +122,8 @@ class Predictor:
     # ── Distribuciones ────────────────────────────────────────────────────────
 
     def distribucion_base(self, ctx):
+        # interpolación KN: del unigrama a cada contexto más largo conocido
+        # (cuentas de arrays numpy, menos de 1 ms)
         p = self.unigrama.copy()
         for k in range(1, len(ctx) + 1):
             fila = self.fila.get(" ".join(ctx[-k:]))
@@ -161,6 +144,7 @@ class Predictor:
             ctx_base = ctx_base[ctx_base.index(None) + 1:]
         p = self.distribucion_base(ctx_base)
 
+        # mezcla con el usuario: más peso cuantas más veces usó este contexto
         extra = {}
         cuentas, total = self._cuentas_usuario(usuario, ctx)
         if total:
@@ -189,6 +173,8 @@ class Predictor:
         return [{"palabra": w, "probabilidad": round(pr * 100, 2)} for w, pr in lista]
 
     # ── Usuarios ──────────────────────────────────────────────────────────────
+    # Historial en modelos_usuarios/<id>.json: cuántas veces usó cada palabra
+    # después de cada contexto (acumulativo).
 
     def _ruta_usuario(self, user_id):
         return os.path.join(self.dir_usuarios, _id_seguro(user_id) + ".json")

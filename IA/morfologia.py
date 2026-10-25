@@ -1,22 +1,6 @@
-"""
-Morfología del español para el corrector de frases (correccion.py) y para los
-scripts que generan el corpus de entrenamiento (scripts/corpus_caa.py).
-
-Todo es determinista (tablas + reglas), no hay nada aprendido acá:
-- Conjugación de verbos en 6 tiempos (presente, pretérito, imperfecto, futuro,
-  condicional y presente de subjuntivo) y 6 personas, incluido el voseo
-  rioplatense ("vos querés", "vos sos").
-- Análisis inverso: de una forma conjugada ("quiere") a sus posibles
-  (infinitivo, tiempo, persona), para poder cambiarle la persona sin cambiar
-  el verbo ni el tiempo ("yo quiere" -> "yo quiero").
-- Flexión de género y número de determinantes ("el" -> "la") y adjetivos
-  ("cansado" -> "cansada", "feliz" -> "felices").
-- Utilidades de tildes y plural.
-
-El corrector solo usa estas funciones para producir OTRA FORMA DE LA MISMA
-PALABRA que eligió el usuario, por eso nunca pueden introducir contenido nuevo.
-"""
-
+# Morfología del español con tablas y reglas (nada aprendido). La usan el
+# corrector, para dar otra forma de la MISMA palabra, y los scripts que
+# generan el corpus, así las dos etapas siguen las mismas reglas.
 import unicodedata
 
 PERSONAS = ("1s", "2s", "2v", "3s", "1p", "3p")   # 2v = voseo ("vos querés")
@@ -159,6 +143,7 @@ def flexionar_determinante(det, genero, numero, siguiente=None):
 
 
 # ── Adjetivos ─────────────────────────────────────────────────────────────────
+# Género y número: "cansado" -> "cansada", "feliz" -> "felices".
 
 ADJ_INVARIABLES_GENERO = {
     "rosa", "lila", "naranja", "violeta", "fucsia", "turquesa", "marrón",
@@ -254,6 +239,8 @@ def flexionar_adjetivo(forma, genero, numero, es_palabra=None):
 
 
 # ── Verbos ────────────────────────────────────────────────────────────────────
+# 6 tiempos (presente, pretérito, imperfecto, futuro, condicional, subjuntivo)
+# y 6 personas, con voseo rioplatense ("vos querés", "vos sos").
 
 _TERM_PRES = {
     "ar": ("o", "as", "ás", "a", "amos", "an"),
@@ -634,6 +621,8 @@ def participio(infinitivo):
     return v[:-2] + ("ado" if fin == "ar" else "ido")
 
 
+# Análisis inverso: permite cambiar la persona sin cambiar el verbo ni el
+# tiempo ("yo quiere" -> "yo quiero").
 class IndiceVerbal:
     """Índice inverso forma conjugada -> [(infinitivo, tiempo, persona)] para
     un conjunto de infinitivos conocidos."""
