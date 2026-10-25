@@ -1,27 +1,3 @@
-"""
-Prueba de punta a punta de todos los endpoints de la API (con el TestClient de
-FastAPI, sin levantar un servidor).
-
-- /predecir: 36+ contextos de 1, 2 y 3 palabras sacados de frases que NO están
-  en ningún dataset de entrenamiento. Verifica que siempre vuelvan 3 palabras
-  distintas con probabilidad, ordenadas, y en menos de 100 ms.
-- /corregir: 39 frases casi correctas que NO están en los datasets. Verifica
-  que la respuesta llegue en menos de 2 s, que no se reordene ni se invente
-  ninguna palabra de contenido, que no quede mal armada (artículos o
-  preposiciones duplicados o colgando) y la compara con la corrección
-  esperada.
-- /corregir completando frases con los pictogramas de la app: los ejemplos
-  del pedido (["triste"] -> "Estoy triste.", ...) tienen que salir exactos y,
-  en todas las secuencias de 1 y 2 pictogramas de completar_frases.tsv más
-  una muestra de las de 3 y 4, se verifica la regla fundamental (las
-  palabras del usuario aparecen todas, tal cual y en su orden) y se cuenta
-  cuántas salen iguales a la frase del dataset.
-- /reentrenar, / y /ping.
-
-Uso (desde IA/):  python scripts/probar_endpoints.py
-Sale con código 1 si falla algún chequeo obligatorio.
-"""
-
 import json
 import os
 import random
@@ -35,8 +11,10 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.dirname(AQUI)
 sys.path.insert(0, RAIZ)
 os.chdir(RAIZ)
+# Historial de usuarios en una carpeta temporal: la prueba no toca modelos_usuarios/.
 os.environ["SPEAKUP_DIR_USUARIOS"] = tempfile.mkdtemp(prefix="speakup_test_")
 
+# Prueba la API de punta a punta con el TestClient de FastAPI, sin levantar un servidor.
 from fastapi.testclient import TestClient  # noqa: E402
 
 from correccion import problemas  # noqa: E402
@@ -56,6 +34,7 @@ def palabras(texto):
 
 
 def corpus_entrenamiento():
+    # las frases de prueba no pueden estar en ningún dataset de entrenamiento
     frases = set()
     for ruta in ("datos/corpus_caa.txt", "datos/frases_curadas.txt", "datos/externos/tatoeba_es.txt"):
         ruta = os.path.join(AQUI, ruta)
@@ -74,7 +53,7 @@ def en_corpus(texto):
     return (" ".join(palabras(texto))) in CORPUS
 
 
-fallas = []
+fallas = []    # chequeos obligatorios que fallaron
 
 
 def chequear(condicion, mensaje):
@@ -92,6 +71,8 @@ for ruta in ("/", "/ping"):
     chequear(r.status_code == 200 and r.json() == {"status": "ok"}, f"{ruta} no responde ok")
 
 # ── /predecir ─────────────────────────────────────────────────────────────────
+# Contextos de 1, 2 y 3 palabras de frases nuevas: siempre 3 palabras
+# distintas, ordenadas por probabilidad y en menos de 100 ms.
 
 FRASES_PREDICCION = [
     "mañana quiero visitar a mi madrina",
@@ -149,6 +130,7 @@ print(f"Contextos probados: {len(contextos)} | de 3 palabras nunca vistos: {nuev
       f"tiempo máx {max(tiempos):.1f} ms, promedio {sum(tiempos) / len(tiempos):.1f} ms")
 
 # ── /reentrenar ───────────────────────────────────────────────────────────────
+# Acumulativo, aprende palabras nuevas y no escribe fuera de su carpeta.
 
 print("\n== POST /reentrenar ==")
 antes = cliente.post("/predecir", json={"user_id": "u_test", "palabras": ["quiero", "ir", "a"]}).json()
@@ -177,6 +159,8 @@ chequear(r.status_code == 200 and not os.path.exists(fuera) and any("malicioso" 
          "user_id con '../' no debería escribir fuera de la carpeta de usuarios")
 
 # ── /corregir ─────────────────────────────────────────────────────────────────
+# Obligatorio: responde en < 2 s, no inventa ni reordena palabras de contenido
+# y no deja la frase peor armada. Si sale igual a la esperada solo se informa.
 
 # (entrada, salidas aceptables)
 CASOS_CORRECCION = [
@@ -383,6 +367,8 @@ print(f"  para dejar igual (sin sentido o ya completas): {n_igual} -> {cuenta['i
 for elementos, salida, esperada in ejemplos_mal:
     print(f"   {SEPARADOR.join(elementos):45s} -> {salida!r}   (dataset: {esperada!r})")
 
+# Uso (desde IA/): python scripts/probar_endpoints.py — sale con código 1 si
+# falló algún chequeo obligatorio.
 print("\n" + ("TODOS LOS CHEQUEOS OBLIGATORIOS PASARON" if not fallas else f"{len(fallas)} FALLAS:"))
 for f in fallas:
     print(" -", f)

@@ -1,55 +1,3 @@
-"""
-Entrena el corrector de frases (/corregir) y genera los archivos que usa
-correccion.py en producción:
-  IA/modelo_correccion.npz      pesos de la red (numpy)
-  IA/modelo_correccion.json     vocabularios, etiquetas de inserción y umbrales
-  IA/lexico_correccion.json     léxico: género de sustantivos, tildes, verbos
-
-Datos:
-  1. Frases CORRECTAS de
-     - scripts/datos/corpus_caa.txt      frases de CAA generadas (corpus_caa.py)
-     - scripts/datos/frases_curadas.txt  frases escritas a mano
-     - scripts/datos/externos/tatoeba_es.txt  muestra de oraciones reales de
-       Tatoeba (descargar_tatoeba.py), para variedad de estructuras. Es
-       OPCIONAL: si no está (p. ej. en una red que bloquea la descarga) se
-       entrena solo con las dos primeras, generando más roturas de cada frase.
-     Cada frase se "rompe" a propósito con los errores típicos de un usuario
-     que arma la frase palabra por palabra, y la red aprende a deshacerlos:
-       - falta un artículo, preposición, contracción, "que", "y", "me" o una coma
-       - artículo/adjetivo con género o número equivocado ("la perro")
-       - verbo en otra persona que su sujeto ("yo quiere") - solo si el sujeto
-         está explícito, si no la frase original también podría ser válida
-       - falta una tilde ("mama", "esta cansado")
-     Como las roturas las hacemos nosotros, la etiqueta correcta de cada
-     palabra se conoce exactamente (no hace falta alinear frases). No se
-     enseña a borrar ni a cambiar palabras: el corrector nunca saca ni
-     reemplaza lo que eligió el usuario.
-  2. scripts/datos/completar_frases.tsv (dataset_completar.py): pictogramas
-     de la app -> frase completa ("mamá + agua" -> "Mamá, quiero agua."). Las
-     palabras del usuario están en la frase en su orden, así que lo que hay
-     entre ellas es exactamente la inserción que tiene que aprender la red.
-     Las combinaciones sin sentido quedan iguales (todo KEEP, sin insertar).
-
-El léxico guarda los verbos que encontró spaCy, menos los "verbos falsos"
-(sustantivos como "pajar" o verbos como "piar", cuyas formas son casi siempre
-otras palabras: "pie"), ver filtrar_verbos.
-
-Uso (desde IA/):  python scripts/entrenar_correccion.py
-  --rehacer     regenera el dataset (si no, usa scripts/datos/cache/; hace
-                falta, p. ej., después de descargar Tatoeba)
-  --solo-datos  arma el dataset y muestra ejemplos, sin entrenar
-  --rapido      versión rápida para probar (~10 min en vez de ~100): una sola
-                rotura por frase, MAX_EJEMPLOS_RAPIDO ejemplos y
-                N_COMPLETAR_RAPIDO pares de completar. Corrige bastante peor
-                que el dataset completo: no usarla para el modelo que se sube.
-  --umbrales    sin entrenar: recalcula los umbrales con la red ya exportada
-                (modelo_correccion.npz) y el dataset en caché, y los guarda en
-                modelo_correccion.json.
-Si el entrenamiento se corta, volver a correrlo (sin --rehacer) sigue desde
-la última época completa.
-Requiere torch (solo para entrenar): pip install -r scripts/requirements-entrenamiento.txt
-"""
-
 import json
 import os
 import pickle
@@ -86,16 +34,20 @@ VARIANTES_SIN_TATOEBA = {"caa": 4, "curadas": 6}
 N_VAL = 6000
 # --rapido: como mucho MAX_EJEMPLOS ejemplos de entrenamiento (una rotura por
 # frase). None = dataset completo. El léxico se arma igual con todas las frases.
+# Es solo para probar: corrige bastante peor, no usarlo para el modelo que se sube.
 RAPIDO = "--rapido" in sys.argv
 MAX_EJEMPLOS_RAPIDO, N_VAL_RAPIDO = 10000, 1000
 MAX_EJEMPLOS = MAX_EJEMPLOS_RAPIDO if RAPIDO else None
 DATOS = os.path.join(AQUI, "datos")
 CACHE = os.path.join(DATOS, "cache")
+# Frases correctas que se rompen a propósito. Tatoeba (descargar_tatoeba.py) es
+# opcional: sin él se entrena con las otras dos y más roturas por frase.
 FUENTES = {
     "caa": os.path.join(DATOS, "corpus_caa.txt"),
     "curadas": os.path.join(DATOS, "frases_curadas.txt"),
     "tatoeba": os.path.join(DATOS, "externos", "tatoeba_es.txt"),
 }
+# Pictogramas de la app -> frase completa (dataset_completar.py).
 RUTA_COMPLETAR = os.path.join(DATOS, "completar_frases.tsv")
 # Repeticiones de cada par de completar_frases.tsv según cuántos pictogramas
 # tiene: las secuencias cortas son pocas (125 de 1, 2.613 de 2) y las más usadas.
@@ -104,9 +56,10 @@ REPETIR_COMPLETAR = {1: 30, 2: 8, 3: 1, 4: 1}
 # (las de 1 y 2 se entrenan todas).
 VAL_COMPLETAR = 0.05
 N_COMPLETAR_RAPIDO = 5000
-SALIDA_PESOS = os.path.join(RAIZ, "modelo_correccion.npz")
-SALIDA_CONFIG = os.path.join(RAIZ, "modelo_correccion.json")
-SALIDA_LEXICO = os.path.join(RAIZ, "lexico_correccion.json")
+# Lo que usa correccion.py en producción.
+SALIDA_PESOS = os.path.join(RAIZ, "modelo_correccion.npz")      # pesos de la red (numpy)
+SALIDA_CONFIG = os.path.join(RAIZ, "modelo_correccion.json")    # vocabularios, inserciones, umbrales
+SALIDA_LEXICO = os.path.join(RAIZ, "lexico_correccion.json")    # género, tildes, verbos
 RUTA_CHECKPOINT = os.path.join(CACHE, "checkpoint_correccion.pt")
 
 MAX_VOCAB = 9000
@@ -236,6 +189,8 @@ def filtrar_verbos(infinitivos, lemas, frec, conjugados, es_palabra_real):
 
 
 def construir_lexico(docs):
+    # lexico_correccion.json: género de los sustantivos, tildes y verbos (sin
+    # los verbos falsos de filtrar_verbos), sacados de las frases correctas
     frec = Counter()
     votos_genero = defaultdict(Counter)
     infinitivos = Counter()
@@ -301,6 +256,10 @@ def construir_lexico(docs):
 
 
 # ── Corrupción ────────────────────────────────────────────────────────────────
+# Cada frase correcta se rompe con los errores de quien la arma palabra por
+# palabra y la red aprende a deshacerlos. Como la rotura es nuestra, la
+# etiqueta de cada palabra se conoce exactamente. No se enseña a borrar ni a
+# reemplazar: el corrector nunca saca ni cambia lo que eligió el usuario.
 
 def persona_spacy(t, indice):
     """Persona de un verbo conjugado según spaCy + el índice verbal."""
@@ -433,7 +392,8 @@ def corromper(doc, tipo, rng, lexico, indice):
                     _, forma = rng.choice(distintas)
                     accion[i] = ("tr", forma, f"AGR_{g}{nn}")
 
-    # 3) Persona del verbo (solo con sujeto explícito).
+    # 3) Persona del verbo (solo con sujeto explícito: sin sujeto la frase
+    #    rota también podría ser válida).
     if rng.random() < 0.22:
         for i in rng.sample(libres, len(libres)):
             t = doc[i]
@@ -531,6 +491,7 @@ def ejemplo_completar(elementos, frase):
 # ── Preparación del dataset ───────────────────────────────────────────────────
 
 def preparar():
+    # frases rotas + pares de completar, ya pasados a ids y rasgos para la red
     import spacy
 
     rng = random.Random(SEMILLA)
@@ -582,6 +543,7 @@ def preparar():
                 n_train += not es_val
     print(f"Ejemplos corruptos: {len(ejemplos)}")
 
+    # Completar frases: las secuencias cortas se repiten (REPETIR_COMPLETAR).
     pares = leer_completar()
     if RAPIDO:
         pares = random.Random(SEMILLA).sample(pares, min(N_COMPLETAR_RAPIDO, len(pares)))
@@ -651,6 +613,8 @@ def entrenar(datos, meta, vectores):
     torch.manual_seed(SEMILLA)
     torch.set_num_threads(max(1, (os.cpu_count() or 2) - 2))
 
+    # BiGRU que predice por palabra qué insertar antes y cómo transformarla, y
+    # el tipo de frase. Se exporta a numpy (correccion.RedEdiciones).
     class ModeloEdiciones(nn.Module):
         def __init__(self, n_pal, n_suf, dim_vec, n_ins, n_tr, n_tipo, emb=64, emb_suf=24, proy=64,
                      hidden=160, capas=2, dropout=0.25):
@@ -879,6 +843,8 @@ def exportar(modelo, meta, lexico, umbrales):
 
 def main():
     os.makedirs(CACHE, exist_ok=True)
+    # Sin --rehacer se reusa el dataset en caché (rehacerlo si cambian los
+    # datos, p. ej. después de descargar Tatoeba o regenerar completar_frases.tsv).
     ruta_cache = os.path.join(CACHE, "dataset_correccion_rapido.pkl" if RAPIDO else "dataset_correccion.pkl")
     if os.path.exists(ruta_cache) and "--rehacer" not in sys.argv:
         print(f"Usando dataset en caché ({ruta_cache}); --rehacer para regenerarlo")
@@ -890,7 +856,7 @@ def main():
         datos, meta, lexico, vectores = preparar()
         with open(ruta_cache, "wb") as f:
             pickle.dump((datos, meta, lexico, vectores), f, protocol=pickle.HIGHEST_PROTOCOL)
-    if "--solo-datos" in sys.argv:
+    if "--solo-datos" in sys.argv:            # muestra ejemplos del dataset, sin entrenar
         random.seed(1)
         for d in random.sample(datos, 40):
             pares = []
@@ -898,7 +864,7 @@ def main():
                 pares.append((f"[{a}] " if a else "") + w + (f"<{b}>" if b != "KEEP" else ""))
             print(" ".join(pares), "|", TIPOS_FRASE[d[7]])
         return
-    if "--umbrales" in sys.argv:
+    if "--umbrales" in sys.argv:              # solo recalcula los umbrales de la red ya exportada
         val = [d for d in datos if d[0]]
         umbrales = elegir_umbrales(val, predecir_numpy(val, vectores), meta)
         with open(SALIDA_CONFIG, encoding="utf-8") as f:
@@ -915,5 +881,7 @@ def main():
     os.remove(RUTA_CHECKPOINT)
 
 
+# Uso (desde IA/): python scripts/entrenar_correccion.py [--rehacer] [--rapido] [--solo-datos] [--umbrales]
+# Requiere torch: pip install -r scripts/requirements-entrenamiento.txt
 if __name__ == "__main__":
     main()

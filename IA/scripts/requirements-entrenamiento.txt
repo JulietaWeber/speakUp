@@ -1,6 +1,4 @@
-# Dependencias extra para correr los scripts de entrenamiento y pruebas.
-# La API en producción NO las necesita (ver ../requirements.txt).
--r ../requirements.txt
---extra-index-url https://download.pytorch.org/whl/cpu
-torch
-httpx
+-r ../requirements.txt                                   # lo mismo que la API en producción
+--extra-index-url https://download.pytorch.org/whl/cpu   # torch solo CPU
+torch                                                    # entrenar_correccion.py (la API no lo usa)
+httpx                                                    # TestClient de probar_endpoints.py

@@ -5,4 +5,5 @@ modelos_usuarios/
 # Datos descargados (scripts/descargar_tatoeba.py) y cachés de entrenamiento
 scripts/datos/externos/
 scripts/datos/cache/
-.claude/scheduled_tasks.lock
+# Configuración local de Claude Code (no es parte del proyecto)
+.claude/

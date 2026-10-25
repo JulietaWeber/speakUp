@@ -1,54 +1,3 @@
-"""
-Genera scripts/datos/completar_frases.tsv: pares (pictogramas que tocó el
-usuario -> frase completa) con los que /corregir aprende a COMPLETAR la frase
-a partir de las palabras que el usuario fue eligiendo:
-
-    triste                 -> Estoy triste.
-    mamá + agua            -> Mamá, quiero agua.
-    pizza                  -> Quiero pizza.
-    tengo hambre + pizza   -> Tengo hambre, quiero pizza.
-    ayer + pizza           -> Ayer comí pizza.
-    hola + chau + pizza    -> Hola chau pizza.      (sin sentido: queda igual)
-
-Regla fundamental: las palabras del usuario aparecen SIEMPRE en la frase, en
-su orden y tal cual (un pictograma de varias palabras como "tengo hambre" no
-se separa). Solo se AGREGAN palabras antes de cada pictograma ("estoy",
-"quiero", ", quiero", "y", "porque", "comer"...). Si la combinación no tiene
-ningún sentido, la frase es la misma entrada con mayúscula y punto.
-
-Las frases las arma una gramática chica (ver `completar`). La frase puede
-empezar con un saludo, con alguien a quien se llama ("mamá") o con "por
-favor", y terminar con "por favor", "gracias" o el nombre. En el medio van
-una o dos cláusulas:
-    estado      "estoy triste", "estaba bien" (ayer), "voy a estar feliz" (mañana)
-    deseo       "quiero pizza, pasta y jugo", "quiero comer pizza y correr",
-                "comí pizza" (ayer), "voy a correr" (mañana + actividad)
-    ir          "voy a correr", "voy a comer pizza", "voy a estar bien"
-    necesidad   "tengo hambre", "tengo sed"
-    ser         "yo soy feliz", "vos sos triste"
-unidas con ",", "y" o "porque" ("Quiero agua porque tengo sed."), y como
-mucho un tiempo ("hoy", "ayer"...) al principio o al final. Lo que no entra
-en la gramática se considera sin sentido: tiempos que chocan ("ayer" +
-"voy a"), "quiero" sin nada después, estados opuestos ("feliz" + "triste"),
-un estado después de otra cláusula ("pizza" + "triste"), un saludo en el
-medio, "yo soy" + "pizza"...
-
-Contenido del archivo:
-  - TODAS las secuencias de 1, 2 y 3 pictogramas distintos del vocabulario de
-    la app (más "mamá" y "papá", que aparecen en los ejemplos), tengan
-    sentido o no;
-  - TODAS las secuencias de 4 que tienen sentido y una muestra de las que no
-    (son 570.024 y casi todas son sin sentido);
-  - las mismas frases con otras comidas, bebidas, actividades, estados y
-    personas, para que el modelo aprenda la categoría y no cada palabra, y
-    palabras sueltas que no se completan ("pelota" -> "Pelota.").
-
-scripts/entrenar_correccion.py entrena el corrector con este archivo además
-del corpus.
-
-Uso (desde IA/):  python scripts/dataset_completar.py
-"""
-
 import itertools
 import os
 import random
@@ -60,6 +9,9 @@ sys.path.insert(0, os.path.dirname(AQUI))
 
 from correccion import armar_texto  # noqa: E402
 
+# Pares (pictogramas que tocó el usuario -> frase completa) con los que
+# entrenar_correccion.py le enseña a /corregir a completar la frase:
+# "mamá + agua" -> "Mamá, quiero agua.", "hola + chau + pizza" -> "Hola chau pizza.".
 SALIDA = os.path.join(AQUI, "datos", "completar_frases.tsv")
 SEMILLA = 21
 SEPARADOR = " + "            # entre pictogramas en la columna "palabras"
@@ -136,6 +88,9 @@ INTERJECCIONES = {"saludo", "cortesia", "vocativo"}
 OBJETOS = {"comida", "bebida", "actividad"}
 
 # ── Gramática ─────────────────────────────────────────────────────────────────
+# Regla fundamental: los pictogramas quedan tal cual y en su orden; solo se
+# AGREGAN palabras antes de cada uno ("estoy", ", quiero", "porque"...). Lo
+# que no entra en esta gramática no tiene sentido y queda igual.
 
 
 def _unir(*partes):
@@ -292,6 +247,8 @@ def _cuerpo(elementos):
 def completar(elementos):
     """Inserción antes de cada elemento ("" = nada) para completar la frase,
     o None si la combinación no tiene sentido."""
+    # saludo, cortesía y vocativo van al principio o al final; en el medio,
+    # el cuerpo (una o dos cláusulas y como mucho un tiempo)
     n = len(elementos)
     cats = [CATEGORIA[e] for e in elementos]
     cuenta = Counter(cats)
@@ -387,9 +344,11 @@ def generar():
     rng = random.Random(SEMILLA)
     base = VOCABULARIO_APP + VOCATIVOS
     filas = {}                                # secuencia -> (frase, estado)
-    for largo in (1, 2, 3):
+    for largo in (1, 2, 3):                   # todas, tengan sentido o no
         for sec in itertools.permutations(base, largo):
             filas[sec] = frase(sec)
+    # De 4 hay 570.024 y casi todas son sin sentido: van todas las que tienen
+    # sentido y la mitad de esa cantidad de las que no.
     con_sentido, sin_sentido = [], []
     for sec in itertools.permutations(base, 4):
         f, estado = frase(sec)
@@ -397,8 +356,9 @@ def generar():
     rng.shuffle(sin_sentido)
     filas.update(con_sentido + sin_sentido[:len(con_sentido) // 2])
     n_app = len(filas)
-    # Vocabulario ampliado: cada palabra sola, varias variantes de cada
-    # secuencia de 1 y 2 pictogramas y variantes de una muestra del resto.
+    # Vocabulario ampliado (para que la red aprenda la categoría y no cada
+    # palabra): cada palabra sola, varias variantes de cada secuencia de 1 y 2
+    # pictogramas y variantes de una muestra del resto.
     app = sorted(filas)
     rng.shuffle(app)
     cortas = [s for s in app if len(s) <= 2]
@@ -435,5 +395,6 @@ def main():
         print(f"   {SEPARADOR.join(sec):50s} -> {filas[sec][0]}")
 
 
+# Uso (desde IA/): python scripts/dataset_completar.py
 if __name__ == "__main__":
     main()

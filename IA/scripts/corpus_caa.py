@@ -1,24 +1,3 @@
-"""
-Genera scripts/datos/corpus_caa.txt: frases CORRECTAS del tipo que arma un
-usuario de CAA (Comunicación Aumentativa y Alternativa), en español
-rioplatense, con mayúscula inicial y puntuación.
-
-Este corpus es la base de los dos modelos de la API:
-- scripts/entrenar_prediccion.py cuenta n-gramas sobre estas frases (más las
-  frases curadas a mano de datos/frases_curadas.txt).
-- scripts/entrenar_correccion.py las "rompe" a propósito (saca artículos,
-  cambia géneros, conjugaciones, tildes...) para enseñarle al corrector a
-  repararlas.
-
-Por eso acá toda la concordancia se resuelve de forma explícita con
-morfologia.py (la misma que usa el corrector en producción): artículos y
-adjetivos que concuerdan con el sustantivo ("una remera roja", "el agua
-fría"), verbos conjugados según el sujeto ("mis amigos juegan", "vos
-querés"), contracciones ("al parque") y clíticos ("quiero bañarme").
-
-Uso (desde IA/):  python scripts/corpus_caa.py
-"""
-
 import os
 import random
 import sys
@@ -26,10 +5,15 @@ import sys
 AQUI = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(AQUI))
 
+# Concordancia (artículos, adjetivos, verbos) con las mismas reglas que usa el
+# corrector en producción: las frases del corpus tienen que ser correctas.
 from morfologia import (  # noqa: E402
     FEMENINAS_A_TONICA, conjugar, flexionar_determinante, formas_adjetivo, pluralizar,
 )
 
+# Frases correctas de CAA en español rioplatense. Son la base de los dos
+# modelos: entrenar_prediccion.py cuenta sus n-gramas y entrenar_correccion.py
+# las rompe a propósito para enseñarle al corrector a repararlas.
 SALIDA = os.path.join(AQUI, "datos", "corpus_caa.txt")
 CANTIDAD = 45000
 
@@ -199,6 +183,8 @@ def prep(p, frase):
     return p + " " + frase
 
 
+# Sintagmas al azar ya concordados: "unas empanadas de carne", "agua fría",
+# "un vaso de jugo", "mi mochila nueva", "la maestra", "a la plaza"...
 def comida(con_adj=0.25):
     palabra, g, tipo = ch(COMIDAS)
     sabor = ""
@@ -468,6 +454,7 @@ def unir(*partes):
 
 
 def oracion(texto, pregunta=False, exclamacion=False):
+    # mayúscula inicial y "¿...?", "¡...!" o punto final
     texto = " ".join(texto.split())
     texto = texto.replace(" ,", ",")
     if pregunta:
@@ -478,6 +465,7 @@ def oracion(texto, pregunta=False, exclamacion=False):
 
 
 def con_tiempo(clausula, lista, prob=0.35):
+    # a veces agrega un tiempo ("hoy", "ayer"...) al principio o al final
     if random.random() >= prob:
         return clausula
     t = tiempo(lista)
@@ -487,6 +475,8 @@ def con_tiempo(clausula, lista, prob=0.35):
 
 
 # ── Cláusulas ─────────────────────────────────────────────────────────────────
+# Cada cl_* arma una cláusula (sin mayúscula ni punto) con el verbo conjugado
+# según su sujeto: "mis amigos juegan", "vos querés", "quiero bañarme".
 
 
 def cl_deseo(hablante):
@@ -787,6 +777,8 @@ VOCATIVOS = ["mamá", "papá", "seño", "abuela", "abuelo", "profe", "doctora", 
 
 
 def oracion_compuesta(hablante):
+    # cláusula principal elegida por peso, a veces unida a otra ("porque", "y",
+    # "pero", "cuando") y con "por favor" o alguien a quien se llama
     tipos = [
         (cl_deseo, 24), (cl_estado, 10), (cl_ser, 7), (cl_sensacion, 9), (cl_dolor, 8),
         (cl_ir, 10), (cl_accion, 14), (cl_gusto, 7), (cl_ubicacion, 3), (cl_pedido, 8),
@@ -927,6 +919,8 @@ def complementarias(semilla):
 
 
 def generar(cantidad, semilla=42):
+    # frases sueltas + compuestas sin repetir, con semilla fija (el corpus no
+    # cambia entre corridas)
     random.seed(semilla)
     frases = set(FRASES_SUELTAS)
     intentos = 0
@@ -953,5 +947,6 @@ def main():
         print("  ", frase)
 
 
+# Uso (desde IA/): python scripts/corpus_caa.py
 if __name__ == "__main__":
     main()

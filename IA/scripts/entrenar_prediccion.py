@@ -1,23 +1,3 @@
-"""
-Entrena el modelo de predicción de la siguiente palabra (/predecir) y lo
-guarda en IA/modelo_prediccion.npz + IA/modelo_prediccion.json.
-
-Modelo: n-gramas de hasta 4 palabras (contexto de 3) con suavizado
-Kneser-Ney interpolado. Para cada contexto conocido se guarda la distribución
-descontada de la palabra siguiente y el peso de "backoff" hacia el contexto
-más corto; así, una frase que nunca apareció en el corpus ("mañana vamos a")
-igual recibe una buena predicción a partir de sus partes ("vamos a", "a").
-
-El inicio de frase se modela con un token especial <s>: con 0, 1 o 2
-palabras de contexto (el usuario recién empieza la frase) se predice desde
-el principio de la oración ("<s> quiero" -> "ir", "comer", "ver").
-
-Corpus: scripts/datos/corpus_caa.txt (frases generadas, ver corpus_caa.py) y
-scripts/datos/frases_curadas.txt (frases escritas a mano, con peso 3).
-
-Uso (desde IA/):  python scripts/entrenar_prediccion.py
-"""
-
 import json
 import os
 import re
@@ -32,10 +12,13 @@ sys.path.insert(0, RAIZ)
 
 from prediccion import INICIO, MAX_CONTEXTO, tokenizar  # noqa: E402
 
+# Corpus (archivo, peso): las frases generadas (corpus_caa.py) y las escritas
+# a mano, que cuentan 3 veces.
 FUENTES = [
     (os.path.join(AQUI, "datos", "corpus_caa.txt"), 1),
     (os.path.join(AQUI, "datos", "frases_curadas.txt"), 3),
 ]
+# Modelo de /predecir que carga prediccion.py.
 SALIDA_NPZ = os.path.join(RAIZ, "modelo_prediccion.npz")
 SALIDA_JSON = os.path.join(RAIZ, "modelo_prediccion.json")
 ORDEN = MAX_CONTEXTO + 1   # 4-gramas
@@ -58,6 +41,7 @@ def contar(frases):
     """Conteos crudos de n-gramas (1..ORDEN) con un <s> al inicio."""
     conteos = [Counter() for _ in range(ORDEN + 1)]
     for toks in frases:
+        # <s> permite predecir el principio de la frase ("<s> quiero" -> "ir").
         seq = [INICIO] + toks
         for n in range(1, ORDEN + 1):
             for i in range(len(seq) - n + 1):
@@ -93,6 +77,7 @@ def descuento(cuenta):
 
 
 def main():
+    # n-gramas de hasta 4 palabras con suavizado Kneser-Ney interpolado.
     frases = leer_frases()
     conteos = contar(frases)
     efectivos = conteos_kn(conteos)
@@ -108,7 +93,8 @@ def main():
     uni = 0.98 * uni / uni.sum() + 0.02 / len(vocab)
 
     # Por cada contexto h (1..3 palabras): entradas (w, max(c-D,0)/c(h)) y
-    # gamma(h) = D * N1+(h·) / c(h), el peso del contexto más corto.
+    # gamma(h) = D * N1+(h·) / c(h), el peso del contexto más corto. Así un
+    # contexto nunca visto ("mañana vamos a") se predice por sus partes ("vamos a").
     claves, gammas, indptr, indices, valores = [], [], [0], [], []
     descuentos = {}
     for n in range(2, ORDEN + 1):
@@ -129,6 +115,7 @@ def main():
     print(f"Contextos: {len(claves)} | entradas: {len(indices)} | descuentos: "
           + ", ".join(f"{n}-gr={d:.2f}" for n, d in descuentos.items()))
 
+    # Matriz dispersa contextos x palabras (CSR) en el .npz; los textos en el .json.
     np.savez_compressed(
         SALIDA_NPZ,
         unigrama=uni.astype(np.float32),
@@ -143,5 +130,6 @@ def main():
           f"{SALIDA_JSON} ({os.path.getsize(SALIDA_JSON) // 1024} KB)")
 
 
+# Uso (desde IA/): python scripts/entrenar_prediccion.py
 if __name__ == "__main__":
     main()
