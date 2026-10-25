@@ -19,7 +19,13 @@ cd IA
 pip install -r requirements.txt    # fastapi, uvicorn, numpy, spacy + modelo es_core_news_md
 uvicorn api:app --host 0.0.0.0 --port 8000
 ```
-Arranca en ~10 s (carga de spaCy). En producción no hace falta torch.
+Arranca en ~10 s (carga de spaCy) y usa ~400 MB de RAM (el plan free de
+Render tiene 512 MB). En producción no hace falta torch.
+
+Render (`render.yaml` en la raíz del repo) usa Python 3.11.9, también fijado
+en `.python-version`. Las versiones de `requirements.txt` están fijas a
+propósito: preshed 3.0.14 (salió el 24/10/2026) hace fallar `spacy.load` y
+tiró los deploys; numpy 2.5 ya no es compatible con Python 3.11.
 
 ## Archivos
 
@@ -35,8 +41,9 @@ IA/
 ├── modelo_correccion.npz     # corrector: pesos de la red (numpy)
 ├── modelo_correccion.json    #   vocabularios, inserciones, umbrales y palabras fijas
 ├── lexico_correccion.json    #   género de sustantivos, tildes y verbos
-├── requirements.txt          # dependencias de producción
-├── Procfile                  # comando de arranque en el servidor
+├── requirements.txt          # dependencias de producción (versiones fijas)
+├── Procfile                  # comando de arranque (el mismo que render.yaml)
+├── .python-version           # Python 3.11.9, el de Render
 ├── .gitignore
 ├── DOCUMENTACION.md
 ├── scripts/                  # entrenamiento y pruebas (no se usan en producción)
