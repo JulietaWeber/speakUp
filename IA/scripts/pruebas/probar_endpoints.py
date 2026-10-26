@@ -7,10 +7,12 @@ import tempfile
 import time
 from collections import Counter
 
-AQUI = os.path.dirname(os.path.abspath(__file__))
-RAIZ = os.path.dirname(AQUI)
+AQUI = os.path.dirname(os.path.abspath(__file__))              # IA/scripts/pruebas
+SCRIPTS = os.path.dirname(AQUI)                                # IA/scripts
+RAIZ = os.path.dirname(SCRIPTS)                                # IA/
+DATOS = os.path.join(SCRIPTS, "datos")
 sys.path.insert(0, RAIZ)
-sys.path.insert(0, os.path.join(AQUI, "entrenamiento"))    # dataset_completar
+sys.path.insert(0, os.path.join(SCRIPTS, "entrenamiento"))     # dataset_completar
 os.chdir(RAIZ)
 # Historial de usuarios en una carpeta temporal: la prueba no toca modelos_usuarios/.
 os.environ["SPEAKUP_DIR_USUARIOS"] = tempfile.mkdtemp(prefix="speakup_test_")
@@ -37,8 +39,8 @@ def palabras(texto):
 def corpus_entrenamiento():
     # las frases de prueba no pueden estar en ningún dataset de entrenamiento
     frases = set()
-    for ruta in ("datos/corpus_caa.txt", "datos/frases_curadas.txt", "datos/externos/tatoeba_es.txt"):
-        ruta = os.path.join(AQUI, ruta)
+    for ruta in ("corpus_caa.txt", "frases_curadas.txt", "externos/tatoeba_es.txt"):
+        ruta = os.path.join(DATOS, ruta)
         if os.path.exists(ruta):
             with open(ruta, encoding="utf-8") as f:
                 for linea in f:
@@ -368,7 +370,7 @@ print(f"  para dejar igual (sin sentido o ya completas): {n_igual} -> {cuenta['i
 for elementos, salida, esperada in ejemplos_mal:
     print(f"   {SEPARADOR.join(elementos):45s} -> {salida!r}   (dataset: {esperada!r})")
 
-# Uso (desde IA/): python scripts/probar_endpoints.py — sale con código 1 si
+# Uso (desde IA/): python scripts/pruebas/probar_endpoints.py — sale con código 1 si
 # falló algún chequeo obligatorio.
 print("\n" + ("TODOS LOS CHEQUEOS OBLIGATORIOS PASARON" if not fallas else f"{len(fallas)} FALLAS:"))
 for f in fallas:
