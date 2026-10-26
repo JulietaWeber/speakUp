@@ -882,6 +882,6 @@ def main():
 
 
 # Uso (desde IA/): python scripts/entrenamiento/entrenar_correccion.py [--rehacer] [--rapido] [--solo-datos] [--umbrales]
-# Requiere torch: pip install -r scripts/requirements-entrenamiento.txt
+# Requiere torch: pip install -r scripts/entrenamiento/requirements-entrenamiento.txt
 if __name__ == "__main__":
     main()
