@@ -6,8 +6,8 @@ import urllib.request
 # Oraciones en español de Tatoeba (https://tatoeba.org, CC BY 2.0 FR). Solo se
 # usan para entrenar el corrector (más variedad de estructuras); no van a producción.
 URL = "https://downloads.tatoeba.org/exports/per_language/spa/spa_sentences.tsv.bz2"
-AQUI = os.path.dirname(os.path.abspath(__file__))
-DESTINO = os.path.join(AQUI, "datos", "externos")
+AQUI = os.path.dirname(os.path.abspath(__file__))              # IA/scripts/datos
+DESTINO = os.path.join(AQUI, "externos")
 CRUDO = os.path.join(DESTINO, "spa_sentences.tsv.bz2")
 SALIDA = os.path.join(DESTINO, "tatoeba_es.txt")     # una oración por línea
 
@@ -55,6 +55,6 @@ def main():
     print(f"Oraciones leídas: {total} | guardadas: {len(vistas)} -> {SALIDA}")
 
 
-# Uso (desde IA/): python -I scripts/descargar_tatoeba.py
+# Uso (desde IA/): python -I scripts/datos/descargar_tatoeba.py
 if __name__ == "__main__":
     main()
