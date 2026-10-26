@@ -2,8 +2,8 @@ import os
 import random
 import sys
 
-AQUI = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(AQUI))
+AQUI = os.path.dirname(os.path.abspath(__file__))              # IA/scripts/datos
+sys.path.insert(0, os.path.dirname(os.path.dirname(AQUI)))     # IA/
 
 # Concordancia (artículos, adjetivos, verbos) con las mismas reglas que usa el
 # corrector en producción: las frases del corpus tienen que ser correctas.
@@ -14,7 +14,7 @@ from morfologia import (  # noqa: E402
 # Frases correctas de CAA en español rioplatense. Son la base de los dos
 # modelos: entrenar_prediccion.py cuenta sus n-gramas y entrenar_correccion.py
 # las rompe a propósito para enseñarle al corrector a repararlas.
-SALIDA = os.path.join(AQUI, "datos", "corpus_caa.txt")
+SALIDA = os.path.join(AQUI, "corpus_caa.txt")
 CANTIDAD = 45000
 
 # ── Léxico ────────────────────────────────────────────────────────────────────
@@ -947,6 +947,6 @@ def main():
         print("  ", frase)
 
 
-# Uso (desde IA/): python scripts/corpus_caa.py
+# Uso (desde IA/): python scripts/datos/corpus_caa.py
 if __name__ == "__main__":
     main()
