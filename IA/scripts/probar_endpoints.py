@@ -10,6 +10,7 @@ from collections import Counter
 AQUI = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.dirname(AQUI)
 sys.path.insert(0, RAIZ)
+sys.path.insert(0, os.path.join(AQUI, "entrenamiento"))    # dataset_completar
 os.chdir(RAIZ)
 # Historial de usuarios en una carpeta temporal: la prueba no toca modelos_usuarios/.
 os.environ["SPEAKUP_DIR_USUARIOS"] = tempfile.mkdtemp(prefix="speakup_test_")

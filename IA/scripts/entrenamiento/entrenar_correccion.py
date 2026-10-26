@@ -11,8 +11,8 @@ from functools import lru_cache
 import numpy as np
 from spacy.tokens import Doc
 
-AQUI = os.path.dirname(os.path.abspath(__file__))
-RAIZ = os.path.dirname(AQUI)
+AQUI = os.path.dirname(os.path.abspath(__file__))              # IA/scripts/entrenamiento
+RAIZ = os.path.dirname(os.path.dirname(AQUI))                  # IA/
 sys.path.insert(0, RAIZ)
 
 from correccion import (  # noqa: E402
@@ -38,7 +38,7 @@ N_VAL = 6000
 RAPIDO = "--rapido" in sys.argv
 MAX_EJEMPLOS_RAPIDO, N_VAL_RAPIDO = 10000, 1000
 MAX_EJEMPLOS = MAX_EJEMPLOS_RAPIDO if RAPIDO else None
-DATOS = os.path.join(AQUI, "datos")
+DATOS = os.path.join(os.path.dirname(AQUI), "datos")           # IA/scripts/datos
 CACHE = os.path.join(DATOS, "cache")
 # Frases correctas que se rompen a propósito. Tatoeba (descargar_tatoeba.py) es
 # opcional: sin él se entrena con las otras dos y más roturas por frase.
@@ -881,7 +881,7 @@ def main():
     os.remove(RUTA_CHECKPOINT)
 
 
-# Uso (desde IA/): python scripts/entrenar_correccion.py [--rehacer] [--rapido] [--solo-datos] [--umbrales]
+# Uso (desde IA/): python scripts/entrenamiento/entrenar_correccion.py [--rehacer] [--rapido] [--solo-datos] [--umbrales]
 # Requiere torch: pip install -r scripts/requirements-entrenamiento.txt
 if __name__ == "__main__":
     main()

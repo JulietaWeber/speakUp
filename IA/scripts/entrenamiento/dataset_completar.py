@@ -4,15 +4,15 @@ import random
 import sys
 from collections import Counter
 
-AQUI = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(AQUI))
+AQUI = os.path.dirname(os.path.abspath(__file__))              # IA/scripts/entrenamiento
+sys.path.insert(0, os.path.dirname(os.path.dirname(AQUI)))     # IA/
 
 from correccion import armar_texto  # noqa: E402
 
 # Pares (pictogramas que tocó el usuario -> frase completa) con los que
 # entrenar_correccion.py le enseña a /corregir a completar la frase:
 # "mamá + agua" -> "Mamá, quiero agua.", "hola + chau + pizza" -> "Hola chau pizza.".
-SALIDA = os.path.join(AQUI, "datos", "completar_frases.tsv")
+SALIDA = os.path.join(os.path.dirname(AQUI), "datos", "completar_frases.tsv")
 SEMILLA = 21
 SEPARADOR = " + "            # entre pictogramas en la columna "palabras"
 
@@ -395,6 +395,6 @@ def main():
         print(f"   {SEPARADOR.join(sec):50s} -> {filas[sec][0]}")
 
 
-# Uso (desde IA/): python scripts/dataset_completar.py
+# Uso (desde IA/): python scripts/entrenamiento/dataset_completar.py
 if __name__ == "__main__":
     main()

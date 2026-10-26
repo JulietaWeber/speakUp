@@ -6,8 +6,9 @@ from collections import Counter, defaultdict
 
 import numpy as np
 
-AQUI = os.path.dirname(os.path.abspath(__file__))
-RAIZ = os.path.dirname(AQUI)
+AQUI = os.path.dirname(os.path.abspath(__file__))              # IA/scripts/entrenamiento
+RAIZ = os.path.dirname(os.path.dirname(AQUI))                  # IA/
+DATOS = os.path.join(os.path.dirname(AQUI), "datos")           # IA/scripts/datos
 sys.path.insert(0, RAIZ)
 
 from prediccion import INICIO, MAX_CONTEXTO, tokenizar  # noqa: E402
@@ -15,8 +16,8 @@ from prediccion import INICIO, MAX_CONTEXTO, tokenizar  # noqa: E402
 # Corpus (archivo, peso): las frases generadas (corpus_caa.py) y las escritas
 # a mano, que cuentan 3 veces.
 FUENTES = [
-    (os.path.join(AQUI, "datos", "corpus_caa.txt"), 1),
-    (os.path.join(AQUI, "datos", "frases_curadas.txt"), 3),
+    (os.path.join(DATOS, "corpus_caa.txt"), 1),
+    (os.path.join(DATOS, "frases_curadas.txt"), 3),
 ]
 # Modelo de /predecir que carga prediccion.py.
 SALIDA_NPZ = os.path.join(RAIZ, "modelo_prediccion.npz")
@@ -130,6 +131,6 @@ def main():
           f"{SALIDA_JSON} ({os.path.getsize(SALIDA_JSON) // 1024} KB)")
 
 
-# Uso (desde IA/): python scripts/entrenar_prediccion.py
+# Uso (desde IA/): python scripts/entrenamiento/entrenar_prediccion.py
 if __name__ == "__main__":
     main()
