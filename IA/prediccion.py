@@ -40,7 +40,7 @@ def _id_seguro(user_id):
     return limpio
 
 
-# /predecir: n-gramas Kneser-Ney de scripts/entrenar_prediccion.py, mezclados
+# /predecir: n-gramas Kneser-Ney de scripts/entrenamiento/entrenar_prediccion.py, mezclados
 # con el historial del usuario. /reentrenar: suma frases a ese historial.
 class Predictor:
     def __init__(self, ruta_base, dir_usuarios, vector_de=None):

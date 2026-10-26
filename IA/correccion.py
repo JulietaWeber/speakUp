@@ -115,7 +115,7 @@ def doc_desde_palabras(nlp, palabras):
 
 
 # ── Red en numpy ──────────────────────────────────────────────────────────────
-# Se entrena en PyTorch (scripts/entrenar_correccion.py) y acá corre en numpy:
+# Se entrena en PyTorch (scripts/entrenamiento/entrenar_correccion.py) y acá corre en numpy:
 # no hace falta torch en producción y tarda pocos milisegundos.
 
 def _sigmoide(x):
@@ -146,7 +146,7 @@ def _softmax(x):
 
 
 class RedEdiciones:
-    """Misma arquitectura que ModeloEdiciones en scripts/entrenar_correccion.py."""
+    """Misma arquitectura que ModeloEdiciones en scripts/entrenamiento/entrenar_correccion.py."""
 
     def __init__(self, pesos):
         self.p = {k: pesos[k].astype(np.float32) for k in pesos.files}

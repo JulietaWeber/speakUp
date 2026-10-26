@@ -2,7 +2,7 @@ __pycache__/
 *.pyc
 # Historial por usuario generado por /reentrenar en tiempo de ejecución
 modelos_usuarios/
-# Datos descargados (scripts/descargar_tatoeba.py) y cachés de entrenamiento
+# Datos descargados (scripts/datos/descargar_tatoeba.py) y cachés de entrenamiento
 scripts/datos/externos/
 scripts/datos/cache/
 # Configuración local de Claude Code (no es parte del proyecto)

@@ -9,7 +9,7 @@ Servicio FastAPI que usa el backend de SpeakUp para:
 3. **Completar y corregir** la frase armada con pictogramas (`POST /corregir`):
    `["triste"]` → "Estoy triste.", sin perder nunca una palabra del usuario.
 
-Los cuatro endpoints están entrenados y probados (`scripts/probar_endpoints.py`
+Los cuatro endpoints están entrenados y probados (`scripts/pruebas/probar_endpoints.py`
 pasa todos los chequeos obligatorios).
 
 ## Cómo correrla
@@ -46,27 +46,32 @@ IA/
 ├── .python-version           # Python 3.11.9, el de Render
 ├── .gitignore
 ├── DOCUMENTACION.md
-├── scripts/                  # entrenamiento y pruebas (no se usan en producción)
-│   ├── corpus_caa.py             # genera datos/corpus_caa.txt
-│   ├── dataset_completar.py      # genera datos/completar_frases.tsv
-│   ├── descargar_tatoeba.py      # descarga datos/externos/ (opcional)
-│   ├── entrenar_prediccion.py    # -> modelo_prediccion.*
-│   ├── entrenar_correccion.py    # -> modelo_correccion.*, lexico_correccion.json
-│   ├── probar_endpoints.py       # prueba de punta a punta de la API
-│   ├── requirements-entrenamiento.txt   # lo de producción + torch y httpx
-│   └── datos/
-│       ├── corpus_caa.txt            # 47.995 frases correctas de CAA generadas
-│       ├── frases_curadas.txt        # 2.602 frases escritas a mano
-│       ├── completar_frases.tsv      # 115.853 pares pictogramas -> frase completa
-│       ├── externos/                 # no versionado: spa_sentences.tsv.bz2 (descarga) y tatoeba_es.txt (filtrado)
-│       └── cache/                    # no versionado: dataset_correccion.pkl (dataset del corrector ya procesado)
-└── archivos_viejos/          # versiones anteriores, no se usan (tabla de abajo)
+└── scripts/                  # entrenamiento y pruebas (no se usan en producción)
+    ├── datos/                    # corpus y datasets, y los scripts que los generan
+    │   ├── corpus_caa.py             # genera corpus_caa.txt
+    │   ├── descargar_tatoeba.py      # descarga externos/ (opcional)
+    │   ├── corpus_caa.txt            # 47.995 frases correctas de CAA generadas
+    │   ├── frases_curadas.txt        # 2.602 frases escritas a mano
+    │   ├── completar_frases.tsv      # 115.853 pares pictogramas -> frase completa
+    │   ├── externos/                 # no versionado: spa_sentences.tsv.bz2 (descarga) y tatoeba_es.txt (filtrado)
+    │   └── cache/                    # no versionado: dataset_correccion.pkl (dataset del corrector ya procesado)
+    ├── entrenamiento/            # entrenan los modelos
+    │   ├── dataset_completar.py      # genera ../datos/completar_frases.tsv
+    │   ├── entrenar_prediccion.py    # -> modelo_prediccion.*
+    │   ├── entrenar_correccion.py    # -> modelo_correccion.*, lexico_correccion.json
+    │   └── requirements-entrenamiento.txt   # lo de producción + torch y httpx
+    └── pruebas/
+        └── probar_endpoints.py       # prueba de punta a punta de la API
 ```
 
 `modelos_usuarios/` (no versionada) se crea en ejecución con el historial de
 cada usuario.
 
-| `archivos_viejos/` | Qué era | Archivos |
+Las versiones anteriores estaban en `archivos_viejos/`; se borraron y quedan
+en el historial de git (desde la raíz del repo,
+`git checkout b9b893d~1 -- IA/archivos_viejos` las recupera).
+
+| Carpeta | Qué era | Archivos |
 |---|---|---|
 | `prediccion_mlp/` | Predicción con un MLP de scikit-learn, sobreajustado a plantillas (`["quiero","tomar","un"]` → "nuevo" 90 %) | `modelo_final.py` (entrena), `dataset_predictivo.py` (pares), `modelo_base.pkl`, `encoder_salida.pkl`, `base_pares.pkl`; en `modelo_anterior/` la versión previa: `modelo_final.py`, `modelo_base.pkl`, `encoder_salida.pkl` |
 | `correccion_seq2seq/` | Corrector seq2seq GRU: generaba la frase desde cero y salían frases incoherentes ("Quiero la agua, el fría y por el favor.") | `modelo_correccion.py` (entrena), `modelo_correccion.pt`, `dataset_correccion.jsonl` (20.266 pares) y los scripts que lo generaron: `dataset_correccion.py`, `frases_largas.py`, `gramatica.py`, `conjugacion.py` |
@@ -140,7 +145,7 @@ Cada elemento es un pictograma y puede tener varias palabras ("tengo hambre").
   contexto que viene después.
 - Personalización: se mezcla con el historial del usuario con peso
   `c / (c + 2)`, donde `c` = veces que el usuario usó ese contexto.
-- Entrenamiento: `python scripts/entrenar_prediccion.py` sobre `corpus_caa.txt`
+- Entrenamiento: `python scripts/entrenamiento/entrenar_prediccion.py` sobre `corpus_caa.txt`
   y `frases_curadas.txt` (peso 3). Resultado: 2.479 palabras y 103.231
   contextos.
 
@@ -161,9 +166,9 @@ Cada elemento es un pictograma y puede tener varias palabras ("tengo hambre").
   terminar en preposición). Al final `conserva_palabras` vuelve a verificar la
   regla fundamental; si algo falla, se devuelve la frase del usuario con
   mayúscula y punto.
-- **Entrenamiento:** `python scripts/entrenar_correccion.py --rehacer`
-  (~1 h 10 min en CPU, necesita `scripts/requirements-entrenamiento.txt`). Sin
-  `--rehacer` reusa `datos/cache/` y, si se cortó, sigue desde la última
+- **Entrenamiento:** `python scripts/entrenamiento/entrenar_correccion.py --rehacer`
+  (~1 h 10 min en CPU, necesita `scripts/entrenamiento/requirements-entrenamiento.txt`).
+  Sin `--rehacer` reusa `scripts/datos/cache/` y, si se cortó, sigue desde la última
   época. `--umbrales` recalcula solo los umbrales, `--solo-datos` muestra
   ejemplos sin entrenar y `--rapido` es una prueba de ~10 min que corrige
   bastante peor (no usarla para el modelo que se sube). Dos fuentes:
@@ -204,8 +209,8 @@ Cada elemento es un pictograma y puede tener varias palabras ("tengo hambre").
 
 ```bash
 cd IA
-pip install -r scripts/requirements-entrenamiento.txt
-python scripts/probar_endpoints.py     # sale con código 1 si falla algún chequeo obligatorio
+pip install -r scripts/entrenamiento/requirements-entrenamiento.txt
+python scripts/pruebas/probar_endpoints.py     # sale con código 1 si falla algún chequeo obligatorio
 ```
 Usa frases que no están en ningún dataset (lo verifica). Chequeos
 obligatorios:
