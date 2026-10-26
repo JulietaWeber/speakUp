@@ -1,16 +1,5 @@
-"""
-Carga los modelos UNA sola vez al arrancar la API y expone las tres funciones
-que usa api.py: predecir_top3, reentrenar y corregir_frase.
-
-- spaCy (es_core_news_md): vectores de palabras y análisis morfológico.
-  Se cargan solo los componentes que se usan (sin parser ni NER) para
-  ahorrar memoria y tiempo.
-- prediccion.Predictor: n-gramas Kneser-Ney (modelo_prediccion.npz/.json)
-  + historial por usuario en modelos_usuarios/.
-- correccion.Corrector: etiquetador de ediciones (modelo_correccion.npz/.json
-  + lexico_correccion.json).
-"""
-
+# Carga los modelos una sola vez al arrancar la API y expone las tres
+# funciones que usa api.py.
 import os
 
 import spacy
@@ -23,6 +12,8 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 # puede cambiar con la variable de entorno SPEAKUP_DIR_USUARIOS.
 DIR_USUARIOS = os.environ.get("SPEAKUP_DIR_USUARIOS", os.path.join(AQUI, "modelos_usuarios"))
 
+# spaCy: vectores y morfología. Sin parser, NER ni lematizador (no se usan):
+# ahorra memoria y tiempo de arranque.
 print("Cargando spaCy...")
 nlp = spacy.load("es_core_news_md", exclude=["parser", "ner", "lemmatizer"])
 _vectores = nlp.vocab.vectors

@@ -1,6 +1,11 @@
+
 const express = require("express");
 const router = express.Router();
+
+const verificarToken = require("../middlewares/auth.middleware");
 const verificarTokenOpcional = require("../middlewares/authOpcional.middleware");
+const verificarAdmin = require("../middlewares/admin.middleware");
+const upload = require("../middlewares/upload.middleware");
 
 const {
   obtenerPictogramas,
@@ -18,12 +23,15 @@ const {
   actualizarImagenPictogramaGeneral
 } = require("../controllers/pictogramas.controller");
 
-const verificarToken = require("../middlewares/auth.middleware");
-const verificarAdmin = require("../middlewares/admin.middleware");
-const upload = require("../middlewares/upload.middleware");
+// =====================================
+// CONSULTAS PÚBLICAS / TOKEN OPCIONAL
+// =====================================
 
-// Públicas
-router.get("/", verificarTokenOpcional, obtenerPictogramas);
+router.get(
+  "/",
+  verificarTokenOpcional,
+  obtenerPictogramas
+);
 
 router.get(
   "/categoria/:id_categoria",
@@ -31,9 +39,25 @@ router.get(
   obtenerPictogramasPorCategoria
 );
 
-// Personalizados del usuario
-router.post("/personalizado", verificarToken, crearPictogramaPersonalizado);
+// =====================================
+// PICTOGRAMAS PERSONALIZADOS
+// =====================================
 
+// Obtener mis pictogramas
+router.get(
+  "/mis-personalizados",
+  verificarToken,
+  obtenerMisPictogramasPersonalizados
+);
+
+// Crear personalizado mediante JSON
+router.post(
+  "/personalizado",
+  verificarToken,
+  crearPictogramaPersonalizado
+);
+
+// Crear personalizado subiendo una imagen
 router.post(
   "/personalizado-con-imagen",
   verificarToken,
@@ -41,12 +65,7 @@ router.post(
   crearPictogramaPersonalizadoConImagen
 );
 
-router.get(
-  "/mis-personalizados",
-  verificarToken,
-  obtenerMisPictogramasPersonalizados
-);
-
+// Actualizar imagen de personalizado
 router.put(
   "/personalizado/:id_pictograma/imagen",
   verificarToken,
@@ -54,19 +73,25 @@ router.put(
   actualizarImagenPictogramaPersonalizado
 );
 
+// Actualizar datos de personalizado
 router.put(
   "/personalizado/:id_pictograma",
   verificarToken,
   actualizarPictogramaPersonalizado
 );
 
+// Eliminar personalizado
 router.delete(
   "/personalizado/:id_pictograma",
   verificarToken,
   eliminarPictogramaPersonalizado
 );
 
-// Generales / default, solo admin
+// =====================================
+// PICTOGRAMAS GENERALES: SOLO ADMIN
+// =====================================
+
+// Crear general con imagen
 router.post(
   "/con-imagen",
   verificarToken,
@@ -75,6 +100,7 @@ router.post(
   crearPictogramaConImagen
 );
 
+// Crear general mediante JSON
 router.post(
   "/",
   verificarToken,
@@ -82,6 +108,7 @@ router.post(
   crearPictograma
 );
 
+// Actualizar imagen general
 router.put(
   "/:id_pictograma/imagen",
   verificarToken,
@@ -90,6 +117,7 @@ router.put(
   actualizarImagenPictogramaGeneral
 );
 
+// Actualizar pictograma general
 router.put(
   "/:id_pictograma",
   verificarToken,
@@ -97,6 +125,7 @@ router.put(
   actualizarPictograma
 );
 
+// Eliminar pictograma general
 router.delete(
   "/:id_pictograma",
   verificarToken,

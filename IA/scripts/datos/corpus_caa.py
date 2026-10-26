@@ -1,36 +1,20 @@
-"""
-Genera scripts/datos/corpus_caa.txt: frases CORRECTAS del tipo que arma un
-usuario de CAA (Comunicación Aumentativa y Alternativa), en español
-rioplatense, con mayúscula inicial y puntuación.
-
-Este corpus es la base de los dos modelos de la API:
-- scripts/entrenar_prediccion.py cuenta n-gramas sobre estas frases (más las
-  frases curadas a mano de datos/frases_curadas.txt).
-- scripts/entrenar_correccion.py las "rompe" a propósito (saca artículos,
-  cambia géneros, conjugaciones, tildes...) para enseñarle al corrector a
-  repararlas.
-
-Por eso acá toda la concordancia se resuelve de forma explícita con
-morfologia.py (la misma que usa el corrector en producción): artículos y
-adjetivos que concuerdan con el sustantivo ("una remera roja", "el agua
-fría"), verbos conjugados según el sujeto ("mis amigos juegan", "vos
-querés"), contracciones ("al parque") y clíticos ("quiero bañarme").
-
-Uso (desde IA/):  python scripts/corpus_caa.py
-"""
-
 import os
 import random
 import sys
 
-AQUI = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(AQUI))
+AQUI = os.path.dirname(os.path.abspath(__file__))              # IA/scripts/datos
+sys.path.insert(0, os.path.dirname(os.path.dirname(AQUI)))     # IA/
 
+# Concordancia (artículos, adjetivos, verbos) con las mismas reglas que usa el
+# corrector en producción: las frases del corpus tienen que ser correctas.
 from morfologia import (  # noqa: E402
     FEMENINAS_A_TONICA, conjugar, flexionar_determinante, formas_adjetivo, pluralizar,
 )
 
-SALIDA = os.path.join(AQUI, "datos", "corpus_caa.txt")
+# Frases correctas de CAA en español rioplatense. Son la base de los dos
+# modelos: entrenar_prediccion.py cuenta sus n-gramas y entrenar_correccion.py
+# las rompe a propósito para enseñarle al corrector a repararlas.
+SALIDA = os.path.join(AQUI, "corpus_caa.txt")
 CANTIDAD = 45000
 
 # ── Léxico ────────────────────────────────────────────────────────────────────
@@ -199,6 +183,8 @@ def prep(p, frase):
     return p + " " + frase
 
 
+# Sintagmas al azar ya concordados: "unas empanadas de carne", "agua fría",
+# "un vaso de jugo", "mi mochila nueva", "la maestra", "a la plaza"...
 def comida(con_adj=0.25):
     palabra, g, tipo = ch(COMIDAS)
     sabor = ""
@@ -253,7 +239,10 @@ def persona(plural=None):
     r = random.random()
     if plural or (plural is None and r < 0.15):
         palabra, g = ch(FAMILIA_PL)
-        return ch(["mis ", "mis ", "los "]) + palabra if palabra != "papás" else "mis papás"
+        if palabra == "papás":
+            return "mis papás"
+        d = ch(["mis ", "mis ", "los "])
+        return ("las " if d == "los " and g == "f" else d) + palabra
     if r < 0.75:
         palabra, g = ch(FAMILIA)
         return "mi " + palabra
@@ -465,6 +454,7 @@ def unir(*partes):
 
 
 def oracion(texto, pregunta=False, exclamacion=False):
+    # mayúscula inicial y "¿...?", "¡...!" o punto final
     texto = " ".join(texto.split())
     texto = texto.replace(" ,", ",")
     if pregunta:
@@ -475,6 +465,7 @@ def oracion(texto, pregunta=False, exclamacion=False):
 
 
 def con_tiempo(clausula, lista, prob=0.35):
+    # a veces agrega un tiempo ("hoy", "ayer"...) al principio o al final
     if random.random() >= prob:
         return clausula
     t = tiempo(lista)
@@ -484,6 +475,8 @@ def con_tiempo(clausula, lista, prob=0.35):
 
 
 # ── Cláusulas ─────────────────────────────────────────────────────────────────
+# Cada cl_* arma una cláusula (sin mayúscula ni punto) con el verbo conjugado
+# según su sujeto: "mis amigos juegan", "vos querés", "quiero bañarme".
 
 
 def cl_deseo(hablante):
@@ -784,6 +777,8 @@ VOCATIVOS = ["mamá", "papá", "seño", "abuela", "abuelo", "profe", "doctora", 
 
 
 def oracion_compuesta(hablante):
+    # cláusula principal elegida por peso, a veces unida a otra ("porque", "y",
+    # "pero", "cuando") y con "por favor" o alguien a quien se llama
     tipos = [
         (cl_deseo, 24), (cl_estado, 10), (cl_ser, 7), (cl_sensacion, 9), (cl_dolor, 8),
         (cl_ir, 10), (cl_accion, 14), (cl_gusto, 7), (cl_ubicacion, 3), (cl_pedido, 8),
@@ -818,7 +813,114 @@ def preguntas_donde():
     return oracion(unir("dónde", verbo, det(d, g, n, palabra), palabra), pregunta=True)
 
 
+# ── Frases complementarias ────────────────────────────────────────────────────
+# Construcciones que faltaban en las cláusulas de arriba. Se generan aparte y
+# con su propia semilla para no cambiar las frases ya existentes.
+
+CANTIDAD_COMPLEMENTARIAS = 3000
+VEHICULOS = [("colectivo", "m"), ("micro", "m"), ("tren", "m"), ("auto", "m"), ("combi", "f"),
+             ("subte", "m"), ("taxi", "m")]
+PEDIDOS = [("comida", "f"), ("pizza", "f"), ("pedido", "m"), ("helado", "m"), ("empanadas", "f")]
+EXTRAS_LLEGADA = {
+    "venir": ["a casa", "a buscarme", "a jugar conmigo", "a cenar", "del trabajo", "de la escuela",
+              "temprano", "tarde", "en un rato", "a visitarme", "de viaje"],
+    "llegar": ["a casa", "del trabajo", "de la escuela", "temprano", "tarde", "en un rato", "de viaje"],
+    "volver": ["a casa", "del trabajo", "de la escuela", "temprano", "tarde", "en un rato", "de viaje"],
+    "salir": ["del trabajo", "de la escuela", "temprano", "tarde", "en un rato", "de viaje"],
+    "entrar": ["a jugar conmigo", "en un rato", "a la pieza", "al aula"],
+}
+EVENTOS_QUE_EMPIEZAN = ["la película", "la clase", "el partido", "el acto", "la fiesta", "el recreo",
+                        "el cumpleaños", "mi programa", "los dibujitos", "las vacaciones", "la terapia"]
+TIEMPO_LLEGADA = {
+    "pres": ["hoy", "ahora", "a la tarde", "a la noche", "después", "más tarde", "esta tarde",
+             "todos los días", "siempre", "a veces", "ya"],
+    "pret": TIEMPO_PAS + ["ya"],
+    "fut": TIEMPO_FUT,
+}
+PLATOS_CON_PAPAS = ["papas fritas", "papas al horno", "puré de papas", "papas", "papas con queso",
+                    "pollo con papas", "carne con papas", "bife con papas", "una hamburguesa con papas",
+                    "huevo frito con papas", "salchichas con papas", "pescado con papas"]
+
+
+def cl_llegada(hablante):
+    """Sujeto después del verbo: 'hoy viene mi abuela', 'ya llegó el
+    colectivo', '¿a qué hora vuelve mi papá?'. Sin estas frases el corrector
+    aprendía que 'verbo + mi + persona' siempre lleva la 'a' personal
+    ('visito a mi abuela') y corregía 'viene mi abuela' -> 'viene a mi abuela'."""
+    r = random.random()
+    plural = False
+    habitual = True
+    if r < 0.6:
+        plural = random.random() < 0.2
+        suj = persona(plural)
+        v = ch(["venir", "venir", "llegar", "llegar", "volver", "salir", "entrar"])
+        extra = ch(["", ""] + EXTRAS_LLEGADA[v] + (["con " + persona(False)] if v != "entrar" else []))
+        if suj in extra:
+            extra = ""
+    elif r < 0.8:
+        palabra, g = ch(VEHICULOS + PEDIDOS)
+        plural = palabra.endswith("s")
+        suj = det("def", g, "p" if plural else "s", palabra) + " " + palabra
+        v = ch(["venir", "llegar", "llegar"] + (["pasar", "salir"] if (palabra, g) in VEHICULOS else []))
+        extra = ch(["", "", "", "tarde", "temprano", "en un rato"])
+    else:
+        suj = ch(EVENTOS_QUE_EMPIEZAN)
+        plural = suj.split()[0] in ("los", "las")
+        v = ch(["empezar", "empezar", "terminar"])
+        extra = ""
+        habitual = False
+    per = "3p" if plural else "3s"
+    t = ch(["pres", "pres", "pret", "pret", "fut", "perif"])
+    if t == "perif":
+        forma, lista = conjugar("ir", "pres", per) + " a " + v, TIEMPO_FUT
+    else:
+        forma, lista = conjugar(v, t, per), TIEMPO_LLEGADA[t]
+    if not habitual:
+        lista = [x for x in lista if x not in ("todos los días", "siempre", "a veces")]
+    temporal = extra in ("temprano", "tarde", "en un rato")
+    if temporal and t == "pret" and extra == "en un rato":
+        extra, temporal = "", False
+    if random.random() < 0.15:
+        return oracion(unir(ch(["cuándo", "a qué hora"]), forma, suj, "" if temporal else extra), pregunta=True)
+    neg = "no " if random.random() < 0.1 else ""
+    clausula = unir(neg + forma, suj, extra)
+    return oracion(clausula if temporal else con_tiempo(clausula, lista, 0.7))
+
+
+def cl_papas(hablante):
+    """'Papas' la comida, para que el corrector no las confunda con 'papás'."""
+    r = random.random()
+    if r < 0.6:
+        principal = ch(["quiero comer", "quiero", "me gustaría comer", "hoy comí", "ayer comimos",
+                        "vamos a comer", "de cena hay", "hoy hay", "mi mamá hizo", "mi abuela hizo",
+                        "mi papá está cocinando", "necesito", "me das", "en el comedor hay",
+                        "mi tía va a hacer", "para el almuerzo quiero"])
+        texto = unir(principal, ch(PLATOS_CON_PAPAS))
+        return oracion(texto, pregunta=principal in ("me das",))
+    if r < 0.85:
+        neg = "no " if random.random() < 0.25 else ""
+        verbo = ch(["gustan", "encantan", "gustan"])
+        quien = ch(["", "", "a mi hermano", "a mi papá", "a mis primos", "a vos"])
+        dat = {"": "me", "a vos": "te"}.get(quien, "le" if quien != "a mis primos" else "les")
+        return oracion(unir(quien, neg + dat, verbo, "las", ch(["papas", "papas fritas", "papas al horno"])))
+    return oracion(unir(ch(["ayudo a mi abuela a", "voy a ayudar a", "mi mamá me enseñó a", "tengo que"]),
+                        ch(["pelar las papas", "lavar las papas", "cortar las papas"])))
+
+
+def complementarias(semilla):
+    random.seed(semilla)
+    frases = set()
+    intentos = 0
+    while len(frases) < CANTIDAD_COMPLEMENTARIAS and intentos < CANTIDAD_COMPLEMENTARIAS * 5:
+        intentos += 1
+        f = cl_llegada if random.random() < 0.8 else cl_papas
+        frases.add(f(ch("mf")))
+    return frases
+
+
 def generar(cantidad, semilla=42):
+    # frases sueltas + compuestas sin repetir, con semilla fija (el corpus no
+    # cambia entre corridas)
     random.seed(semilla)
     frases = set(FRASES_SUELTAS)
     intentos = 0
@@ -829,6 +931,7 @@ def generar(cantidad, semilla=42):
             frases.add(preguntas_donde())
         else:
             frases.add(oracion_compuesta(hablante))
+    frases |= complementarias(semilla + 1)
     return sorted(frases)
 
 
@@ -844,5 +947,6 @@ def main():
         print("  ", frase)
 
 
+# Uso (desde IA/): python scripts/datos/corpus_caa.py
 if __name__ == "__main__":
     main()

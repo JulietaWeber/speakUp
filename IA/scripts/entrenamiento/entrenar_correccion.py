@@ -1,30 +1,3 @@
-"""
-Entrena el corrector de frases (/corregir) y genera los archivos que usa
-correccion.py en producción:
-  IA/modelo_correccion.npz      pesos de la red (numpy)
-  IA/modelo_correccion.json     vocabularios, etiquetas de inserción y umbrales
-  IA/lexico_correccion.json     léxico: género de sustantivos, tildes, verbos
-
-Datos: frases CORRECTAS de tres fuentes
-  - scripts/datos/corpus_caa.txt      frases de CAA generadas (corpus_caa.py)
-  - scripts/datos/frases_curadas.txt  frases escritas a mano
-  - scripts/datos/externos/tatoeba_es.txt  muestra de oraciones reales de
-    Tatoeba (descargar_tatoeba.py), para variedad de estructuras
-Cada frase se "rompe" a propósito con los errores típicos de un usuario que
-arma la frase palabra por palabra, y la red aprende a deshacerlos:
-  - falta un artículo, preposición, contracción, "que", "y", "me" o una coma
-  - artículo/adjetivo con género o número equivocado ("la perro")
-  - verbo en otra persona que su sujeto ("yo quiere") - solo si el sujeto
-    está explícito, si no la frase original también podría ser válida
-  - falta una tilde ("mama", "esta cansado")
-  - sobra una palabra funcional ("la mi casa") o se cambió una preposición
-Como las roturas las hacemos nosotros, la etiqueta correcta de cada palabra
-se conoce exactamente (no hace falta alinear frases).
-
-Uso (desde IA/):  python scripts/entrenar_correccion.py
-Requiere torch (solo para entrenar): pip install -r scripts/requirements-entrenamiento.txt
-"""
-
 import json
 import os
 import pickle
@@ -33,42 +6,66 @@ import re
 import sys
 import time
 from collections import Counter, defaultdict
+from functools import lru_cache
 
 import numpy as np
 from spacy.tokens import Doc
 
-AQUI = os.path.dirname(os.path.abspath(__file__))
-RAIZ = os.path.dirname(AQUI)
+AQUI = os.path.dirname(os.path.abspath(__file__))              # IA/scripts/entrenamiento
+RAIZ = os.path.dirname(os.path.dirname(AQUI))                  # IA/
 sys.path.insert(0, RAIZ)
 
 from correccion import (  # noqa: E402
-    BORRABLES, DIM_RASGOS, NADA, PIPES_RASGOS, PREPOSICIONES_REEMPLAZABLES, TIPOS_FRASE,
-    TRANSFORMACIONES, ids_doc, rasgos_doc, sufijo,
+    DIM_RASGOS, NADA, PIPES_RASGOS, TIPOS_FRASE, TRANSFORMACIONES, ids_doc, rasgos_doc, sufijo,
 )
+from dataset_completar import SEPARADOR, VOCABULARIO_APP, VOCATIVOS  # noqa: E402
 from morfologia import (  # noqa: E402
     DETERMINANTES, FEMENINAS_A_TONICA, PERSONAS, IndiceVerbal, base_adjetivo, es_infinitivo,
-    flexionar_determinante, formas_adjetivo, quitar_tildes, rasgos_adjetivo, rasgos_determinante,
-    tiene_tilde,
+    flexionar_determinante, formas_adjetivo, gerundio, paradigma, participio, quitar_tildes,
+    rasgos_adjetivo, rasgos_determinante, tiene_tilde,
 )
 
 SEMILLA = 13
 N_TATOEBA = 90000
 VARIANTES = {"caa": 2, "curadas": 3, "tatoeba": 1}
-DATOS = os.path.join(AQUI, "datos")
+# Sin Tatoeba hay ~3 veces menos frases: se generan más roturas distintas de
+# cada una para llegar a una cantidad de ejemplos parecida.
+VARIANTES_SIN_TATOEBA = {"caa": 4, "curadas": 6}
+N_VAL = 6000
+# --rapido: como mucho MAX_EJEMPLOS ejemplos de entrenamiento (una rotura por
+# frase). None = dataset completo. El léxico se arma igual con todas las frases.
+# Es solo para probar: corrige bastante peor, no usarlo para el modelo que se sube.
+RAPIDO = "--rapido" in sys.argv
+MAX_EJEMPLOS_RAPIDO, N_VAL_RAPIDO = 10000, 1000
+MAX_EJEMPLOS = MAX_EJEMPLOS_RAPIDO if RAPIDO else None
+DATOS = os.path.join(os.path.dirname(AQUI), "datos")           # IA/scripts/datos
 CACHE = os.path.join(DATOS, "cache")
+# Frases correctas que se rompen a propósito. Tatoeba (descargar_tatoeba.py) es
+# opcional: sin él se entrena con las otras dos y más roturas por frase.
 FUENTES = {
     "caa": os.path.join(DATOS, "corpus_caa.txt"),
     "curadas": os.path.join(DATOS, "frases_curadas.txt"),
     "tatoeba": os.path.join(DATOS, "externos", "tatoeba_es.txt"),
 }
-SALIDA_PESOS = os.path.join(RAIZ, "modelo_correccion.npz")
-SALIDA_CONFIG = os.path.join(RAIZ, "modelo_correccion.json")
-SALIDA_LEXICO = os.path.join(RAIZ, "lexico_correccion.json")
+# Pictogramas de la app -> frase completa (dataset_completar.py).
+RUTA_COMPLETAR = os.path.join(DATOS, "completar_frases.tsv")
+# Repeticiones de cada par de completar_frases.tsv según cuántos pictogramas
+# tiene: las secuencias cortas son pocas (125 de 1, 2.613 de 2) y las más usadas.
+REPETIR_COMPLETAR = {1: 30, 2: 8, 3: 1, 4: 1}
+# Parte de las secuencias de 3 y 4 pictogramas que se reserva para validación
+# (las de 1 y 2 se entrenan todas).
+VAL_COMPLETAR = 0.05
+N_COMPLETAR_RAPIDO = 5000
+# Lo que usa correccion.py en producción.
+SALIDA_PESOS = os.path.join(RAIZ, "modelo_correccion.npz")      # pesos de la red (numpy)
+SALIDA_CONFIG = os.path.join(RAIZ, "modelo_correccion.json")    # vocabularios, inserciones, umbrales
+SALIDA_LEXICO = os.path.join(RAIZ, "lexico_correccion.json")    # género, tildes, verbos
+RUTA_CHECKPOINT = os.path.join(CACHE, "checkpoint_correccion.pt")
 
 MAX_VOCAB = 9000
 MAX_SUFIJOS = 2500
 MIN_FREC_INSERCION = 25
-MAX_INSERCIONES = 150
+MAX_INSERCIONES = 250
 
 # Tildes diacríticas en desuso (RAE 2010) que todavía aparecen en Tatoeba.
 _NORMALIZAR = {"sólo": "solo", "éste": "este", "ésta": "esta", "éstos": "estos", "éstas": "estas",
@@ -80,13 +77,24 @@ _TOKEN = re.compile(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+|[^\w\s]")
 
 ARTICULOS = {"el", "la", "los", "las", "un", "una", "unos", "unas"}
 PREPS_BORRABLES = {"a", "de", "en", "con", "para", "por"}
-CONFUSION_PREP = {"a": ["en", "para"], "en": ["a", "de"], "de": ["con", "en"], "con": ["de", "a"],
-                  "para": ["por", "a"], "por": ["para", "de"]}
 CONFUSION_PERSONA = {"1s": ["3s", "3s", "1p", "2v"], "2s": ["3s", "1s"], "2v": ["3s", "1s"],
                      "3s": ["1s", "3p", "3p", "2v"], "1p": ["3p", "1s", "3s"], "3p": ["3s", "3s", "1p"]}
-ESPURIAS = ["el", "la", "un", "los", "las", "una"]
-ANTES_DE_ESPURIA = {"mi", "mis", "tu", "tus", "su", "sus", "el", "la", "los", "las", "este", "esta",
-                    "estos", "estas", "ese", "esa", "un", "una"}
+
+# Palabras terminadas en -ar/-er/-ir que spaCy a veces etiqueta como infinitivo
+# pero no son verbos (sustantivos, adjetivos, adverbios y nombres propios, que
+# en el corpus van en minúscula). Las reglas de filtrar_verbos atrapan la
+# mayoría; esta lista cubre los que aparecen pocas veces y siempre mal
+# etiquetados.
+NO_SON_VERBOS = {
+    "almíbar", "altar", "azúcar", "bar", "billar", "caviar", "collar", "dólar", "hangar", "henar",
+    "hogar", "lugar", "mar", "néctar", "pajar", "par", "radar", "familiar", "particular", "popular",
+    "similar", "polar", "ayer", "mujer", "taller", "cáncer", "carácter", "líder", "súper", "chófer",
+    "póster", "máster", "alfiler", "menester", "elixir", "faquir", "emir", "itziar", "omar", "óscar",
+    "edgar", "peter", "walter", "oliver", "esther", "jennifer",
+}
+# Con al menos esta cantidad de usos conjugados en el corpus, un verbo no se
+# descarta aunque sus formas coincidan con otras palabras ("ganas", "tarde").
+MIN_EVIDENCIA_VERBO = 10
 
 
 # ── Lectura ───────────────────────────────────────────────────────────────────
@@ -120,16 +128,84 @@ def tokenizar_limpia(frase):
 
 # ── Léxico ────────────────────────────────────────────────────────────────────
 
+@lru_cache(maxsize=None)
+def _formas(v):
+    """Formas conjugadas de un infinitivo (sin el infinitivo)."""
+    return frozenset(f for fs in paradigma(v).values() for f in fs) - {v}
+
+
+def filtrar_verbos(infinitivos, lemas, frec, conjugados, es_palabra_real):
+    """Arma la lista de verbos del índice verbal sin "verbos falsos".
+
+    Candidatos: los infinitivos que spaCy etiquetó al menos 2 veces y los
+    lemas de verbos conjugados, para los verbos que casi nunca aparecen en
+    infinitivo ("duele" -> "doler", "prefiero" -> "preferir"). El lematizador
+    inventa lemas ("dijiste" -> "dijistar", "haya" -> "hayar"), así que un lema
+    solo cuenta si es una palabra real (tiene vector en spaCy) y si al menos 3
+    de sus usos son formas suyas que no explica otro candidato ("haya" ya es
+    de "haber").
+
+    Un verbo falso en el índice verbal hace que palabras comunes se analicen
+    como conjugaciones ("pajar" -> "paja", "piar" -> "pie") y el corrector
+    podría cambiarles la persona ("paja" -> "pajo"). Se descarta:
+      - lo que está en NO_SON_VERBOS;
+      - la variante sin tilde de otro infinitivo ("reir" si está "reír");
+      - lo que spaCy leyó como infinitivo menos de la mitad de las veces y
+        nunca aparece conjugado ("billar");
+      - el verbo poco usado (menos de MIN_EVIDENCIA_VERBO usos conjugados)
+        cuyas formas son casi siempre otras palabras del corpus ("mediar" ->
+        "media", "orar" -> "oro"). Los participios no cuentan: "dorado" es
+        adjetivo y "dorar" es un verbo legítimo.
+    `conjugados[w]`: veces que w aparece como verbo conjugado, gerundio o
+    participio; `lemas[lema][forma]`: usos de cada forma conjugada por lema.
+    Devuelve (verbos, {descartado: motivo}, cantidad sumada por lemas)."""
+    candidatos = {w for w, c in infinitivos.items() if c >= 2}
+    explicadas = set().union(*(_formas(v) for v in candidatos))
+    por_lema = set()
+    for lema, usos in lemas.items():
+        if lema in candidatos or not es_infinitivo(lema) or not es_palabra_real(lema):
+            continue
+        propios = sum(c for f, c in usos.items() if f in _formas(lema) and f not in explicadas)
+        if propios >= 3:
+            por_lema.add(lema)
+    candidatos |= por_lema
+    verbos, descartados = [], {}
+    for v in sorted(candidatos):
+        formas = _formas(v)
+        evidencia = sum(conjugados[f] for f in formas | {gerundio(v), participio(v)})
+        choques = sum(frec[f] - conjugados[f] for f in formas
+                      if frec[f] >= 3 and conjugados[f] < 0.2 * frec[f])
+        if v in NO_SON_VERBOS:
+            descartados[v] = "no es verbo"
+        elif not tiene_tilde(v) and any(x != v and quitar_tildes(x) == v for x in candidatos):
+            descartados[v] = "falta la tilde"
+        elif evidencia == 0 and infinitivos[v] < 0.5 * frec[v]:
+            descartados[v] = "casi nunca es verbo"
+        elif evidencia < MIN_EVIDENCIA_VERBO and choques >= 3 and choques > 5 * evidencia:
+            descartados[v] = "sus formas son otras palabras"
+        else:
+            verbos.append(v)
+    return verbos, descartados, len(por_lema - set(descartados))
+
+
 def construir_lexico(docs):
+    # lexico_correccion.json: género de los sustantivos, tildes y verbos (sin
+    # los verbos falsos de filtrar_verbos), sacados de las frases correctas
     frec = Counter()
     votos_genero = defaultdict(Counter)
     infinitivos = Counter()
+    conjugados = Counter()
+    lemas = defaultdict(Counter)
     for doc in docs:
         for i, t in enumerate(doc):
             w = t.text
             if not w.isalpha():
                 continue
             frec[w] += 1
+            if t.pos_ in ("VERB", "AUX") and set(t.morph.get("VerbForm")) & {"Fin", "Ger", "Part"}:
+                conjugados[w] += 1
+                if "Fin" in t.morph.get("VerbForm"):
+                    lemas[t.lemma_.lower()][w] += 1
             if t.pos_ == "NOUN":
                 g = t.morph.get("Gender")
                 if g:
@@ -151,9 +227,16 @@ def construir_lexico(docs):
             genero[w] = g
     for w in FEMENINAS_A_TONICA:
         genero[w] = "f"
-    verbos = sorted(w for w, c in infinitivos.items() if c >= 2)
-    indice = IndiceVerbal(verbos)
-    formas_verbales = set(indice.formas())
+    vocab = docs[0].vocab
+    verbos, descartados, n_lemas = filtrar_verbos(
+        infinitivos, lemas, frec, conjugados, lambda w: vocab.strings[w] in vocab.vectors.key2row)
+    print(f"Verbos: {len(verbos)} ({n_lemas} encontrados por sus formas conjugadas)")
+    print(f"Verbos falsos descartados ({len(descartados)}): "
+          + ", ".join(f"{v} ({m})" for v, m in descartados.items()))
+    formas_verbales = set(IndiceVerbal(verbos).formas())
+    # Para las tildes seguras se usan también las formas de los descartados:
+    # ante la duda ("cosecho" / "cosechó") mejor no tildar automáticamente.
+    formas_dudosas = formas_verbales | set(IndiceVerbal(descartados).formas())
 
     acentos, acentos_seguros = {}, {}
     por_clave = defaultdict(list)
@@ -163,7 +246,7 @@ def construir_lexico(docs):
     for clave, lista in por_clave.items():
         c, w = max(lista)
         acentos[clave] = w
-        if frec.get(clave, 0) == 0 and c >= 3 and clave not in formas_verbales and len(lista) == 1:
+        if frec.get(clave, 0) == 0 and c >= 3 and clave not in formas_dudosas and len(lista) == 1:
             acentos_seguros[clave] = w
     palabras = sorted({w for w, c in frec.items() if c >= 2} | formas_verbales)
     return {
@@ -173,6 +256,10 @@ def construir_lexico(docs):
 
 
 # ── Corrupción ────────────────────────────────────────────────────────────────
+# Cada frase correcta se rompe con los errores de quien la arma palabra por
+# palabra y la red aprende a deshacerlos. Como la rotura es nuestra, la
+# etiqueta de cada palabra se conoce exactamente. No se enseña a borrar ni a
+# reemplazar: el corrector nunca saca ni cambia lo que eligió el usuario.
 
 def persona_spacy(t, indice):
     """Persona de un verbo conjugado según spaCy + el índice verbal."""
@@ -305,7 +392,8 @@ def corromper(doc, tipo, rng, lexico, indice):
                     _, forma = rng.choice(distintas)
                     accion[i] = ("tr", forma, f"AGR_{g}{nn}")
 
-    # 3) Persona del verbo (solo con sujeto explícito).
+    # 3) Persona del verbo (solo con sujeto explícito: sin sujeto la frase
+    #    rota también podría ser válida).
     if rng.random() < 0.22:
         for i in rng.sample(libres, len(libres)):
             t = doc[i]
@@ -339,14 +427,6 @@ def corromper(doc, tipo, rng, lexico, indice):
     for i in elegidas:
         accion[i] = ("tr", quitar_tildes(doc[i].text), "ACC")
 
-    # 5) Cambiar una preposición.
-    if rng.random() < 0.06:
-        cands = [i for i in palabras_idx if accion[i] is None and doc[i].text in CONFUSION_PREP
-                 and doc[i].pos_ == "ADP"]
-        if cands:
-            i = rng.choice(cands)
-            accion[i] = ("tr", rng.choice(CONFUSION_PREP[doc[i].text]), f"REPL_{doc[i].text}")
-
     # Armar entrada y etiquetas.
     entrada, ins, tr = [], [], []
     pendiente = []
@@ -367,41 +447,65 @@ def corromper(doc, tipo, rng, lexico, indice):
             tr.append(a[2])
     if pendiente or len(entrada) < 2:
         return None
-
-    # 6) Palabra funcional de más (se debe borrar). Solo donde seguro sobra:
-    # artículo delante de otro determinante ("la mi casa") o una palabra
-    # funcional repetida ("de de").
-    if rng.random() < 0.07:
-        r = rng.random()
-        if r < 0.3:
-            pos = [p for p in range(len(entrada) - 1) if entrada[p] in BORRABLES and tr[p] == "KEEP"]
-            if pos:
-                p = rng.choice(pos)
-                entrada.insert(p + 1, entrada[p])
-                ins.insert(p + 1, NADA)
-                tr.insert(p + 1, "DEL")
-        else:
-            pos = [p for p in range(len(entrada)) if entrada[p] in ANTES_DE_ESPURIA and tr[p] == "KEEP"
-                   and ins[p] == NADA]
-            if pos:
-                p = rng.choice(pos)
-                entrada.insert(p, rng.choice(ESPURIAS))
-                ins.insert(p, NADA)
-                tr.insert(p, "DEL")
     return entrada, ins, tr, tipo
+
+
+# ── Completar frases ──────────────────────────────────────────────────────────
+
+def leer_completar():
+    """completar_frases.tsv -> [(pictogramas, frase)]."""
+    with open(RUTA_COMPLETAR, encoding="utf-8") as f:
+        next(f)                               # encabezado
+        pares = []
+        for linea in f:
+            palabras, frase = linea.rstrip("\n").split("\t")
+            pares.append((palabras.split(SEPARADOR), frase))
+    return pares
+
+
+def ejemplo_completar(elementos, frase):
+    """(pictogramas, frase completa) -> (entrada, inserción por palabra,
+    transformación por palabra, tipo). Las palabras del usuario están en la
+    frase en su orden y tal cual: lo que hay entre ellas es la inserción."""
+    entrada, inicio = [], []
+    for e in elementos:
+        partes = e.lower().split()
+        entrada += partes
+        inicio += [True] + [False] * (len(partes) - 1)
+    objetivo, tipo = tokenizar_limpia(frase)
+    ins, j = [], 0
+    for w, es_inicio in zip(entrada, inicio):
+        pendiente = []
+        while j < len(objetivo) and objetivo[j] != w:
+            pendiente.append(objetivo[j])
+            j += 1
+        if j == len(objetivo) or (pendiente and not es_inicio):
+            raise ValueError(f"completar_frases.tsv: {elementos} no está tal cual en {frase!r}")
+        ins.append(" ".join(pendiente).replace(" ,", ",") if pendiente else NADA)
+        j += 1
+    if j != len(objetivo):
+        raise ValueError(f"completar_frases.tsv: {frase!r} agrega palabras después del último pictograma")
+    return entrada, ins, ["KEEP"] * len(entrada), tipo
 
 
 # ── Preparación del dataset ───────────────────────────────────────────────────
 
 def preparar():
+    # frases rotas + pares de completar, ya pasados a ids y rasgos para la red
     import spacy
 
     rng = random.Random(SEMILLA)
     print("Cargando spaCy...")
     nlp = spacy.load("es_core_news_md")
 
+    if os.path.exists(FUENTES["tatoeba"]):
+        variantes = VARIANTES
+    else:
+        print(f"No está {FUENTES['tatoeba']}: se entrena solo con corpus_caa y frases_curadas")
+        variantes = VARIANTES_SIN_TATOEBA
+
     frases = []
-    for fuente in ("caa", "curadas", "tatoeba"):
+    for fuente in variantes:
         lista = leer(fuente)
         print(f"{fuente}: {len(lista)} frases")
         for f in lista:
@@ -410,13 +514,13 @@ def preparar():
                 frases.append((fuente, toks, tipo))
     # División por frase: las de validación nunca se ven al entrenar.
     rng.shuffle(frases)
-    n_val = 6000
+    n_val = min(N_VAL if MAX_EJEMPLOS is None else N_VAL_RAPIDO, len(frases) // 10)
     val_ids = set(range(n_val))
 
     print(f"Analizando {len(frases)} frases limpias con spaCy...")
     t0 = time.time()
     docs_limpios = list(nlp.pipe((Doc(nlp.vocab, words=t) for _, t, _ in frases),
-                                 batch_size=512, disable=["ner", "lemmatizer"]))
+                                 batch_size=512, disable=["ner"]))
     print(f"  {time.time() - t0:.0f}s")
 
     lexico, frec = construir_lexico(docs_limpios)
@@ -427,13 +531,30 @@ def preparar():
           f"{len(lexico['palabras'])} palabras")
 
     ejemplos = []   # (es_val, entrada, ins, tr, tipo)
+    n_train = 0
     for k, ((fuente, toks, tipo), doc) in enumerate(zip(frases, docs_limpios)):
         es_val = k in val_ids
-        for _ in range(1 if es_val else VARIANTES[fuente]):
+        if not es_val and MAX_EJEMPLOS is not None and n_train >= MAX_EJEMPLOS:
+            break
+        for _ in range(1 if es_val or MAX_EJEMPLOS is not None else variantes[fuente]):
             r = corromper(doc, tipo, rng, lexico, indice)
             if r:
                 ejemplos.append((es_val,) + r)
+                n_train += not es_val
     print(f"Ejemplos corruptos: {len(ejemplos)}")
+
+    # Completar frases: las secuencias cortas se repiten (REPETIR_COMPLETAR).
+    pares = leer_completar()
+    if RAPIDO:
+        pares = random.Random(SEMILLA).sample(pares, min(N_COMPLETAR_RAPIDO, len(pares)))
+    rng_val = random.Random(SEMILLA + 1)
+    n_corpus = len(ejemplos)
+    for elementos, frase in pares:
+        e = ejemplo_completar(elementos, frase)
+        es_val = len(elementos) >= 3 and rng_val.random() < VAL_COMPLETAR
+        for _ in range(1 if es_val or RAPIDO else REPETIR_COMPLETAR.get(len(elementos), 1)):
+            ejemplos.append((es_val,) + e)
+    print(f"Ejemplos para completar frases: {len(ejemplos) - n_corpus} (de {len(pares)} pares)")
 
     print("Calculando rasgos de las entradas corruptas...")
     t0 = time.time()
@@ -446,8 +567,17 @@ def preparar():
     vocab_palabras = ["<pad>", "<unk>"] + [w for w, _ in frec_palabras.most_common(MAX_VOCAB)]
     vocab_sufijos = ["<pad>", "<unk>"] + [s for s, _ in frec_sufijos.most_common(MAX_SUFIJOS)]
     frec_ins = Counter(x for e in ejemplos if not e[0] for x in e[2] if x != NADA)
-    inserciones = [NADA] + [x for x, c in frec_ins.most_common(MAX_INSERCIONES) if c >= MIN_FREC_INSERCION]
+    min_frec = MIN_FREC_INSERCION if MAX_EJEMPLOS is None else 10
+    # Las de completar_frases.tsv entran todas: son intencionales, no ruido
+    # del corpus (", hasta" de "Chau, hasta mañana." aparece pocas veces).
+    de_completar = {x for e in ejemplos[n_corpus:] if not e[0] for x in e[2] if x != NADA}
+    inserciones = [NADA] + [x for x, c in frec_ins.most_common(MAX_INSERCIONES)
+                            if c >= min_frec or x in de_completar]
     print(f"Etiquetas de inserción: {len(inserciones)} (más comunes: {inserciones[1:16]})")
+    conocidas = set(inserciones)
+    fuera = Counter(x for e in ejemplos[n_corpus:] if not e[0] for x in e[2] if x not in conocidas)
+    print(f"Inserciones para completar que quedaron fuera de la lista: {sum(fuera.values())} "
+          f"{fuera.most_common(10)}")
     vp = {w: i for i, w in enumerate(vocab_palabras)}
     vs = {s: i for i, s in enumerate(vocab_sufijos)}
     ii = {x: i for i, x in enumerate(inserciones)}
@@ -455,16 +585,21 @@ def preparar():
 
     tabla = nlp.vocab.vectors
     datos = []
-    for e, doc in zip(ejemplos, docs):
+    for k, (e, doc) in enumerate(zip(ejemplos, docs)):
         es_val, entrada, ins, tr, tipo = e
         palabras, sufijos = ids_doc(doc, vp, vs)
         filas = np.array([tabla.key2row.get(nlp.vocab.strings[w], -1) for w in entrada], dtype=np.int32)
         rasgos = rasgos_doc(doc, lexico, indice).astype(np.uint8)
         y_ins = np.array([ii.get(x, 0) for x in ins], dtype=np.int64)
         y_tr = np.array([ti[x] for x in tr], dtype=np.int64)
-        datos.append((es_val, palabras, sufijos, filas, rasgos, y_ins, y_tr, TIPOS_FRASE.index(tipo), entrada, ins, tr))
+        fuente = "completar" if k >= n_corpus else "corpus"
+        datos.append((es_val, palabras, sufijos, filas, rasgos, y_ins, y_tr, TIPOS_FRASE.index(tipo),
+                      entrada, ins, tr, fuente))
     del lexico["palabras_set"]
-    meta = {"vocab_palabras": vocab_palabras, "vocab_sufijos": vocab_sufijos, "inserciones": inserciones}
+    # Palabras de los pictogramas de la app: el corrector nunca las transforma.
+    fijas = sorted({w for e in VOCABULARIO_APP + VOCATIVOS for w in e.split()})
+    meta = {"vocab_palabras": vocab_palabras, "vocab_sufijos": vocab_sufijos, "inserciones": inserciones,
+            "palabras_fijas": fijas}
     vectores = np.array(tabla.data, dtype=np.float32)
     return datos, meta, lexico, vectores
 
@@ -478,6 +613,8 @@ def entrenar(datos, meta, vectores):
     torch.manual_seed(SEMILLA)
     torch.set_num_threads(max(1, (os.cpu_count() or 2) - 2))
 
+    # BiGRU que predice por palabra qué insertar antes y cómo transformarla, y
+    # el tipo de frase. Se exporta a numpy (correccion.RedEdiciones).
     class ModeloEdiciones(nn.Module):
         def __init__(self, n_pal, n_suf, dim_vec, n_ins, n_tr, n_tipo, emb=64, emb_suf=24, proy=64,
                      hidden=160, capas=2, dropout=0.25):
@@ -543,8 +680,21 @@ def entrenar(datos, meta, vectores):
     print(f"Parámetros: {sum(p.numel() for p in modelo.parameters()):,}")
     opt = torch.optim.Adam(modelo.parameters(), lr=2e-3)
     ce = nn.CrossEntropyLoss(ignore_index=-100)
-    EPOCHS, BATCH = 9, 128
+    EPOCHS, BATCH = 12, 128
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=3e-3, total_steps=EPOCHS * (len(train) // BATCH + 1))
+
+    # Checkpoint al final de cada época: si el proceso se corta, al volver a
+    # correr el script (sin --rehacer) sigue desde la última época completa.
+    firma = [len(train), len(val), len(meta["vocab_palabras"]), len(meta["inserciones"])]
+    inicio = 1
+    if os.path.exists(RUTA_CHECKPOINT):
+        ck = torch.load(RUTA_CHECKPOINT, weights_only=False)
+        if ck["firma"] == firma:
+            modelo.load_state_dict(ck["modelo"])
+            opt.load_state_dict(ck["opt"])
+            sched.load_state_dict(ck["sched"])
+            inicio = ck["epoch"] + 1
+            print(f"Retomando desde el checkpoint de la época {ck['epoch']}")
 
     def evaluar():
         modelo.eval()
@@ -561,8 +711,7 @@ def entrenar(datos, meta, vectores):
         modelo.train()
         return preds
 
-    mejor = None
-    for epoch in range(1, EPOCHS + 1):
+    for epoch in range(inicio, EPOCHS + 1):
         random.Random(epoch).shuffle(train)
         # lotes de largo parecido (más rápido) en orden aleatorio
         orden = sorted(range(len(train)), key=lambda i: (len(train[i][1]), random.random()))
@@ -581,12 +730,12 @@ def entrenar(datos, meta, vectores):
             sched.step()
             total += loss.item()
         preds = evaluar()
-        m = metricas(val, preds, meta, {"insertar": 0.5, "transformar": 0.5, "borrar": 0.5, "tipo": 0.5})
+        m = metricas(val, preds, meta, {"insertar": 0.5, "transformar": 0.5, "tipo": 0.5})
         print(f"Epoch {epoch} | loss {total / len(lotes):.4f} | {time.time() - t0:.0f}s | "
               f"ins P={m['ins_p']:.3f} R={m['ins_r']:.3f} | tr P={m['tr_p']:.3f} R={m['tr_r']:.3f} | "
               f"frases exactas {m['exactas']:.3f} | tipo {m['tipo']:.3f}", flush=True)
-        mejor = {k: v.detach().clone() for k, v in modelo.state_dict().items()}
-    modelo.load_state_dict(mejor)
+        torch.save({"firma": firma, "epoch": epoch, "modelo": modelo.state_dict(), "opt": opt.state_dict(),
+                    "sched": sched.state_dict()}, RUTA_CHECKPOINT)
     return modelo, evaluar()
 
 
@@ -612,8 +761,7 @@ def metricas(val, preds, meta, umbrales):
                 fn += 1
                 ok = False
             k = int(pt[i].argmax())
-            u = umbrales["borrar"] if TRANSFORMACIONES[k] == "DEL" else umbrales["transformar"]
-            pred_tr = k if (k != 0 and pt[i, k] >= u) else 0
+            pred_tr = k if (k != 0 and pt[i, k] >= umbrales["transformar"]) else 0
             if pred_tr != 0 and pred_tr == y_tr[i]:
                 tvp += 1
             elif pred_tr != 0:
@@ -628,32 +776,57 @@ def metricas(val, preds, meta, umbrales):
         tipo_ok += (t == d[7])
     n = max(len(val), 1)
     return {
-        "ins_p": tp / max(tp + fp, 1), "ins_r": tp / max(tp + fn, 1),
-        "tr_p": tvp / max(tvp + tfp, 1), "tr_r": tvp / max(tvp + tfn, 1),
+        "ins_p": tp / (tp + fp) if tp + fp else 1.0, "ins_r": tp / max(tp + fn, 1), "ins_n": tp + fn,
+        "tr_p": tvp / (tvp + tfp) if tvp + tfp else 1.0, "tr_r": tvp / max(tvp + tfn, 1), "tr_n": tvp + tfn,
         "exactas": exactas / n, "tipo": tipo_ok / n,
     }
 
 
 def elegir_umbrales(val, preds, meta):
     """Umbrales lo más bajos posible manteniendo precisión >= 0.97 en
-    inserciones y transformaciones (preferimos no corregir a corregir mal)."""
+    inserciones y transformaciones (preferimos no corregir a corregir mal),
+    en el corpus y en completar frases POR SEPARADO: juntas, las de completar
+    (muy fáciles para la red) bajan el umbral y el corpus queda con más
+    correcciones mal hechas."""
+    grupos = [([d for d in val if d[11] == f], [p for d, p in zip(val, preds) if d[11] == f])
+              for f in ("corpus", "completar")]
     mejores = {}
-    for familia, clave_p in (("insertar", "ins_p"), ("transformar", "tr_p")):
-        elegido = 0.9
+    for familia, clave in (("insertar", "ins"), ("transformar", "tr")):
+        elegido = 0.95
         for u in [x / 100 for x in range(40, 96, 5)]:
-            base = {"insertar": 0.5, "transformar": 0.5, "borrar": 0.9, "tipo": 0.6}
+            base = {"insertar": 0.5, "transformar": 0.5, "tipo": 0.6}
             base[familia] = u
-            m = metricas(val, preds, meta, base)
-            if m[clave_p] >= 0.97:
+            ms = [metricas(vs, ps, meta, base) for vs, ps in grupos if vs]
+            # un grupo sin ediciones de esta familia (completar no tiene
+            # transformaciones) no cuenta
+            if all(m[clave + "_p"] >= 0.97 for m in ms if m[clave + "_n"]):
                 elegido = u
                 break
         mejores[familia] = elegido
-    mejores["borrar"] = max(0.85, mejores["transformar"])
     mejores["tipo"] = 0.7
     m = metricas(val, preds, meta, mejores)
     print(f"Umbrales: {mejores} -> ins P={m['ins_p']:.3f} R={m['ins_r']:.3f} | "
-          f"tr P={m['tr_p']:.3f} R={m['tr_r']:.3f} | exactas {m['exactas']:.3f}")
+          f"tr P={m['tr_p']:.3f} R={m['tr_r']:.3f} | exactas {m['exactas']:.3f} | tipo {m['tipo']:.3f}")
+    for fuente in ("corpus", "completar"):
+        sub = [(d, p) for d, p in zip(val, preds) if d[11] == fuente]
+        if sub:
+            m = metricas([d for d, _ in sub], [p for _, p in sub], meta, mejores)
+            print(f"  {fuente} ({len(sub)} frases): ins P={m['ins_p']:.3f} R={m['ins_r']:.3f} | "
+                  f"tr P={m['tr_p']:.3f} R={m['tr_r']:.3f} | exactas {m['exactas']:.3f}")
     return mejores
+
+
+def predecir_numpy(val, vectores):
+    """Predicciones de la red exportada (la de numpy que corre en
+    producción) sobre las frases de validación."""
+    from correccion import RedEdiciones
+    red = RedEdiciones(np.load(SALIDA_PESOS))
+    preds = []
+    for d in val:
+        filas = d[3].astype(np.int64)
+        vec = np.where((filas >= 0)[:, None], vectores[np.maximum(filas, 0)], 0).astype(np.float32)
+        preds.append(red(d[1], d[2], vec, d[4].astype(np.float32)))
+    return preds
 
 
 def exportar(modelo, meta, lexico, umbrales):
@@ -670,16 +843,20 @@ def exportar(modelo, meta, lexico, umbrales):
 
 def main():
     os.makedirs(CACHE, exist_ok=True)
-    ruta_cache = os.path.join(CACHE, "dataset_correccion.pkl")
+    # Sin --rehacer se reusa el dataset en caché (rehacerlo si cambian los
+    # datos, p. ej. después de descargar Tatoeba o regenerar completar_frases.tsv).
+    ruta_cache = os.path.join(CACHE, "dataset_correccion_rapido.pkl" if RAPIDO else "dataset_correccion.pkl")
     if os.path.exists(ruta_cache) and "--rehacer" not in sys.argv:
         print(f"Usando dataset en caché ({ruta_cache}); --rehacer para regenerarlo")
         with open(ruta_cache, "rb") as f:
             datos, meta, lexico, vectores = pickle.load(f)
     else:
+        if os.path.exists(RUTA_CHECKPOINT):   # era de otro dataset
+            os.remove(RUTA_CHECKPOINT)
         datos, meta, lexico, vectores = preparar()
         with open(ruta_cache, "wb") as f:
             pickle.dump((datos, meta, lexico, vectores), f, protocol=pickle.HIGHEST_PROTOCOL)
-    if "--solo-datos" in sys.argv:
+    if "--solo-datos" in sys.argv:            # muestra ejemplos del dataset, sin entrenar
         random.seed(1)
         for d in random.sample(datos, 40):
             pares = []
@@ -687,11 +864,24 @@ def main():
                 pares.append((f"[{a}] " if a else "") + w + (f"<{b}>" if b != "KEEP" else ""))
             print(" ".join(pares), "|", TIPOS_FRASE[d[7]])
         return
+    if "--umbrales" in sys.argv:              # solo recalcula los umbrales de la red ya exportada
+        val = [d for d in datos if d[0]]
+        umbrales = elegir_umbrales(val, predecir_numpy(val, vectores), meta)
+        with open(SALIDA_CONFIG, encoding="utf-8") as f:
+            config = json.load(f)
+        config["umbrales"] = umbrales
+        with open(SALIDA_CONFIG, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False)
+        print(f"Umbrales actualizados en {SALIDA_CONFIG}")
+        return
     modelo, preds = entrenar(datos, meta, vectores)
     val = [d for d in datos if d[0]]
     umbrales = elegir_umbrales(val, preds, meta)
     exportar(modelo, meta, lexico, umbrales)
+    os.remove(RUTA_CHECKPOINT)
 
 
+# Uso (desde IA/): python scripts/entrenamiento/entrenar_correccion.py [--rehacer] [--rapido] [--solo-datos] [--umbrales]
+# Requiere torch: pip install -r scripts/entrenamiento/requirements-entrenamiento.txt
 if __name__ == "__main__":
     main()

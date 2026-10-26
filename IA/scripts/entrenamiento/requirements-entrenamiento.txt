@@ -1,0 +1,4 @@
+-r ../../requirements.txt                                # lo mismo que la API en producción
+--extra-index-url https://download.pytorch.org/whl/cpu   # torch solo CPU
+torch                                                    # entrenar_correccion.py (la API no lo usa)
+httpx                                                    # TestClient de probar_endpoints.py

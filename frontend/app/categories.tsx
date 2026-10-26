@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import ConstructionBar from "../components/ConstructionBar";
@@ -46,6 +47,9 @@ export default function Categories() {
   const [vozSeleccionada, setVozSeleccionada] = useState<string | null>(null);
   const [cargandoVoces, setCargandoVoces] = useState(false);
   const [guardandoVoz, setGuardandoVoz] = useState(false);
+  const [usuario, setUsuario] = useState<any>(null);
+  const [tamanoPictogramas, setTamanoPictogramas] = useState(1);
+  const [tamanoTexto, setTamanoTexto] = useState(1);
 
   const [sugerenciasIA, setSugerenciasIA] = useState<any[]>([]);
   const [fraseCorregidaIA, setFraseCorregidaIA] = useState<string | null>(null);
@@ -77,6 +81,44 @@ export default function Categories() {
   ];
 
   const [colorSeleccionado, setColorSeleccionado] = useState("#356879");
+
+  // CARGAR PERFIL Y PREFERENCIAS DE ACCESIBILIDAD
+  useEffect(() => {
+    const cargarPreferencias = async () => {
+      try {
+        const usuarioGuardado = await AsyncStorage.getItem("usuario");
+        const pictogramasGuardados = await AsyncStorage.getItem("tamano_pictogramas");
+        const textoGuardado = await AsyncStorage.getItem("tamano_texto");
+        if (usuarioGuardado) setUsuario(JSON.parse(usuarioGuardado));
+        if (pictogramasGuardados) setTamanoPictogramas(Number(pictogramasGuardados));
+        if (textoGuardado) setTamanoTexto(Number(textoGuardado));
+      } catch (error) {
+        console.error("Error cargando perfil o preferencias:", error);
+      }
+    };
+    cargarPreferencias();
+  }, []);
+
+  const cambiarTamanoPictogramas = async (valor: number) => {
+    setTamanoPictogramas(valor);
+    await AsyncStorage.setItem("tamano_pictogramas", String(valor));
+  };
+
+  const cambiarTamanoTexto = async (valor: number) => {
+    setTamanoTexto(valor);
+    await AsyncStorage.setItem("tamano_texto", String(valor));
+  };
+
+  const cerrarSesion = async () => {
+    Alert.alert("Cerrar sesión", "¿Querés salir de tu cuenta?", [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Cerrar sesión", style: "destructive", onPress: async () => {
+        await AsyncStorage.multiRemove(["token", "usuario", "voz_preferida"]);
+        setMostrarConfiguracion(false);
+        router.replace("/login");
+      } },
+    ]);
+  };
 
   // RECUPERAR SUGERENCIAS Y FRASE CORREGIDA GUARDADAS
 
@@ -595,8 +637,7 @@ export default function Categories() {
           </TouchableOpacity>
         </View>
 
-        {/* CONFIGURACIÓN DE VOZ */}
-
+        {/* CONFIGURACIÓN */}
         <Modal
           visible={mostrarConfiguracion}
           transparent
@@ -606,84 +647,113 @@ export default function Categories() {
           }}
         >
           <View style={styles.modalFondo}>
-            <View style={styles.modalContenido}>
-              <View style={styles.modalEncabezado}>
-                <Text style={styles.modalTitulo}>Configuración</Text>
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.modalContenido}>
+                <View style={styles.modalEncabezado}>
+                  <Text style={styles.modalTitulo}>Configuración</Text>
+                  <TouchableOpacity
+                    onPress={() => setMostrarConfiguracion(false)}
+                    disabled={guardandoVoz}
+                    accessibilityRole="button"
+                    accessibilityLabel="Cerrar configuración"
+                    style={styles.cerrarModalButton}
+                  >
+                    <Ionicons name="close" size={25} color="#356879" />
+                  </TouchableOpacity>
+                </View>
 
-                <TouchableOpacity
-                  onPress={() => setMostrarConfiguracion(false)}
-                  disabled={guardandoVoz}
-                  accessibilityRole="button"
-                  accessibilityLabel="Cerrar configuración"
-                >
-                  <Ionicons name="close" size={26} color="#356879" />
+                <View style={styles.perfilContainer}>
+                  <View style={styles.avatar}>
+                    <Ionicons name="person" size={30} color="#356879" />
+                  </View>
+                  <View style={styles.perfilDatos}>
+                    <Text style={styles.perfilNombre} numberOfLines={1}>
+                      {usuario?.nombre || usuario?.nombre_usuario || usuario?.name || "Mi perfil"}
+                    </Text>
+                    <Text style={styles.perfilEmail} numberOfLines={1}>
+                      {usuario?.email || usuario?.correo || "Tu cuenta de Speak Up"}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.seccionTitulo}>Tamaño de los pictogramas</Text>
+                <Text style={styles.seccionDescripcion}>Adaptá el tamaño de las imágenes para que sean más fáciles de ver.</Text>
+                <View style={styles.tamanoOpciones}>
+                  {[0, 1, 2].map((valor) => (
+                    <TouchableOpacity
+                      key={valor}
+                      style={[styles.tamanoOpcion, tamanoPictogramas === valor && styles.tamanoOpcionActiva]}
+                      onPress={() => cambiarTamanoPictogramas(valor)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Pictogramas ${["pequeños", "medianos", "grandes"][valor]}`}
+                    >
+                      <Ionicons name="image-outline" size={[20, 26, 32][valor]} color={tamanoPictogramas === valor ? "#FFFFFF" : "#356879"} />
+                      <Text style={[styles.tamanoOpcionTexto, tamanoPictogramas === valor && styles.tamanoOpcionTextoActiva]}>{["Pequeño", "Mediano", "Grande"][valor]}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.seccionTitulo}>Tamaño del texto</Text>
+                <Text style={styles.seccionDescripcion}>Elegí el tamaño de letra que te resulte más cómodo.</Text>
+                <View style={styles.tamanoOpciones}>
+                  {[0, 1, 2].map((valor) => (
+                    <TouchableOpacity
+                      key={valor}
+                      style={[styles.tamanoOpcion, tamanoTexto === valor && styles.tamanoOpcionActiva]}
+                      onPress={() => cambiarTamanoTexto(valor)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Texto ${["pequeño", "mediano", "grande"][valor]}`}
+                    >
+                      <Text style={[styles.muestraTexto, { fontSize: [12, 16, 20][valor] }, tamanoTexto === valor && styles.tamanoOpcionTextoActiva]}>Aa</Text>
+                      <Text style={[styles.tamanoOpcionTexto, tamanoTexto === valor && styles.tamanoOpcionTextoActiva]}>{["Pequeño", "Mediano", "Grande"][valor]}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.seccionTitulo}>Voz de Speak Up</Text>
+                <Text style={styles.modalSubtitulo}>Elegí la voz con la que Speak Up leerá tus frases.</Text>
+                {cargandoVoces ? (
+                  <View style={styles.modalCargando}>
+                    <ActivityIndicator size="large" color="#356879" />
+                    <Text style={styles.modalCargandoTexto}>Cargando voces...</Text>
+                  </View>
+                ) : voces.length === 0 ? (
+                  <View style={styles.modalVacio}>
+                    <Text style={styles.modalVacioTexto}>No se pudieron mostrar las voces.</Text>
+                    <TouchableOpacity style={styles.reintentarButton} onPress={abrirConfiguracion} disabled={guardandoVoz}>
+                      <Text style={styles.reintentarTexto}>Intentar nuevamente</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  voces.map((voz) => (
+                    <TouchableOpacity
+                      key={voz.id}
+                      style={[styles.opcionVoz, vozSeleccionada === voz.id && styles.opcionVozSeleccionada]}
+                      disabled={guardandoVoz}
+                      activeOpacity={0.75}
+                      onPress={() => guardarVoz(voz.id)}
+                    >
+                      <View style={styles.opcionVozTexto}>
+                        <Text style={styles.nombreVoz}>{voz.nombre}</Text>
+                        <Text style={styles.descripcionVoz}>{voz.descripcion}</Text>
+                      </View>
+                      {vozSeleccionada === voz.id && <Ionicons name="checkmark-circle" size={24} color="#356879" />}
+                    </TouchableOpacity>
+                  ))
+                )}
+                {guardandoVoz && <View style={styles.guardandoVoz}><ActivityIndicator color="#356879" /><Text style={styles.guardandoVozTexto}>Guardando tu elección...</Text></View>}
+
+                <TouchableOpacity style={styles.cerrarSesionButton} onPress={cerrarSesion} activeOpacity={0.75}>
+                  <Ionicons name="log-out-outline" size={20} color="#C94F4F" />
+                  <Text style={styles.cerrarSesionTexto}>Cerrar sesión</Text>
                 </TouchableOpacity>
               </View>
-
-              <Text style={styles.modalSubtitulo}>
-                Elegí la voz con la que Speak Up leerá tus frases.
-              </Text>
-
-              {cargandoVoces ? (
-                <View style={styles.modalCargando}>
-                  <ActivityIndicator size="large" color="#356879" />
-                  <Text style={styles.modalCargandoTexto}>Cargando voces...</Text>
-                </View>
-              ) : voces.length === 0 ? (
-                <View style={styles.modalVacio}>
-                  <Text style={styles.modalVacioTexto}>
-                    No se pudieron mostrar las voces.
-                  </Text>
-
-                  <TouchableOpacity
-                    style={styles.reintentarButton}
-                    onPress={abrirConfiguracion}
-                    disabled={guardandoVoz}
-                  >
-                    <Text style={styles.reintentarTexto}>
-                      Intentar nuevamente
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                voces.map((voz) => (
-                  <TouchableOpacity
-                    key={voz.id}
-                    style={[
-                      styles.opcionVoz,
-                      vozSeleccionada === voz.id && styles.opcionVozSeleccionada,
-                    ]}
-                    disabled={guardandoVoz}
-                    activeOpacity={0.75}
-                    onPress={() => guardarVoz(voz.id)}
-                  >
-                    <View style={styles.opcionVozTexto}>
-                      <Text style={styles.nombreVoz}>{voz.nombre}</Text>
-                      <Text style={styles.descripcionVoz}>
-                        {voz.descripcion}
-                      </Text>
-                    </View>
-
-                    {vozSeleccionada === voz.id && (
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={24}
-                        color="#356879"
-                      />
-                    )}
-                  </TouchableOpacity>
-                ))
-              )}
-
-              {guardandoVoz && (
-                <View style={styles.guardandoVoz}>
-                  <ActivityIndicator color="#356879" />
-                  <Text style={styles.guardandoVozTexto}>
-                    Guardando tu elección...
-                  </Text>
-                </View>
-              )}
-            </View>
+            </ScrollView>
           </View>
         </Modal>
 
@@ -780,7 +850,7 @@ export default function Categories() {
                         size={17}
                         color="#356879"
                       />
-                      <Text style={styles.sugerenciaTexto} numberOfLines={1}>
+                      <Text style={[styles.sugerenciaTexto, { fontSize: [11, 12, 15][tamanoTexto] }]} numberOfLines={1}>
                         {sugerencia.palabra}
                       </Text>
                     </TouchableOpacity>
@@ -810,7 +880,7 @@ export default function Categories() {
                       },
                     ]}
                   >
-                    <Text style={styles.categoryText}>{cat.nombre}</Text>
+                    <Text style={[styles.categoryText, { fontSize: [11, 12, 15][tamanoTexto] }]}>{cat.nombre}</Text>
                   </TouchableOpacity>
                 ))}
 
@@ -979,13 +1049,13 @@ export default function Categories() {
                       <TouchableOpacity
                         key={pictogram.id_pictogramas}
                         activeOpacity={0.75}
-                        style={styles.pictogramButton}
+                        style={[styles.pictogramButton, { minHeight: [110, 125, 145][tamanoPictogramas] }]}
                         onPress={() => agregarPictograma(pictogram)}
                       >
                         {pictogram.imagen_url ? (
                           <Image
                             source={{ uri: pictogram.imagen_url }}
-                            style={styles.pictogramImage}
+                            style={[styles.pictogramImage, { width: [58, 75, 92][tamanoPictogramas], height: [58, 75, 92][tamanoPictogramas] }]}
                             resizeMode="contain"
                           />
                         ) : (
@@ -998,7 +1068,7 @@ export default function Categories() {
                           </View>
                         )}
 
-                        <Text style={styles.pictogramText} numberOfLines={2}>
+                        <Text style={[styles.pictogramText, { fontSize: [11, 12, 15][tamanoTexto] }]} numberOfLines={2}>
                           {pictogram.nombre}
                         </Text>
                       </TouchableOpacity>
@@ -1181,6 +1251,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingBottom: 8,
   },
+
+  modalScroll: { width: "100%" },
+  modalScrollContent: { flexGrow: 1, justifyContent: "center", paddingVertical: 18 },
+  cerrarModalButton: { padding: 2 },
+  perfilContainer: { flexDirection: "row", alignItems: "center", padding: 14, borderRadius: 14, backgroundColor: "#F1F6F7", marginBottom: 20 },
+  avatar: { width: 54, height: 54, borderRadius: 27, backgroundColor: "#DCEBED", alignItems: "center", justifyContent: "center", marginRight: 12 },
+  perfilDatos: { flex: 1 },
+  perfilNombre: { color: "#294F5A", fontSize: 16, fontWeight: "700" },
+  perfilEmail: { color: "#718187", fontSize: 12, marginTop: 4 },
+  seccionTitulo: { fontSize: 15, color: "#356879", fontWeight: "700", marginTop: 4, marginBottom: 5 },
+  seccionDescripcion: { fontSize: 12, lineHeight: 17, color: "#718187", marginBottom: 10 },
+  tamanoOpciones: { flexDirection: "row", gap: 8, marginBottom: 18 },
+  tamanoOpcion: { flex: 1, minHeight: 68, alignItems: "center", justifyContent: "center", borderRadius: 12, borderWidth: 1, borderColor: "#D9E2E5", backgroundColor: "#FFFFFF", paddingVertical: 8, paddingHorizontal: 3, gap: 4 },
+  tamanoOpcionActiva: { backgroundColor: "#356879", borderColor: "#356879" },
+  tamanoOpcionTexto: { color: "#5F6B70", fontSize: 10, fontWeight: "600" },
+  tamanoOpcionTextoActiva: { color: "#FFFFFF" },
+  muestraTexto: { color: "#356879", fontWeight: "700" },
+  cerrarSesionButton: { marginTop: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 13, borderRadius: 12, borderWidth: 1, borderColor: "#F0CACA", backgroundColor: "#FFF7F7" },
+  cerrarSesionTexto: { color: "#C94F4F", fontSize: 14, fontWeight: "700" },
 
   modalFondo: {
     flex: 1,

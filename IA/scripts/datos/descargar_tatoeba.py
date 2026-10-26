@@ -1,31 +1,19 @@
-"""
-Descarga las oraciones en español de Tatoeba (https://tatoeba.org, licencia
-CC BY 2.0 FR) y guarda un subconjunto filtrado en
-scripts/datos/externos/tatoeba_es.txt (una oración por línea).
-
-Se usan SOLO para entrenar el corrector (scripts/entrenar_correccion.py):
-aportan variedad de estructuras reales del español (artículos, preposiciones,
-concordancia) que las plantillas de CAA no cubren. No se usan en producción.
-
-Filtros: oraciones de 3 a 14 palabras, sin números, sin nombres propios en el
-medio de la oración (Tatoeba está lleno de "Tom" y "Mary"), sin formas de
-"vosotros" (en Argentina no se usan) y sin caracteres raros.
-
-Uso (desde IA/):  python -I scripts/descargar_tatoeba.py
-"""
-
 import bz2
 import os
 import re
 import urllib.request
 
+# Oraciones en español de Tatoeba (https://tatoeba.org, CC BY 2.0 FR). Solo se
+# usan para entrenar el corrector (más variedad de estructuras); no van a producción.
 URL = "https://downloads.tatoeba.org/exports/per_language/spa/spa_sentences.tsv.bz2"
-AQUI = os.path.dirname(os.path.abspath(__file__))
-DESTINO = os.path.join(AQUI, "datos", "externos")
+AQUI = os.path.dirname(os.path.abspath(__file__))              # IA/scripts/datos
+DESTINO = os.path.join(AQUI, "externos")
 CRUDO = os.path.join(DESTINO, "spa_sentences.tsv.bz2")
-SALIDA = os.path.join(DESTINO, "tatoeba_es.txt")
+SALIDA = os.path.join(DESTINO, "tatoeba_es.txt")     # una oración por línea
 
+# Solo letras y puntuación básica: sin números ni caracteres raros.
 _PERMITIDOS = re.compile(r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ¿?¡!,. ]+$")
+# Formas de "vosotros" (en Argentina no se usan).
 _VOSOTROS = re.compile(
     r"\b(vosotros|vosotras|os|vuestro|vuestra|vuestros|vuestras|\w+áis|\w+éis|\w+aos)\b",
     re.IGNORECASE,
@@ -38,7 +26,8 @@ def oracion_valida(texto):
     palabras = re.findall(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+", texto)
     if not 3 <= len(palabras) <= 14:
         return False
-    # Mayúscula solo al principio o después de un signo de apertura/punto.
+    # Mayúscula solo en la primera palabra: descarta los nombres propios del
+    # medio (Tatoeba está lleno de "Tom" y "Mary").
     for i, p in enumerate(palabras[1:], start=1):
         if p[0].isupper():
             return False
@@ -47,9 +36,10 @@ def oracion_valida(texto):
 
 def main():
     os.makedirs(DESTINO, exist_ok=True)
-    if not os.path.exists(CRUDO):
+    if not os.path.exists(CRUDO):            # el .bz2 se descarga una sola vez
         print(f"Descargando {URL} ...")
         urllib.request.urlretrieve(URL, CRUDO)
+    # Cada línea es id, idioma y texto: se guardan las oraciones válidas sin repetir.
     vistas, total = set(), 0
     with bz2.open(CRUDO, "rt", encoding="utf-8") as f, open(SALIDA, "w", encoding="utf-8") as out:
         for linea in f:
@@ -65,5 +55,6 @@ def main():
     print(f"Oraciones leídas: {total} | guardadas: {len(vistas)} -> {SALIDA}")
 
 
+# Uso (desde IA/): python -I scripts/datos/descargar_tatoeba.py
 if __name__ == "__main__":
     main()

@@ -1,5 +1,13 @@
-fastapi
-uvicorn
-numpy
-spacy>=3.8,<3.9
+fastapi==0.139.0
+starlette==1.3.1
+pydantic==2.13.4
+uvicorn==0.50.2
+numpy==2.4.6             # 2.5 ya no es compatible con Python 3.11 (el de Render)
+spacy==3.8.16
+thinc==8.3.13
+blis==1.3.3
+srsly==2.5.3
+cymem==2.0.13
+murmurhash==1.0.15
+preshed==3.0.13          # 3.0.14 (24/10/2026) rompe spacy.load: OverflowError en el tokenizer
 https://github.com/explosion/spacy-models/releases/download/es_core_news_md-3.8.0/es_core_news_md-3.8.0-py3-none-any.whl
