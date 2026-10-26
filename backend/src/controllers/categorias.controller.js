@@ -1,8 +1,7 @@
-const supabaseAdmin = require("../config/SupabaseAdmin");
-const crypto = require("crypto");
+const supabase = require("../config/Supabase");
 
 const SELECT_CATEGORIA =
-  "id_categorias, nombre, color, id_usuario, es_personalizada, imagen_url";
+  "id_categorias, nombre, color, id_usuario, es_personalizada";
 
 const responderError = (res, status, error) => {
   return res.status(status).json({
@@ -403,124 +402,11 @@ const eliminarCategoria = async (req, res) => {
   }
 };
 
-
-const actualizarImagenCategoria = async (req, res) => {
-  try {
-    const idCategoria = Number(req.params.id_categoria);
-    const idUsuario = Number(req.usuario.id_usuario);
-
-    if (!Number.isSafeInteger(idCategoria) || idCategoria <= 0) {
-      return responderError(res, 400, "ID de categoría inválido");
-    }
-
-    if (!req.file) {
-      return responderError(res, 400, "Debés enviar una imagen");
-    }
-
-    const formatos = {
-      "image/png": "png",
-      "image/jpeg": "jpg",
-      "image/webp": "webp"
-    };
-
-    const extension = formatos[req.file.mimetype];
-
-    if (!extension || req.file.size > 2 * 1024 * 1024) {
-      return responderError(res, 400, "Imagen inválida o mayor a 2 MB");
-    }
-
-    const buffer = req.file.buffer;
-    const esImagenReal =
-      (extension === "png" &&
-        buffer.subarray(0, 8).equals(
-          Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
-        )) ||
-      (extension === "jpg" &&
-        buffer[0] === 0xff &&
-        buffer[1] === 0xd8 &&
-        buffer[2] === 0xff) ||
-      (extension === "webp" &&
-        buffer.toString("ascii", 0, 4) === "RIFF" &&
-        buffer.toString("ascii", 8, 12) === "WEBP");
-
-    if (!esImagenReal) {
-      return responderError(res, 400, "El archivo no es una imagen válida");
-    }
-
-    const { data: categoria, error: buscarError } =
-      await supabaseAdmin
-        .from("categorias")
-        .select("id_categorias, id_usuario, es_personalizada")
-        .eq("id_categorias", idCategoria)
-        .maybeSingle();
-
-    if (buscarError) throw buscarError;
-
-    if (!categoria) {
-      return responderError(res, 404, "Categoría no encontrada");
-    }
-
-    const esAdmin = req.usuario.rol === "admin";
-    const esPropia =
-      categoria.id_usuario !== null &&
-      Number(categoria.id_usuario) === idUsuario;
-
-    const esGeneral =
-      categoria.id_usuario === null &&
-      categoria.es_personalizada === false;
-
-    if (
-      (esGeneral && !esAdmin) ||
-      (!esGeneral && !esPropia && !esAdmin)
-    ) {
-      return responderError(res, 403, "No tenés permiso para modificar esta categoría");
-    }
-
-    const ruta = `categorias/${idCategoria}/${crypto.randomUUID()}.${extension}`;
-
-    const { error: subirError } = await supabaseAdmin.storage
-      .from("categorias-imagenes")
-      .upload(ruta, buffer, {
-        contentType: req.file.mimetype,
-        upsert: false
-      });
-
-    if (subirError) throw subirError;
-
-    const { data: urlData } = supabaseAdmin.storage
-      .from("categorias-imagenes")
-      .getPublicUrl(ruta);
-
-    const { data, error: actualizarError } = await supabaseAdmin
-      .from("categorias")
-      .update({ imagen_url: urlData.publicUrl })
-      .eq("id_categorias", idCategoria)
-      .select(SELECT_CATEGORIA)
-      .single();
-
-    if (actualizarError) {
-      await supabaseAdmin.storage
-        .from("categorias-imagenes")
-        .remove([ruta]);
-
-      throw actualizarError;
-    }
-
-    return res.json({ data, error: null });
-
-  } catch (error) {
-    console.error("Error al actualizar imagen:", error);
-    return responderError(res, 500, "No se pudo actualizar la imagen");
-  }
-};
-
-
 module.exports = {
   obtenerCategorias,
   obtenerCategoriaPorId,
   obtenerMisCategorias,
   crearCategoria,
   actualizarCategoria,
-  eliminarCategoria,
-  actualizarImagenCategoria
+  eliminarCategoria
 };
