@@ -70,14 +70,34 @@ export const register = async (
 // =========================
 
 export const obtenerCategorias = async (token: string) => {
-  const response = await axios.get(
-    `${API_URL}/categorias/mis-categorias`,
-    {
-      headers: getAuthHeaders(token),
-    }
-  );
+  try {
+    const response = await axios.get(
+      `${API_URL}/categorias/mis-categorias`,
+      {
+        headers: getAuthHeaders(token),
+      }
+    );
 
-  return response.data.data;
+    console.log("Categorías recibidas:", response.data);
+
+    return response.data.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      console.log(
+        "Error al cargar categorías:",
+        error.response?.status
+      );
+
+      console.log(
+        "Detalle del error:",
+        JSON.stringify(error.response?.data, null, 2)
+      );
+    } else {
+      console.log("Error inesperado:", error);
+    }
+
+    throw error;
+  }
 };
 
 export const crearCategoria = async (
