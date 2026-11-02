@@ -1,25 +1,40 @@
 
 const supabase = require("../config/Supabase");
 
-// =====================================
-// CONFIGURACION
-// =====================================
+// ======================================
+// CONFIGURACION GENERAL
+// ======================================
 
-const obtenerUrlIA = () =>
-  (process.env.IA_API_URL || "https://speakup-ia.onrender.com")
-    .replace(/\/+$/, "");
+const obtenerUrlIA = () => {
+  return (
+    process.env.IA_API_URL ||
+    "https://speakup-ia.onrender.com"
+  ).replace(/\/+$/, "");
+};
 
-const responderOk = (res, data) =>
-  res.json({ data, error: null });
+const responderOk = (res, data) => {
+  return res.json({
+    data,
+    error: null
+  });
+};
 
 const responderError = (res, status, mensaje, detalle) => {
-  const respuesta = { data: null, error: mensaje };
-  if (detalle !== undefined) respuesta.detalle = detalle;
+  const respuesta = {
+    data: null,
+    error: mensaje
+  };
+
+  if (detalle !== undefined) {
+    respuesta.detalle = detalle;
+  }
+
   return res.status(status).json(respuesta);
 };
 
 const leerRespuestaIA = async (respuesta) => {
   const texto = await respuesta.text();
+
   try {
     return JSON.parse(texto);
   } catch {
@@ -27,36 +42,278 @@ const leerRespuestaIA = async (respuesta) => {
   }
 };
 
+// ======================================
+// NORMALIZACION
+// ======================================
+
 const normalizarPalabras = (entrada) => {
   if (typeof entrada === "string") {
     return entrada.trim().split(/\s+/).filter(Boolean);
   }
 
-  if (!Array.isArray(entrada)) return [];
+  if (!Array.isArray(entrada)) {
+    return [];
+  }
 
   return entrada
-    .filter((v) => typeof v === "string")
-    .flatMap((v) => v.trim().split(/\s+/))
+    .filter((valor) => typeof valor === "string")
+    .flatMap((valor) => valor.trim().split(/\s+/))
     .filter(Boolean);
 };
 
-const obtenerUltimasTresPalabras = (palabras) =>
-  normalizarPalabras(palabras).slice(-3);
+const obtenerUltimasTresPalabras = (palabras) => {
+  return normalizarPalabras(palabras).slice(-3);
+};
 
-const normalizarBusqueda = (valor) =>
-  String(valor || "")
+const normalizarBusqueda = (valor) => {
+  return String(valor || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ");
+};
+
+// ======================================
+// VERBOS EN INFINITIVO
+// ======================================
+
+// Diccionario inicial del MVP.
+// Agregar aqui nuevas conjugaciones cuando sea necesario.
+// No se cambia lo que muestra el frontend.
+
+const VERBOS_BASE = {
+  // TENER
+  tengo: "tener",
+  tienes: "tener",
+  tiene: "tener",
+  tenemos: "tener",
+  tienen: "tener",
+  tenia: "tener",
+  tenias: "tener",
+  teniamos: "tener",
+  tenian: "tener",
+  tendre: "tener",
+  tendra: "tener",
+
+  // QUERER
+  quiero: "querer",
+  quieres: "querer",
+  quiere: "querer",
+  queremos: "querer",
+  quieren: "querer",
+  queria: "querer",
+  querias: "querer",
+  queriamos: "querer",
+  querian: "querer",
+
+  // NECESITAR
+  necesito: "necesitar",
+  necesitas: "necesitar",
+  necesita: "necesitar",
+  necesitamos: "necesitar",
+  necesitan: "necesitar",
+  necesitaba: "necesitar",
+  necesitaban: "necesitar",
+
+  // GUSTAR
+  gusto: "gustar",
+  gustas: "gustar",
+  gusta: "gustar",
+  gustamos: "gustar",
+  gustan: "gustar",
+  gustaba: "gustar",
+  gustaban: "gustar",
+  gustaria: "gustar",
+  gustarian: "gustar",
+  gustara: "gustar",
+  gustaran: "gustar",
+  gustaron: "gustar",
+  gusto: "gustar",
+
+  // IR
+  voy: "ir",
+  vas: "ir",
+  va: "ir",
+  vamos: "ir",
+  van: "ir",
+  iba: "ir",
+  ibas: "ir",
+  ibamos: "ir",
+  iban: "ir",
+  fui: "ir",
+  fueron: "ir",
+  ire: "ir",
+  iremos: "ir",
+
+  // ESTAR
+  estoy: "estar",
+  estas: "estar",
+  esta: "estar",
+  estamos: "estar",
+  estan: "estar",
+  estaba: "estar",
+  estaban: "estar",
+  estuve: "estar",
+
+  // PODER
+  puedo: "poder",
+  puedes: "poder",
+  puede: "poder",
+  podemos: "poder",
+  pueden: "poder",
+  podia: "poder",
+  podian: "poder",
+  podre: "poder",
+
+  // HACER
+  hago: "hacer",
+  haces: "hacer",
+  hace: "hacer",
+  hacemos: "hacer",
+  hacen: "hacer",
+  hacia: "hacer",
+  hicieron: "hacer",
+  hice: "hacer",
+
+  // COMER
+  como: "comer",
+  comes: "comer",
+  come: "comer",
+  comemos: "comer",
+  comen: "comer",
+  comia: "comer",
+  comieron: "comer",
+
+  // BEBER
+  bebo: "beber",
+  bebes: "beber",
+  bebe: "beber",
+  bebemos: "beber",
+  beben: "beber",
+  bebia: "beber",
+
+  // JUGAR
+  juego: "jugar",
+  juegas: "jugar",
+  juega: "jugar",
+  jugamos: "jugar",
+  juegan: "jugar",
+  jugaba: "jugar",
+  jugaron: "jugar",
+
+  // SENTIR
+  siento: "sentir",
+  sientes: "sentir",
+  siente: "sentir",
+  sentimos: "sentir",
+  sienten: "sentir",
+  sentia: "sentir",
+
+  // HABLAR
+  hablo: "hablar",
+  hablas: "hablar",
+  habla: "hablar",
+  hablamos: "hablar",
+  hablan: "hablar",
+
+  // TRABAJAR
+  trabajo: "trabajar",
+  trabajas: "trabajar",
+  trabaja: "trabajar",
+  trabajamos: "trabajar",
+  trabajan: "trabajar",
+
+  // DORMIR
+  duermo: "dormir",
+  duermes: "dormir",
+  duerme: "dormir",
+  dormimos: "dormir",
+  duermen: "dormir",
+
+  // VER
+  veo: "ver",
+  ves: "ver",
+  ve: "ver",
+  vemos: "ver",
+  ven: "ver",
+
+  // SABER
+  se: "saber",
+  sabes: "saber",
+  sabe: "saber",
+  sabemos: "saber",
+  saben: "saber"
+};
+
+// Algunas formas son ambiguas:
+// "como" puede ser verbo o conector.
+// "esta" puede ser verbo o demostrativo.
+// "se" puede ser verbo o pronombre.
+//
+// No aplicamos infinitivo automaticamente en esos casos.
+
+const FORMAS_AMBIGUAS = new Set([
+  "como",
+  "esta",
+  "se",
+  "ve",
+  "ven",
+  "gusto",
+  "trabajo",
+  "hablo"
+]);
+
+const obtenerPalabraBase = (palabra) => {
+  const normalizada = normalizarBusqueda(palabra);
+
+  if (FORMAS_AMBIGUAS.has(normalizada)) {
+    return null;
+  }
+
+  return VERBOS_BASE[normalizada] || null;
+};
+
+// Evitar pictogramas externos equivocados
+// en palabras cuya funcion es principalmente gramatical.
+
+const PALABRAS_FUNCIONALES = new Set([
+  "porque",
+  "por que",
+  "para",
+  "de",
+  "del",
+  "a",
+  "al",
+  "que",
+  "y",
+  "o",
+  "el",
+  "la",
+  "los",
+  "las",
+  "un",
+  "una",
+  "en",
+  "con",
+  "sin",
+  "mi",
+  "tu",
+  "su"
+]);
+
+// ======================================
+// CONEXION CON LA IA DE RENDER
+// ======================================
 
 const consultarIA = async (endpoint, payload) => {
   const respuesta = await fetch(
     `${obtenerUrlIA()}${endpoint}`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json"
+      },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(60000)
     }
@@ -69,9 +326,9 @@ const consultarIA = async (endpoint, payload) => {
   };
 };
 
-// =====================================
+// ======================================
 // HISTORIAL
-// =====================================
+// ======================================
 
 const guardarHistorialIA = async (
   id_usuario,
@@ -88,6 +345,7 @@ const guardarHistorialIA = async (
       sugerencia,
       origen
     }]),
+
     supabase.from("historial_uso").insert([{
       id_usuario,
       accion,
@@ -95,73 +353,96 @@ const guardarHistorialIA = async (
     }])
   ]);
 
-  for (const r of resultados) {
-    if (r.status === "rejected") {
-      console.error("Error historial IA:", r.reason);
-    } else if (r.value.error) {
-      console.error("Error historial IA:", r.value.error.message);
+  for (const resultado of resultados) {
+    if (resultado.status === "rejected") {
+      console.error(
+        "Error guardando historial IA:",
+        resultado.reason
+      );
+    } else if (resultado.value.error) {
+      console.error(
+        "Error guardando historial IA:",
+        resultado.value.error.message
+      );
     }
   }
 };
 
-// =====================================
-// BUSQUEDA DE PICTOGRAMAS
-// =====================================
+// ======================================
+// BUSCAR PICTOGRAMAS EN SUPABASE
+// ======================================
 
-// Consulta nuestro catalogo general.
-// No devuelve pictogramas personalizados de otros usuarios.
 const buscarPictogramasLocales = async (palabra) => {
-  const { data, error } = await supabase
-    .from("pictogramas")
-    .select("id_pictogramas, nombre, imagen_url")
-    .eq("es_personalizado", false)
-    .not("imagen_url", "is", null)
-    .ilike("nombre", palabra.trim())
-    .limit(20);
+  try {
+    const { data, error } = await supabase
+      .from("pictogramas")
+      .select("id_pictogramas, nombre, imagen_url")
+      .eq("es_personalizado", false)
+      .ilike("nombre", palabra.trim())
+      .not("imagen_url", "is", null)
+      .limit(20);
 
-  if (error) {
-    console.error("Error pictogramas Supabase:", error.message);
+    if (error) {
+      console.error("Error Supabase:", error.message);
+      return [];
+    }
+
+    return (data || [])
+      .filter(
+        (p) =>
+          normalizarBusqueda(p.nombre) ===
+          normalizarBusqueda(palabra)
+      )
+      .map((p) => ({
+        id: `local-${p.id_pictogramas}`,
+        id_pictograma: p.id_pictogramas,
+        palabra: p.nombre,
+        imagen_url: p.imagen_url,
+        origen_imagen: "supabase",
+        coincidencia_exacta: true
+      }));
+
+  } catch (error) {
+    console.error("Error busqueda local:", error);
     return [];
   }
-
-  return (data || [])
-    .filter(
-      (p) =>
-        normalizarBusqueda(p.nombre) ===
-        normalizarBusqueda(palabra)
-    )
-    .map((p) => ({
-      id: `local-${p.id_pictogramas}`,
-      id_pictograma: p.id_pictogramas,
-      palabra: p.nombre,
-      imagen_url: p.imagen_url,
-      origen_imagen: "supabase"
-    }));
 };
 
-// Los pictogramas ARASAAC se consultan sin modificar
-// nuestro catalogo de Supabase.
+// ======================================
+// BUSCAR PICTOGRAMAS EN ARASAAC
+// ======================================
+
 const buscarPictogramasArasaac = async (
   palabra,
   limite = 8
 ) => {
   try {
     const termino = String(palabra || "").trim();
-    if (!termino) return [];
+
+    if (!termino) {
+      return [];
+    }
 
     const url =
       "https://api.arasaac.org/v1/pictograms/es/bestsearch/" +
       encodeURIComponent(termino);
 
     const respuesta = await fetch(url, {
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json"
+      },
       signal: AbortSignal.timeout(5000)
     });
 
-    if (!respuesta.ok) return [];
+    if (!respuesta.ok) {
+      return [];
+    }
 
     const resultados = await respuesta.json();
-    if (!Array.isArray(resultados)) return [];
+
+    if (!Array.isArray(resultados)) {
+      return [];
+    }
 
     const vistos = new Set();
     const pictogramas = [];
@@ -169,8 +450,13 @@ const buscarPictogramasArasaac = async (
     for (const item of resultados) {
       const id = Number(item._id);
 
-      if (!Number.isSafeInteger(id) || id <= 0) continue;
-      if (vistos.has(id)) continue;
+      if (
+        !Number.isSafeInteger(id) ||
+        id <= 0 ||
+        vistos.has(id)
+      ) {
+        continue;
+      }
 
       vistos.add(id);
 
@@ -181,8 +467,8 @@ const buscarPictogramasArasaac = async (
         : [];
 
       const coincidenciaExacta = palabrasClave.some(
-        (k) =>
-          normalizarBusqueda(k) ===
+        (keyword) =>
+          normalizarBusqueda(keyword) ===
           normalizarBusqueda(termino)
       );
 
@@ -196,25 +482,26 @@ const buscarPictogramasArasaac = async (
         coincidencia_exacta: coincidenciaExacta,
         palabras_clave: palabrasClave.slice(0, 8)
       });
-
-      if (pictogramas.length >= limite) break;
     }
 
-    // Mostrar primero las coincidencias exactas.
-    return pictogramas.sort(
-      (a, b) =>
-        Number(b.coincidencia_exacta) -
-        Number(a.coincidencia_exacta)
-    );
+    return pictogramas
+      .sort(
+        (a, b) =>
+          Number(b.coincidencia_exacta) -
+          Number(a.coincidencia_exacta)
+      )
+      .slice(0, limite);
 
   } catch (error) {
-    console.error("Error consultando ARASAAC:", error.message);
+    console.error("Error ARASAAC:", error.message);
     return [];
   }
 };
 
-// Busca en ambas fuentes.
-// El buscador manual devuelve varias alternativas.
+// ======================================
+// BUSQUEDA GENERAL
+// ======================================
+
 const obtenerOpcionesPictogramas = async (
   palabra,
   limite = 8
@@ -231,8 +518,76 @@ const obtenerOpcionesPictogramas = async (
   };
 };
 
-// Para las sugerencias automaticas, preferimos
-// imagen local y luego una coincidencia exacta de ARASAAC.
+// ======================================
+// ELEGIR UNA IMAGEN PARA UNA PALABRA
+// ======================================
+
+// Primero usamos la palabra original.
+// Luego, si no encontramos imagen, su infinitivo.
+
+const buscarImagenParaPalabra = async (palabra) => {
+  const busquedaOriginal =
+    await obtenerOpcionesPictogramas(palabra, 8);
+
+  // Preferencia 1: pictograma propio.
+  const local = busquedaOriginal.locales[0];
+
+  if (local) {
+    return {
+      ...local,
+      palabra_base: palabra
+    };
+  }
+
+  // Preferencia 2: coincidencia exacta de ARASAAC.
+  const funcional = PALABRAS_FUNCIONALES.has(
+    normalizarBusqueda(palabra)
+  );
+
+  if (!funcional) {
+    const externaExacta =
+      busquedaOriginal.externos.find(
+        (p) => p.coincidencia_exacta
+      );
+
+    if (externaExacta) {
+      return {
+        ...externaExacta,
+        palabra_base: palabra
+      };
+    }
+  }
+
+  // Preferencia 3: buscar por infinitivo.
+  const palabraBase = obtenerPalabraBase(palabra);
+
+  if (palabraBase) {
+    const busquedaBase =
+      await obtenerOpcionesPictogramas(palabraBase, 8);
+
+    const localBase = busquedaBase.locales[0];
+
+    const externaBase = busquedaBase.externos.find(
+      (p) => p.coincidencia_exacta
+    );
+
+    const elegida = localBase || externaBase;
+
+    if (elegida) {
+      return {
+        ...elegida,
+        palabra_base: palabraBase
+      };
+    }
+  }
+
+  return null;
+};
+
+// ======================================
+// AGREGAR IMAGENES A PREDICCIONES
+// ======================================
+
 const agregarImagenesPredicciones = async (predicciones) => {
   if (!Array.isArray(predicciones)) {
     return predicciones;
@@ -248,44 +603,47 @@ const agregarImagenesPredicciones = async (predicciones) => {
       }
 
       try {
-        const busqueda = await obtenerOpcionesPictogramas(
-          prediccion.palabra,
-          5
+        const imagen = await buscarImagenParaPalabra(
+          prediccion.palabra
         );
-
-        const local = busqueda.locales[0];
-
-        const externoExacto = busqueda.externos.find(
-          (p) => p.coincidencia_exacta
-        );
-
-        const elegido = local || externoExacto || null;
 
         return {
           ...prediccion,
-          imagen_url: elegido?.imagen_url || null,
+
+          imagen_url: imagen?.imagen_url || null,
+
           origen_imagen:
-            elegido?.origen_imagen || "sin_imagen",
-          id_arasaac: elegido?.id_arasaac || null
+            imagen?.origen_imagen || "sin_imagen",
+
+          id_arasaac: imagen?.id_arasaac || null,
+
+          palabra_base:
+            imagen?.palabra_base ||
+            obtenerPalabraBase(prediccion.palabra) ||
+            prediccion.palabra
         };
 
       } catch (error) {
-        console.error("Error imagen prediccion:", error);
+        console.error(
+          "Error imagen prediccion:",
+          error
+        );
 
         return {
           ...prediccion,
           imagen_url: null,
           origen_imagen: "sin_imagen",
-          id_arasaac: null
+          id_arasaac: null,
+          palabra_base: prediccion.palabra
         };
       }
     })
   );
 };
 
-// =====================================
-// GET /ia/buscar-pictogramas?palabra=...
-// =====================================
+// ======================================
+// GET /ia/buscar-pictogramas
+// ======================================
 
 const buscarPictogramasIA = async (req, res) => {
   try {
@@ -297,41 +655,73 @@ const buscarPictogramasIA = async (req, res) => {
       return responderError(
         res,
         400,
-        "Enviá una palabra de hasta 80 caracteres"
+        "Envia una palabra de hasta 80 caracteres"
       );
     }
 
-    const busqueda = await obtenerOpcionesPictogramas(
-      palabra,
-      10
+    const busqueda =
+      await obtenerOpcionesPictogramas(palabra, 10);
+
+    // Si no hay imagenes exactas, ofrecer
+    // busqueda por infinitivo.
+
+    const palabraBase = obtenerPalabraBase(palabra);
+
+    let opciones = busqueda.opciones;
+    let terminoAlternativo = null;
+
+    const hayCoincidencia = opciones.some(
+      (p) =>
+        p.origen_imagen === "supabase" ||
+        p.coincidencia_exacta === true
     );
+
+    if (!hayCoincidencia && palabraBase) {
+      const alternativa =
+        await obtenerOpcionesPictogramas(
+          palabraBase,
+          10
+        );
+
+      opciones = alternativa.opciones.map((p) => ({
+        ...p,
+        palabra,
+        palabra_base: palabraBase
+      }));
+
+      terminoAlternativo = palabraBase;
+    }
 
     return responderOk(res, {
       palabra,
-      total: busqueda.opciones.length,
-      pictogramas: busqueda.opciones
+      palabra_base: palabraBase,
+      termino_alternativo: terminoAlternativo,
+      total: opciones.length,
+      pictogramas: opciones
     });
 
   } catch (error) {
-    console.error("Error buscador de pictogramas:", error);
+    console.error("Error buscador pictogramas:", error);
 
     return responderError(
       res,
       502,
-      "No se pudo completar la busqueda de pictogramas"
+      "No se pudo completar la busqueda"
     );
   }
 };
 
-// =====================================
+// ======================================
 // GET /ia/ping
-// =====================================
+// ======================================
 
 const pingIA = async (req, res) => {
   try {
     const respuesta = await fetch(
       `${obtenerUrlIA()}/ping`,
-      { signal: AbortSignal.timeout(60000) }
+      {
+        signal: AbortSignal.timeout(60000)
+      }
     );
 
     const data = await leerRespuestaIA(respuesta);
@@ -358,9 +748,9 @@ const pingIA = async (req, res) => {
   }
 };
 
-// =====================================
+// ======================================
 // POST /ia/predecir
-// =====================================
+// ======================================
 
 const predecirSiguientePalabra = async (req, res) => {
   try {
@@ -377,7 +767,9 @@ const predecirSiguientePalabra = async (req, res) => {
 
     if (!ultimasTres.length) {
       return responderError(
-        res, 400, "Tenes que enviar al menos una palabra"
+        res,
+        400,
+        "Tenes que enviar al menos una palabra"
       );
     }
 
@@ -393,13 +785,17 @@ const predecirSiguientePalabra = async (req, res) => {
 
     if (!resultado.ok) {
       return responderError(
-        res, 502, "Error al consultar prediccion de IA",
+        res,
+        502,
+        "Error al consultar prediccion de IA",
         resultado.data
       );
     }
 
     const prediccionesConImagenes =
-      await agregarImagenesPredicciones(resultado.data);
+      await agregarImagenesPredicciones(
+        resultado.data
+      );
 
     await guardarHistorialIA(
       id_usuario,
@@ -419,14 +815,16 @@ const predecirSiguientePalabra = async (req, res) => {
     console.error("Error predecir IA:", error);
 
     return responderError(
-      res, 502, "No se pudo completar la prediccion de IA"
+      res,
+      502,
+      "No se pudo completar la prediccion"
     );
   }
 };
 
-// =====================================
+// ======================================
 // POST /ia/corregir
-// =====================================
+// ======================================
 
 const corregirFrase = async (req, res) => {
   try {
@@ -435,7 +833,9 @@ const corregirFrase = async (req, res) => {
 
     if (!Array.isArray(palabras)) {
       return responderError(
-        res, 400, "Tenes que enviar palabras como array"
+        res,
+        400,
+        "Tenes que enviar palabras como array"
       );
     }
 
@@ -443,11 +843,15 @@ const corregirFrase = async (req, res) => {
 
     if (!normalizadas.length) {
       return responderError(
-        res, 400, "Tenes que enviar palabras como array"
+        res,
+        400,
+        "Tenes que enviar palabras como array"
       );
     }
 
-    const payloadIA = { palabras: normalizadas };
+    const payloadIA = {
+      palabras: normalizadas
+    };
 
     const resultado = await consultarIA(
       "/corregir",
@@ -456,7 +860,9 @@ const corregirFrase = async (req, res) => {
 
     if (!resultado.ok) {
       return responderError(
-        res, 502, "Error al corregir frase con IA",
+        res,
+        502,
+        "Error al corregir frase con IA",
         resultado.data
       );
     }
@@ -485,14 +891,16 @@ const corregirFrase = async (req, res) => {
     console.error("Error corregir IA:", error);
 
     return responderError(
-      res, 502, "No se pudo completar la correccion de IA"
+      res,
+      502,
+      "No se pudo completar la correccion"
     );
   }
 };
 
-// =====================================
+// ======================================
 // POST /ia/procesar-frase
-// =====================================
+// ======================================
 
 const procesarFraseConIA = async (req, res) => {
   try {
@@ -501,7 +909,9 @@ const procesarFraseConIA = async (req, res) => {
 
     if (!Array.isArray(palabras)) {
       return responderError(
-        res, 400, "Tenes que enviar palabras como array"
+        res,
+        400,
+        "Tenes que enviar palabras como array"
       );
     }
 
@@ -509,14 +919,16 @@ const procesarFraseConIA = async (req, res) => {
 
     if (!normalizadas.length) {
       return responderError(
-        res, 400, "No hay palabras validas para procesar"
+        res,
+        400,
+        "No hay palabras validas para procesar"
       );
     }
 
     const categoriaFinal =
       categoria ? String(categoria) : "general";
 
-    // 1. Corregir
+    // 1. Corregir la frase completa
     const resultadoCorregir = await consultarIA(
       "/corregir",
       { palabras: normalizadas }
@@ -524,7 +936,9 @@ const procesarFraseConIA = async (req, res) => {
 
     if (!resultadoCorregir.ok) {
       return responderError(
-        res, 502, "Error al corregir frase con IA",
+        res,
+        502,
+        "Error al corregir frase con IA",
         resultadoCorregir.data
       );
     }
@@ -534,7 +948,7 @@ const procesarFraseConIA = async (req, res) => {
         ? resultadoCorregir.data.frase
         : normalizadas.join(" ");
 
-    // 2. Predecir
+    // 2. Predecir con las ultimas tres palabras
     const ultimasTres =
       obtenerUltimasTresPalabras(normalizadas);
 
@@ -550,13 +964,14 @@ const procesarFraseConIA = async (req, res) => {
 
     if (!resultadoPredecir.ok) {
       return responderError(
-        res, 502,
+        res,
+        502,
         "Error al predecir siguiente palabra con IA",
         resultadoPredecir.data
       );
     }
 
-    // 3. Buscar imagenes
+    // 3. Buscar las imagenes correspondientes
     const prediccionesConImagenes =
       await agregarImagenesPredicciones(
         resultadoPredecir.data
@@ -575,28 +990,32 @@ const procesarFraseConIA = async (req, res) => {
       `Frase procesada con IA: ${fraseCorregida}`
     );
 
-    // 5. Responder al frontend
+    // 5. Enviar respuesta al frontend
     return responderOk(res, {
       frase_original: normalizadas,
       categoria: categoriaFinal,
       frase_corregida: fraseCorregida,
+
       palabra_base_prediccion:
         ultimasTres[ultimasTres.length - 1],
+
       predicciones: prediccionesConImagenes
     });
 
   } catch (error) {
-    console.error("Error procesar frase IA:", error);
+    console.error("Error procesar frase:", error);
 
     return responderError(
-      res, 502, "No se pudo procesar la frase con IA"
+      res,
+      502,
+      "No se pudo procesar la frase con IA"
     );
   }
 };
 
-// =====================================
-// EXPORTS
-// =====================================
+// ======================================
+// EXPORTACIONES
+// ======================================
 
 module.exports = {
   pingIA,
