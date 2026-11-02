@@ -5,7 +5,8 @@ const {
   pingIA,
   predecirSiguientePalabra,
   corregirFrase,
-  procesarFraseConIA
+  procesarFraseConIA,
+  buscarPictogramasIA
 } = require("../controllers/ia.controller");
 
 const verificarToken = require("../middlewares/auth.middleware");
@@ -15,5 +16,6 @@ router.get("/ping", pingIA);
 router.post("/predecir", verificarToken, predecirSiguientePalabra);
 router.post("/corregir", verificarToken, corregirFrase);
 router.post("/procesar-frase", verificarToken, procesarFraseConIA);
+router.get("/buscar-pictogramas", verificarToken, buscarPictogramasIA);
 
 module.exports = router;
