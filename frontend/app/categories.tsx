@@ -880,7 +880,31 @@ export default function Categories() {
                       },
                     ]}
                   >
-                    <Text style={[styles.categoryText, { fontSize: [11, 12, 15][tamanoTexto] }]}>{cat.nombre}</Text>
+                    {cat.imagen_url ? (
+                      <Image
+                        source={{ uri: cat.imagen_url }}
+                        style={styles.categoryImage}
+                        resizeMode="contain"
+                      />
+                    ) : (
+                      <View style={styles.categoryImagePlaceholder}>
+                        <Ionicons
+                          name="image-outline"
+                          size={30}
+                          color="#AAB7BC"
+                        />
+                      </View>
+                    )}
+
+                    <Text
+                      style={[
+                        styles.categoryText,
+                        { fontSize: [11, 12, 15][tamanoTexto] },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {cat.nombre}
+                    </Text>
                   </TouchableOpacity>
                 ))}
 
@@ -1372,6 +1396,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 2,
     elevation: 2,
+  },
+  categoryImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    marginBottom: 5,
+  },
+  categoryImagePlaceholder: {
+    width: 48,
+    height: 48,
+    marginBottom: 5,
+    justifyContent: "center",
+    alignItems: "center",
   },
   categoryText: {
     fontSize: 12,
