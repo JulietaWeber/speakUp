@@ -1,4 +1,5 @@
 
+const crypto = require("crypto");
 const supabase = require("../config/SupabaseAdmin");
 
 const {
@@ -6,6 +7,9 @@ const {
   obtenerVoiceIdPorVoz,
   VOZ_DEFAULT
 } = require("../config/voces");
+
+const BUCKET = "audios";
+const DURACION_URL = 15 * 60;
 
 const SELECT_AUDIO = `
   id_audio,
@@ -17,7 +21,7 @@ const SELECT_AUDIO = `
 `;
 
 // =====================================
-// HELPERS
+// RESPUESTAS Y VALIDACIONES
 // =====================================
 
 const responderOk = (res, data, status = 200) =>
@@ -43,35 +47,25 @@ const errorInterno = (res, error) => {
 };
 
 const normalizarTexto = (texto) =>
-  typeof texto === "string" ? texto.trim() : "";
+  typeof texto === "string"
+    ? texto.trim()
+    : "";
 
 const idValido = (valor) => {
+  if (
+    valor === null ||
+    valor === undefined ||
+    valor === ""
+  ) {
+    return false;
+  }
+
   const numero = Number(valor);
 
   return (
-    valor !== null &&
-    valor !== undefined &&
-    valor !== "" &&
     Number.isSafeInteger(numero) &&
     numero > 0
   );
-};
-
-const registrarHistorial = async (
-  id_usuario,
-  accion,
-  detalle
-) => {
-  const { error } = await supabase
-    .from("historial_uso")
-    .insert([{ id_usuario, accion, detalle }]);
-
-  if (error) {
-    console.error(
-      "Error registrando historial de audio:",
-      error.message
-    );
-  }
 };
 
 // =====================================
@@ -107,7 +101,8 @@ const obtenerFrasePropia = async (
   }
 
   if (
-    Number(frase.id_usuario) !== Number(id_usuario)
+    Number(frase.id_usuario) !==
+    Number(id_usuario)
   ) {
     return {
       frase: null,
@@ -124,11 +119,11 @@ const obtenerFrasePropia = async (
 };
 
 // =====================================
-// USUARIO Y VOZ PREFERIDA
+// VOZ PREFERIDA
 // =====================================
 
 const obtenerUsuarioConVoz = async (id_usuario) => {
-  const { data: usuario, error } = await supabase
+  const { data, error } = await supabase
     .from("usuarios")
     .select("id_usuario, voz_preferida")
     .eq("id_usuario", id_usuario)
@@ -136,7 +131,299 @@ const obtenerUsuarioConVoz = async (id_usuario) => {
 
   if (error) throw error;
 
-  return usuario;
+  return data;
+};
+
+// =====================================
+// STORAGE: IDENTIFICAR ARCHIVOS
+// =====================================
+
+// Reconoce las URLs públicas antiguas de
+// Supabase y obtiene la ruta del archivo.
+//
+// Ejemplo:
+// https://...supabase.co/storage/v1/object/public/
+// audios/6/audio-6-294-123.mp3
+//
+// Resultado:
+// 6/audio-6-294-123.mp3
+
+const obtenerRutaStorage = (audio_url) => {
+  if (
+    typeof audio_url !== "string" ||
+    !audio_url.trim()
+  ) {
+    return null;
+  }
+
+  try {
+    const url = new URL(audio_url);
+    const supabaseUrl = new URL(
+      process.env.SUPABASE_URL
+    );
+
+    // No interpretar URLs de otros servidores
+    // como archivos de nuestro Storage.
+    if (url.origin !== supabaseUrl.origin) {
+      return null;
+    }
+
+    const prefijos = [
+      `/storage/v1/object/public/${BUCKET}/`,
+      `/storage/v1/object/sign/${BUCKET}/`,
+      `/storage/v1/object/authenticated/${BUCKET}/`
+    ];
+
+    const prefijo = prefijos.find((p) =>
+      url.pathname.startsWith(p)
+    );
+
+    if (!prefijo) return null;
+
+    const ruta = decodeURIComponent(
+      url.pathname.slice(prefijo.length)
+    );
+
+    if (
+      !ruta ||
+      ruta.startsWith("/") ||
+      ruta.includes("\\") ||
+      ruta.split("/").some(
+        (parte) =>
+          parte === "" ||
+          parte === "." ||
+          parte === ".."
+      )
+    ) {
+      return null;
+    }
+
+    return ruta;
+
+  } catch {
+    return null;
+  }
+};
+
+// =====================================
+// STORAGE: URL FIRMADA
+// =====================================
+
+const generarUrlFirmada = async (
+  rutaArchivo,
+  id_usuario
+) => {
+  // Los audios creados por el backend se
+  // guardan dentro de la carpeta del usuario.
+  const carpetaUsuario = `${id_usuario}/`;
+
+  if (
+    !rutaArchivo.startsWith(carpetaUsuario)
+  ) {
+    throw new Error(
+      "La ruta del audio no pertenece al usuario"
+    );
+  }
+
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(
+      rutaArchivo,
+      DURACION_URL
+    );
+
+  if (error) throw error;
+
+  if (!data?.signedUrl) {
+    throw new Error(
+      "No se pudo generar la URL firmada"
+    );
+  }
+
+  return data.signedUrl;
+};
+
+// Sustituye la URL pública guardada en DB
+// por una URL firmada para la respuesta.
+//
+// No modifica el registro en PostgreSQL.
+
+const prepararAudioParaRespuesta = async (
+  audio,
+  id_usuario
+) => {
+  const ruta = obtenerRutaStorage(
+    audio.audio_url
+  );
+
+  if (ruta) {
+    const audio_url = await generarUrlFirmada(
+      ruta,
+      id_usuario
+    );
+
+    return {
+      ...audio,
+      audio_url
+    };
+  }
+
+  // Si es una URL del bucket de audios pero
+  // no pudo interpretarse, NO la exponemos.
+  try {
+    const url = new URL(audio.audio_url);
+    const supabaseUrl = new URL(
+      process.env.SUPABASE_URL
+    );
+
+    if (
+      url.origin === supabaseUrl.origin &&
+      url.pathname.includes(
+        `/storage/v1/object/`
+      )
+    ) {
+      throw new Error(
+        "URL de Storage no reconocida"
+      );
+    }
+  } catch (error) {
+    if (
+      error.message ===
+      "URL de Storage no reconocida"
+    ) {
+      throw error;
+    }
+
+    // Un valor no reconocido no debe exponerse
+    // como una dirección de Storage privada.
+    if (audio.origen === "elevenlabs") {
+      throw new Error(
+        "URL de audio ElevenLabs inválida"
+      );
+    }
+  }
+
+  // Compatibilidad con audios manuales
+  // alojados fuera de nuestro bucket.
+  return audio;
+};
+
+const prepararListaAudios = async (
+  audios,
+  id_usuario
+) =>
+  Promise.all(
+    (audios || []).map((audio) =>
+      prepararAudioParaRespuesta(
+        audio,
+        id_usuario
+      )
+    )
+  );
+
+// =====================================
+// STORAGE: SUBIR ARCHIVO
+// =====================================
+
+const subirAudioStorage = async ({
+  audioBuffer,
+  id_usuario,
+  id_frase
+}) => {
+  const nombreArchivo =
+    `audio-${id_usuario}-${id_frase}-` +
+    `${crypto.randomUUID()}.mp3`;
+
+  const rutaArchivo =
+    `${id_usuario}/${nombreArchivo}`;
+
+  const { error: uploadError } =
+    await supabase.storage
+      .from(BUCKET)
+      .upload(
+        rutaArchivo,
+        audioBuffer,
+        {
+          contentType: "audio/mpeg",
+          upsert: false
+        }
+      );
+
+  if (uploadError) throw uploadError;
+
+  // Generamos primero la URL firmada.
+  // Si falla, limpiamos el archivo nuevo.
+  let urlFirmada;
+
+  try {
+    urlFirmada = await generarUrlFirmada(
+      rutaArchivo,
+      id_usuario
+    );
+  } catch (error) {
+    await eliminarArchivoStorage(
+      rutaArchivo
+    );
+
+    throw error;
+  }
+
+  // Conservamos el formato de URL pública
+  // únicamente como referencia interna en DB.
+  // No se envía al frontend.
+  const { data: urlData } = supabase.storage
+    .from(BUCKET)
+    .getPublicUrl(rutaArchivo);
+
+  return {
+    rutaArchivo,
+    urlGuardada: urlData.publicUrl,
+    urlFirmada
+  };
+};
+
+const eliminarArchivoStorage = async (
+  rutaArchivo
+) => {
+  if (!rutaArchivo) return;
+
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .remove([rutaArchivo]);
+
+  if (error) {
+    console.error(
+      "Error limpiando archivo de audio:",
+      error.message
+    );
+  }
+};
+
+// =====================================
+// HISTORIAL
+// =====================================
+
+const registrarHistorial = async (
+  id_usuario,
+  accion,
+  detalle
+) => {
+  const { error } = await supabase
+    .from("historial_uso")
+    .insert([
+      {
+        id_usuario,
+        accion,
+        detalle
+      }
+    ]);
+
+  if (error) {
+    console.error(
+      "Error registrando historial:",
+      error.message
+    );
+  }
 };
 
 // =====================================
@@ -147,7 +434,8 @@ const generarAudioElevenLabs = async (
   texto,
   voiceId
 ) => {
-  const apiKey = process.env.ELEVENLABS_API_KEY;
+  const apiKey =
+    process.env.ELEVENLABS_API_KEY;
 
   const modelId =
     process.env.ELEVENLABS_MODEL_ID ||
@@ -161,7 +449,7 @@ const generarAudioElevenLabs = async (
 
   if (!voiceId) {
     throw new Error(
-      "No se encontró una voz válida para generar el audio"
+      "No se encontró una voz válida"
     );
   }
 
@@ -189,12 +477,9 @@ const generarAudioElevenLabs = async (
   });
 
   if (!respuesta.ok) {
-    const errorTexto = await respuesta.text();
-
     console.error(
-      "Error ElevenLabs:",
-      respuesta.status,
-      errorTexto.slice(0, 500)
+      "ElevenLabs devolvió:",
+      respuesta.status
     );
 
     throw new Error(
@@ -202,68 +487,20 @@ const generarAudioElevenLabs = async (
     );
   }
 
-  const arrayBuffer = await respuesta.arrayBuffer();
+  const arrayBuffer =
+    await respuesta.arrayBuffer();
 
   return Buffer.from(arrayBuffer);
-};
-
-// =====================================
-// SUPABASE STORAGE
-// =====================================
-
-const subirAudioStorage = async ({
-  audioBuffer,
-  id_usuario,
-  id_frase
-}) => {
-  const crypto = require("crypto");
-
-  const nombreArchivo =
-    `audio-${id_usuario}-${id_frase}-` +
-    `${crypto.randomUUID()}.mp3`;
-
-  const rutaArchivo =
-    `${id_usuario}/${nombreArchivo}`;
-
-  const { error: uploadError } = await supabase.storage
-    .from("audios")
-    .upload(rutaArchivo, audioBuffer, {
-      contentType: "audio/mpeg",
-      upsert: false
-    });
-
-  if (uploadError) throw uploadError;
-
-  const { data: publicUrlData } = supabase.storage
-    .from("audios")
-    .getPublicUrl(rutaArchivo);
-
-  return {
-    audio_url: publicUrlData.publicUrl,
-    rutaArchivo
-  };
-};
-
-const eliminarArchivoStorage = async (rutaArchivo) => {
-  if (!rutaArchivo) return;
-
-  const { error } = await supabase.storage
-    .from("audios")
-    .remove([rutaArchivo]);
-
-  if (error) {
-    console.error(
-      "No se pudo limpiar el audio de Storage:",
-      error.message
-    );
-  }
 };
 
 // =====================================
 // GET /audios/voces
 // =====================================
 
-const obtenerVocesDisponibles = async (req, res) => {
+const obtenerVocesDisponibles = async (
+  req,
+  res
+) => {
   try {
     return responderOk(
       res,
@@ -276,12 +513,13 @@ const obtenerVocesDisponibles = async (req, res) => {
 
 // =====================================
 // POST /audios
-// CREAR AUDIO MANUAL
+// CREACIÓN MANUAL
 // =====================================
 
 const crearAudio = async (req, res) => {
   try {
-    const id_usuario = req.usuario.id_usuario;
+    const id_usuario =
+      req.usuario.id_usuario;
 
     const {
       id_frase,
@@ -309,10 +547,51 @@ const crearAudio = async (req, res) => {
       );
     }
 
-    const resultadoFrase = await obtenerFrasePropia(
-      id_frase,
-      id_usuario
-    );
+    let urlManual;
+
+    try {
+      urlManual = new URL(audio_url.trim());
+
+      if (
+        !["https:", "http:"].includes(
+          urlManual.protocol
+        )
+      ) {
+        throw new Error("Protocolo inválido");
+      }
+    } catch {
+      return responderError(
+        res,
+        400,
+        "audio_url debe ser una URL válida"
+      );
+    }
+
+    // Un usuario no puede registrar una URL
+    // privada de nuestro Storage y luego
+    // pedir que el backend se la firme.
+    const origenSupabase = new URL(
+      process.env.SUPABASE_URL
+    ).origin;
+
+    if (
+      urlManual.origin === origenSupabase &&
+      urlManual.pathname.startsWith(
+        "/storage/v1/object/"
+      )
+    ) {
+      return responderError(
+        res,
+        403,
+        "No se pueden registrar archivos internos de Storage mediante esta ruta"
+      );
+    }
+
+    const resultadoFrase =
+      await obtenerFrasePropia(
+        id_frase,
+        id_usuario
+      );
 
     if (resultadoFrase.error) {
       return responderError(
@@ -325,14 +604,18 @@ const crearAudio = async (req, res) => {
     const frase = resultadoFrase.frase;
 
     const textoFinal =
-      normalizarTexto(texto) || frase.texto;
+      normalizarTexto(texto) ||
+      frase.texto;
 
-    const { data: audioCreado, error } = await supabase
+    const {
+      data: audioCreado,
+      error
+    } = await supabase
       .from("audios")
       .insert([
         {
           id_frase: frase.id_frase,
-          audio_url: audio_url.trim(),
+          audio_url: urlManual.toString(),
           texto: textoFinal,
           origen: origen || "manual"
         }
@@ -340,7 +623,9 @@ const crearAudio = async (req, res) => {
       .select(SELECT_AUDIO)
       .single();
 
-    if (error) return errorInterno(res, error);
+    if (error) {
+      return errorInterno(res, error);
+    }
 
     await registrarHistorial(
       id_usuario,
@@ -348,7 +633,11 @@ const crearAudio = async (req, res) => {
       `Audio creado para frase: ${frase.texto}`
     );
 
-    return responderOk(res, audioCreado, 201);
+    return responderOk(
+      res,
+      audioCreado,
+      201
+    );
 
   } catch (error) {
     return errorInterno(res, error);
@@ -359,13 +648,21 @@ const crearAudio = async (req, res) => {
 // POST /audios/generar
 // =====================================
 
-const generarAudioConElevenLabs = async (req, res) => {
+const generarAudioConElevenLabs = async (
+  req,
+  res
+) => {
   let archivoNuevo = null;
+  let registroCreado = false;
 
   try {
-    const id_usuario = req.usuario.id_usuario;
+    const id_usuario =
+      req.usuario.id_usuario;
 
-    const { id_frase, texto } = req.body || {};
+    const {
+      id_frase,
+      texto
+    } = req.body || {};
 
     if (!idValido(id_frase)) {
       return responderError(
@@ -375,10 +672,11 @@ const generarAudioConElevenLabs = async (req, res) => {
       );
     }
 
-    const resultadoFrase = await obtenerFrasePropia(
-      id_frase,
-      id_usuario
-    );
+    const resultadoFrase =
+      await obtenerFrasePropia(
+        id_frase,
+        id_usuario
+      );
 
     if (resultadoFrase.error) {
       return responderError(
@@ -391,7 +689,8 @@ const generarAudioConElevenLabs = async (req, res) => {
     const frase = resultadoFrase.frase;
 
     const textoFinal =
-      normalizarTexto(texto) || frase.texto;
+      normalizarTexto(texto) ||
+      frase.texto;
 
     if (!textoFinal) {
       return responderError(
@@ -401,9 +700,10 @@ const generarAudioConElevenLabs = async (req, res) => {
       );
     }
 
-    const usuario = await obtenerUsuarioConVoz(
-      id_usuario
-    );
+    const usuario =
+      await obtenerUsuarioConVoz(
+        id_usuario
+      );
 
     if (!usuario) {
       return responderError(
@@ -414,22 +714,26 @@ const generarAudioConElevenLabs = async (req, res) => {
     }
 
     const vozPreferida =
-      usuario.voz_preferida || VOZ_DEFAULT;
+      usuario.voz_preferida ||
+      VOZ_DEFAULT;
 
-    const voiceId = obtenerVoiceIdPorVoz(
-      vozPreferida
-    );
+    const voiceId =
+      obtenerVoiceIdPorVoz(
+        vozPreferida
+      );
 
-    const audioBuffer = await generarAudioElevenLabs(
-      textoFinal,
-      voiceId
-    );
+    const audioBuffer =
+      await generarAudioElevenLabs(
+        textoFinal,
+        voiceId
+      );
 
-    archivoNuevo = await subirAudioStorage({
-      audioBuffer,
-      id_usuario,
-      id_frase
-    });
+    archivoNuevo =
+      await subirAudioStorage({
+        audioBuffer,
+        id_usuario,
+        id_frase
+      });
 
     const {
       data: audioCreado,
@@ -439,7 +743,8 @@ const generarAudioConElevenLabs = async (req, res) => {
       .insert([
         {
           id_frase: frase.id_frase,
-          audio_url: archivoNuevo.audio_url,
+          audio_url:
+            archivoNuevo.urlGuardada,
           texto: textoFinal,
           origen: "elevenlabs"
         }
@@ -448,38 +753,45 @@ const generarAudioConElevenLabs = async (req, res) => {
       .single();
 
     if (audioError) {
-      await eliminarArchivoStorage(
-        archivoNuevo.rutaArchivo
+      return errorInterno(
+        res,
+        audioError
       );
-
-      archivoNuevo = null;
-
-      return errorInterno(res, audioError);
     }
+
+    registroCreado = true;
 
     await registrarHistorial(
       id_usuario,
       "generar_audio_elevenlabs",
-      `Audio generado con ElevenLabs para frase: ${textoFinal}. Voz usada: ${vozPreferida}`
+      `Audio generado para frase: ${textoFinal}. Voz: ${vozPreferida}`
     );
 
     return responderOk(
       res,
       {
         ...audioCreado,
+        audio_url:
+          archivoNuevo.urlFirmada,
         voz_usada: vozPreferida
       },
       201
     );
 
   } catch (error) {
-    if (archivoNuevo) {
+    return errorInterno(res, error);
+
+  } finally {
+    // Solo limpiar si NO se guardó el
+    // registro en la base de datos.
+    if (
+      archivoNuevo &&
+      !registroCreado
+    ) {
       await eliminarArchivoStorage(
         archivoNuevo.rutaArchivo
       );
     }
-
-    return errorInterno(res, error);
   }
 };
 
@@ -487,9 +799,13 @@ const generarAudioConElevenLabs = async (req, res) => {
 // GET /audios/mis-audios
 // =====================================
 
-const obtenerMisAudios = async (req, res) => {
+const obtenerMisAudios = async (
+  req,
+  res
+) => {
   try {
-    const id_usuario = req.usuario.id_usuario;
+    const id_usuario =
+      req.usuario.id_usuario;
 
     const {
       data: frases,
@@ -500,10 +816,16 @@ const obtenerMisAudios = async (req, res) => {
       .eq("id_usuario", id_usuario);
 
     if (frasesError) {
-      return errorInterno(res, frasesError);
+      return errorInterno(
+        res,
+        frasesError
+      );
     }
 
-    if (!frases || frases.length === 0) {
+    if (
+      !frases ||
+      frases.length === 0
+    ) {
       return responderOk(res, []);
     }
 
@@ -536,10 +858,24 @@ const obtenerMisAudios = async (req, res) => {
       );
 
     if (audiosError) {
-      return errorInterno(res, audiosError);
+      return errorInterno(
+        res,
+        audiosError
+      );
     }
 
-    return responderOk(res, audios);
+    // Se firman solamente los audios
+    // que pertenecen a este usuario.
+    const audiosSeguros =
+      await prepararListaAudios(
+        audios,
+        id_usuario
+      );
+
+    return responderOk(
+      res,
+      audiosSeguros
+    );
 
   } catch (error) {
     return errorInterno(res, error);
@@ -550,15 +886,21 @@ const obtenerMisAudios = async (req, res) => {
 // GET /audios/frase/:id_frase
 // =====================================
 
-const obtenerAudioPorFrase = async (req, res) => {
+const obtenerAudioPorFrase = async (
+  req,
+  res
+) => {
   try {
-    const id_usuario = req.usuario.id_usuario;
+    const id_usuario =
+      req.usuario.id_usuario;
+
     const { id_frase } = req.params;
 
-    const resultadoFrase = await obtenerFrasePropia(
-      id_frase,
-      id_usuario
-    );
+    const resultadoFrase =
+      await obtenerFrasePropia(
+        id_frase,
+        id_usuario
+      );
 
     if (resultadoFrase.error) {
       return responderError(
@@ -568,7 +910,10 @@ const obtenerAudioPorFrase = async (req, res) => {
       );
     }
 
-    const { data: audios, error } = await supabase
+    const {
+      data: audios,
+      error
+    } = await supabase
       .from("audios")
       .select(SELECT_AUDIO)
       .eq("id_frase", id_frase)
@@ -577,9 +922,20 @@ const obtenerAudioPorFrase = async (req, res) => {
         { ascending: false }
       );
 
-    if (error) return errorInterno(res, error);
+    if (error) {
+      return errorInterno(res, error);
+    }
 
-    return responderOk(res, audios);
+    const audiosSeguros =
+      await prepararListaAudios(
+        audios,
+        id_usuario
+      );
+
+    return responderOk(
+      res,
+      audiosSeguros
+    );
 
   } catch (error) {
     return errorInterno(res, error);
@@ -590,9 +946,14 @@ const obtenerAudioPorFrase = async (req, res) => {
 // DELETE /audios/:id_audio
 // =====================================
 
-const eliminarAudio = async (req, res) => {
+const eliminarAudio = async (
+  req,
+  res
+) => {
   try {
-    const id_usuario = req.usuario.id_usuario;
+    const id_usuario =
+      req.usuario.id_usuario;
+
     const { id_audio } = req.params;
 
     if (!idValido(id_audio)) {
@@ -605,7 +966,7 @@ const eliminarAudio = async (req, res) => {
 
     const {
       data: audio,
-      error: audioBuscarError
+      error: buscarError
     } = await supabase
       .from("audios")
       .select(`
@@ -624,8 +985,11 @@ const eliminarAudio = async (req, res) => {
       .eq("id_audio", id_audio)
       .maybeSingle();
 
-    if (audioBuscarError) {
-      return errorInterno(res, audioBuscarError);
+    if (buscarError) {
+      return errorInterno(
+        res,
+        buscarError
+      );
     }
 
     if (!audio) {
@@ -648,14 +1012,18 @@ const eliminarAudio = async (req, res) => {
       );
     }
 
-    const { error: borrarError } = await supabase
-      .from("audios")
-      .delete()
-      .eq("id_audio", id_audio)
-      .eq("id_frase", audio.id_frase);
+    const { error: borrarError } =
+      await supabase
+        .from("audios")
+        .delete()
+        .eq("id_audio", id_audio)
+        .eq("id_frase", audio.id_frase);
 
     if (borrarError) {
-      return errorInterno(res, borrarError);
+      return errorInterno(
+        res,
+        borrarError
+      );
     }
 
     await registrarHistorial(
@@ -665,7 +1033,8 @@ const eliminarAudio = async (req, res) => {
     );
 
     return responderOk(res, {
-      mensaje: "Audio eliminado correctamente"
+      mensaje:
+        "Audio eliminado correctamente"
     });
 
   } catch (error) {
