@@ -1,5 +1,4 @@
 const bcrypt = require("bcryptjs");
-const supabase = require("../config/Supabase");
 const supabaseAdmin = require("../config/SupabaseAdmin");
 const { existeVoz, VOZ_DEFAULT } = require("../config/voces");
 

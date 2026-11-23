@@ -1,158 +1,275 @@
-const supabase = require("../config/Supabase");
+
+const supabase = require("../config/SupabaseAdmin");
+
+// =====================================
+// HELPERS
+// =====================================
+
+const responderOk = (res, data) => {
+  return res.json({
+    data,
+    error: null
+  });
+};
+
+const responderError = (res, status, mensaje) => {
+  return res.status(status).json({
+    data: null,
+    error: mensaje
+  });
+};
+
+const errorInterno = (res, error) => {
+  console.error("Error en sugerencias:", error);
+
+  return responderError(
+    res,
+    500,
+    "Ocurrió un error al procesar las sugerencias"
+  );
+};
+
+const CAMPOS_PICTOGRAMA =
+  "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado";
+
+const normalizarIds = (entrada) => {
+  if (!Array.isArray(entrada)) {
+    return [];
+  }
+
+  return entrada
+    .map(Number)
+    .filter(
+      (id) =>
+        Number.isSafeInteger(id) &&
+        id > 0
+    );
+};
+
+const guardarSugerencias = async ({
+  id_usuario,
+  texto_actual,
+  sugerencias,
+  origen
+}) => {
+  const { error } = await supabase
+    .from("sugerencias_ia")
+    .insert([
+      {
+        id_usuario,
+        texto_actual,
+        sugerencia: JSON.stringify(sugerencias),
+        origen
+      }
+    ]);
+
+  if (error) {
+    console.error(
+      "No se pudieron guardar las sugerencias:",
+      error.message
+    );
+  }
+};
+
+// =====================================
+// POST /sugerencias
+// =====================================
 
 const obtenerSugerencias = async (req, res) => {
   try {
     const id_usuario = req.usuario.id_usuario;
-    const { texto_actual, pictogramas_actuales } = req.body;
 
-    const pictogramasActuales = Array.isArray(pictogramas_actuales)
-      ? pictogramas_actuales
-      : [];
+    const {
+      texto_actual,
+      pictogramas_actuales
+    } = req.body || {};
 
-    const { data: frasesUsuario, error: frasesError } = await supabase
+    const textoActual =
+      typeof texto_actual === "string"
+        ? texto_actual
+        : "";
+
+    const pictogramasActuales = new Set(
+      normalizarIds(pictogramas_actuales)
+    );
+
+    // =====================================
+    // BUSCAR FRASES DEL USUARIO
+    // =====================================
+
+    const {
+      data: frasesUsuario,
+      error: frasesError
+    } = await supabase
       .from("frases")
       .select("id_frase")
       .eq("id_usuario", id_usuario);
 
     if (frasesError) {
-      return res.status(500).json({
-        data: null,
-        error: frasesError.message
+      return errorInterno(res, frasesError);
+    }
+
+    // =====================================
+    // FALLBACK: SIN HISTORIAL
+    // =====================================
+
+    if (
+      !frasesUsuario ||
+      frasesUsuario.length === 0
+    ) {
+      const {
+        data: pictogramasGenerales,
+        error: pictogramasError
+      } = await supabase
+        .from("pictogramas")
+        .select(CAMPOS_PICTOGRAMA)
+        .eq("es_personalizado", false)
+        .order("id_pictogramas", {
+          ascending: true
+        })
+        .limit(5);
+
+      if (pictogramasError) {
+        return errorInterno(
+          res,
+          pictogramasError
+        );
+      }
+
+      const sugerencias =
+        pictogramasGenerales || [];
+
+      await guardarSugerencias({
+        id_usuario,
+        texto_actual: textoActual,
+        sugerencias,
+        origen: "fallback"
+      });
+
+      return responderOk(res, {
+        texto_actual: textoActual,
+        sugerencias,
+        mensaje:
+          "Sugerencias generales por falta de historial"
       });
     }
 
-    if (!frasesUsuario || frasesUsuario.length === 0) {
-  const { data: pictogramasGenerales, error: pictogramasGeneralesError } =
-    await supabase
-      .from("pictogramas")
-      .select(
-        "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado"
-      )
-      .limit(5);
+    // =====================================
+    // CONTAR PICTOGRAMAS USADOS
+    // =====================================
 
-    if (pictogramasGeneralesError) {
-      return res.status(500).json({
-      data: null,
-      error: pictogramasGeneralesError.message
-     });
-    }
+    const idsFrases = frasesUsuario.map(
+      (frase) => frase.id_frase
+    );
 
-    await supabase.from("sugerencias_ia").insert([
-    {
-      id_usuario,
-      texto_actual: texto_actual || "",
-      sugerencia: JSON.stringify(pictogramasGenerales),
-      origen: "fallback"
-    }
-  ]);
-
-  return res.json({
-    data: {
-      texto_actual: texto_actual || "",
-      sugerencias: pictogramasGenerales,
-      mensaje: "Sugerencias generales por falta de historial"
-    },
-    error: null
-  });
-    }   
-    
-
-    const idsFrases = frasesUsuario.map((frase) => frase.id_frase);
-
-    const { data: usosPictogramas, error: usosError } = await supabase
+    const {
+      data: usosPictogramas,
+      error: usosError
+    } = await supabase
       .from("frase_pictogramas")
       .select("id_pictogramas")
       .in("id_frase", idsFrases);
 
     if (usosError) {
-      return res.status(500).json({
-        data: null,
-        error: usosError.message
-      });
+      return errorInterno(res, usosError);
     }
 
     const contador = {};
 
-    usosPictogramas.forEach((uso) => {
-      const idPicto = uso.id_pictogramas;
+    for (const uso of usosPictogramas || []) {
+      const idPicto = Number(
+        uso.id_pictogramas
+      );
 
-      if (!pictogramasActuales.includes(idPicto)) {
-        contador[idPicto] = (contador[idPicto] || 0) + 1;
+      if (
+        !Number.isSafeInteger(idPicto) ||
+        pictogramasActuales.has(idPicto)
+      ) {
+        continue;
       }
-    });
 
-    const idsOrdenados = Object.entries(contador)
+      contador[idPicto] =
+        (contador[idPicto] || 0) + 1;
+    }
+
+    const idsOrdenados = Object.entries(
+      contador
+    )
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([id]) => Number(id));
 
+    // =====================================
+    // SIN SUGERENCIAS
+    // =====================================
+
     if (idsOrdenados.length === 0) {
-      return res.json({
-        data: {
-          texto_actual: texto_actual || "",
-          sugerencias: [],
-          mensaje: "No hay sugerencias disponibles"
-        },
-        error: null
+      return responderOk(res, {
+        texto_actual: textoActual,
+        sugerencias: [],
+        mensaje:
+          "No hay sugerencias disponibles"
       });
     }
 
-    const { data: pictogramasSugeridos, error: pictogramasError } =
-      await supabase
-        .from("pictogramas")
-        .select(
-          "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado"
-        )
-        .in("id_pictogramas", idsOrdenados);
+    // =====================================
+    // BUSCAR DATOS DE PICTOGRAMAS
+    // =====================================
+
+    const {
+      data: pictogramasSugeridos,
+      error: pictogramasError
+    } = await supabase
+      .from("pictogramas")
+      .select(CAMPOS_PICTOGRAMA)
+      .in("id_pictogramas", idsOrdenados);
 
     if (pictogramasError) {
-      return res.status(500).json({
-        data: null,
-        error: pictogramasError.message
-      });
+      return errorInterno(
+        res,
+        pictogramasError
+      );
     }
 
-    const sugerenciasOrdenadas = idsOrdenados
-      .map((id) =>
-        pictogramasSugeridos.find((p) => p.id_pictogramas === id)
-      )
-      .filter(Boolean);
+    const sugerenciasOrdenadas =
+      idsOrdenados
+        .map((id) =>
+          (pictogramasSugeridos || []).find(
+            (p) =>
+              Number(p.id_pictogramas) === id
+          )
+        )
+        .filter(Boolean);
 
-    const { error: guardarError } = await supabase
-      .from("sugerencias_ia")
-      .insert([
-        {
-          id_usuario,
-          texto_actual: texto_actual || "",
-          sugerencia: JSON.stringify(sugerenciasOrdenadas),
-          origen: "frecuencia"
-        }
-      ]);
+    // =====================================
+    // GUARDAR HISTORIAL DE SUGERENCIAS
+    // =====================================
 
-    if (guardarError) {
-      return res.status(500).json({
-        data: null,
-        error: guardarError.message
-      });
-    }
+    await guardarSugerencias({
+      id_usuario,
+      texto_actual: textoActual,
+      sugerencias: sugerenciasOrdenadas,
+      origen: "frecuencia"
+    });
 
-    return res.json({
-      data: {
-        texto_actual: texto_actual || "",
-        sugerencias: sugerenciasOrdenadas
-      },
-      error: null
+    return responderOk(res, {
+      texto_actual: textoActual,
+      sugerencias: sugerenciasOrdenadas
     });
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return errorInterno(res, error);
   }
 };
 
-const obtenerMisSugerencias = async (req, res) => {
+// =====================================
+// GET /sugerencias/mis-sugerencias
+// =====================================
+
+const obtenerMisSugerencias = async (
+  req,
+  res
+) => {
   try {
     const id_usuario = req.usuario.id_usuario;
 
@@ -162,32 +279,56 @@ const obtenerMisSugerencias = async (req, res) => {
         "id_sugerencias, id_usuario, texto_actual, sugerencia, origen, fecha"
       )
       .eq("id_usuario", id_usuario)
-      .order("fecha", { ascending: false });
+      .order("fecha", {
+        ascending: false
+      });
 
     if (error) {
-      return res.status(500).json({
-        data: null,
-        error: error.message
-      });
+      return errorInterno(res, error);
     }
 
-    const sugerenciasParseadas = data.map((item) => ({
-      ...item,
-      sugerencia: item.sugerencia ? JSON.parse(item.sugerencia) : []
-    }));
+    const sugerenciasParseadas = (
+      data || []
+    ).map((item) => {
+      let sugerencia = [];
 
-    return res.json({
-      data: sugerenciasParseadas,
-      error: null
+      try {
+        if (Array.isArray(item.sugerencia)) {
+          sugerencia = item.sugerencia;
+        } else if (
+          typeof item.sugerencia === "string"
+        ) {
+          sugerencia =
+            JSON.parse(item.sugerencia);
+        } else if (item.sugerencia != null) {
+          sugerencia = item.sugerencia;
+        }
+      } catch (errorParseo) {
+        console.error(
+          "Sugerencia con formato inválido:",
+          item.id_sugerencias
+        );
+      }
+
+      return {
+        ...item,
+        sugerencia
+      };
     });
+
+    return responderOk(
+      res,
+      sugerenciasParseadas
+    );
 
   } catch (error) {
-    return res.status(500).json({
-      data: null,
-      error: error.message
-    });
+    return errorInterno(res, error);
   }
 };
+
+// =====================================
+// EXPORTACIONES
+// =====================================
 
 module.exports = {
   obtenerSugerencias,

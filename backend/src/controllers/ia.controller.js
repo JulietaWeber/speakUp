@@ -1,5 +1,5 @@
 
-const supabase = require("../config/Supabase");
+const supabase = require("../config/SupabaseAdmin");
 
 // ======================================
 // CONFIGURACION GENERAL

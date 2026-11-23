@@ -1,273 +1,358 @@
 
-const supabase = require("../config/Supabase");
-const supabaseAdmin = require("../config/SupabaseAdmin");
 const crypto = require("crypto");
+const supabase = require("../config/SupabaseAdmin");
 
 const BUCKET_CATEGORIAS = "categorias-imagenes";
 
 const SELECT_CATEGORIA =
   "id_categorias, nombre, color, id_usuario, es_personalizada, imagen_url";
 
-// ======================================
+// =====================================
 // HELPERS
-// ======================================
+// =====================================
 
-const responderError = (res, status, error) => {
-  return res.status(status).json({
-    data: null,
-    error
-  });
+const responderOk = (res, data, status = 200) =>
+  res.status(status).json({ data, error: null });
+
+const responderError = (res, status, error) =>
+  res.status(status).json({ data: null, error });
+
+const errorInterno = (res, error) => {
+  console.error("Error categorías:", error);
+
+  return responderError(
+    res,
+    500,
+    "Ocurrió un error al procesar la categoría"
+  );
 };
 
-const normalizarTexto = (texto) => {
-  return String(texto || "").trim();
-};
+const normalizarTexto = (valor) =>
+  typeof valor === "string" ? valor.trim() : "";
 
-const normalizarNombre = (nombre) => {
-  return normalizarTexto(nombre).toLowerCase();
+const normalizarNombre = (nombre) =>
+  normalizarTexto(nombre).toLowerCase();
+
+const validarIdCategoria = (valor) => {
+  if (
+    valor === undefined ||
+    valor === null ||
+    valor === ""
+  ) {
+    return null;
+  }
+
+  const numero = Number(valor);
+
+  return Number.isSafeInteger(numero) && numero > 0
+    ? numero
+    : null;
 };
 
 const validarNombreCategoria = (nombre) => {
-  const nombreLimpio = normalizarTexto(nombre);
+  const limpio = normalizarTexto(nombre);
 
-  if (!nombreLimpio) {
+  if (!limpio) {
     return "El nombre de la categoría no puede estar vacío";
   }
 
-  if (nombreLimpio.length < 2) {
-    return "El nombre de la categoría debe tener al menos 2 caracteres";
+  if (limpio.length < 2) {
+    return "El nombre debe tener al menos 2 caracteres";
   }
 
-  if (nombreLimpio.length > 40) {
-    return "El nombre de la categoría no puede superar los 40 caracteres";
+  if (limpio.length > 40) {
+    return "El nombre no puede superar los 40 caracteres";
   }
 
   return null;
 };
+
+const obtenerIdUsuario = (req) =>
+  validarIdCategoria(req.usuario?.id_usuario);
+
+// Consultar el usuario actual en la base.
+const obtenerUsuarioActual = async (req) => {
+  const id_usuario = obtenerIdUsuario(req);
+
+  if (!id_usuario) return null;
+
+  const { data, error } = await supabase
+    .from("usuarios")
+    .select("id_usuario, rol")
+    .eq("id_usuario", id_usuario)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  return data;
+};
+
+const buscarCategoria = async (id_categoria) => {
+  const { data, error } = await supabase
+    .from("categorias")
+    .select(SELECT_CATEGORIA)
+    .eq("id_categorias", id_categoria)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  return data;
+};
+
+const esCategoriaGeneral = (categoria) =>
+  categoria.id_usuario === null &&
+  categoria.es_personalizada === false;
+
+const esCategoriaPropia = (
+  categoria,
+  id_usuario
+) =>
+  categoria.id_usuario !== null &&
+  Number(categoria.id_usuario) ===
+    Number(id_usuario);
 
 const existeCategoriaDuplicada = async ({
   id_usuario,
   nombre,
   excluirId = null
 }) => {
-  let query = supabase
+  let consulta = supabase
     .from("categorias")
     .select("id_categorias, nombre")
     .eq("id_usuario", id_usuario);
 
   if (excluirId !== null) {
-    query = query.neq("id_categorias", excluirId);
+    consulta = consulta.neq(
+      "id_categorias",
+      excluirId
+    );
   }
 
-  const { data, error } = await query;
+  const { data, error } = await consulta;
+
+  if (error) throw error;
+
+  return (data || []).some(
+    (categoria) =>
+      normalizarNombre(categoria.nombre) ===
+      normalizarNombre(nombre)
+  );
+};
+
+const registrarHistorial = async (
+  id_usuario,
+  accion,
+  detalle
+) => {
+  const { error } = await supabase
+    .from("historial_uso")
+    .insert([{ id_usuario, accion, detalle }]);
 
   if (error) {
-    throw new Error(error.message);
+    console.error(
+      "Error registrando historial:",
+      error.message
+    );
   }
-
-  const nombreComparar = normalizarNombre(nombre);
-
-  return (data || []).some((categoria) => {
-    return normalizarNombre(categoria.nombre) === nombreComparar;
-  });
 };
 
-const validarIdCategoria = (valor) => {
-  const id = Number(valor);
-  return Number.isSafeInteger(id) && id > 0 ? id : null;
-};
-
+// Comprobar firmas de imagen.
 const validarImagen = (archivo) => {
-  if (!archivo || !archivo.buffer) {
+  if (
+    !archivo ||
+    !Buffer.isBuffer(archivo.buffer)
+  ) {
     return "Debés enviar una imagen";
   }
 
-  if (archivo.size > 2 * 1024 * 1024) {
-    return "La imagen supera los 2 MB";
+  if (
+    archivo.size <= 0 ||
+    archivo.size > 2 * 1024 * 1024
+  ) {
+    return "La imagen debe tener un máximo de 2 MB";
   }
 
   const buffer = archivo.buffer;
   const tipo = archivo.mimetype;
 
-  if (tipo === "image/png") {
-    const firmaPNG = Buffer.from([
-      137, 80, 78, 71, 13, 10, 26, 10
-    ]);
+  const png =
+    tipo === "image/png" &&
+    buffer.length >= 8 &&
+    buffer.subarray(0, 8).equals(
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+    );
 
-    if (buffer.length >= 8 &&
-        buffer.subarray(0, 8).equals(firmaPNG)) {
-      return null;
-    }
+  const jpg =
+    tipo === "image/jpeg" &&
+    buffer.length >= 3 &&
+    buffer[0] === 0xff &&
+    buffer[1] === 0xd8 &&
+    buffer[2] === 0xff;
+
+  const webp =
+    tipo === "image/webp" &&
+    buffer.length >= 12 &&
+    buffer.toString("ascii", 0, 4) === "RIFF" &&
+    buffer.toString("ascii", 8, 12) === "WEBP";
+
+  if (!png && !jpg && !webp) {
+    return "Solo se permiten imágenes PNG, JPG o WEBP válidas";
   }
 
-  if (tipo === "image/jpeg") {
-    if (
-      buffer.length >= 3 &&
-      buffer[0] === 0xff &&
-      buffer[1] === 0xd8 &&
-      buffer[2] === 0xff
-    ) {
-      return null;
-    }
-  }
-
-  if (tipo === "image/webp") {
-    if (
-      buffer.length >= 12 &&
-      buffer.toString("ascii", 0, 4) === "RIFF" &&
-      buffer.toString("ascii", 8, 12) === "WEBP"
-    ) {
-      return null;
-    }
-  }
-
-  return "Solo se permiten imágenes PNG, JPG o WEBP válidas";
+  return null;
 };
 
-// ======================================
+// =====================================
 // GET /categorias
-// ======================================
+// Categorías generales públicas
+// =====================================
 
 const obtenerCategorias = async (req, res) => {
   try {
-    const id_usuario = req.usuario?.id_usuario || null;
-
-    let query = supabase
+    const { data, error } = await supabase
       .from("categorias")
       .select(SELECT_CATEGORIA)
-      .order("id_categorias", { ascending: true });
+      .is("id_usuario", null)
+      .eq("es_personalizada", false)
+      .order("id_categorias", {
+        ascending: true
+      });
 
-    if (id_usuario) {
-      query = query.or(
-        `id_usuario.is.null,id_usuario.eq.${id_usuario}`
-      );
-    } else {
-      query = query.is("id_usuario", null);
-    }
+    if (error) return errorInterno(res, error);
 
-    const { data, error } = await query;
-
-    if (error) {
-      return responderError(res, 500, error.message);
-    }
-
-    return res.json({
-      data,
-      error: null
-    });
+    return responderOk(res, data || []);
 
   } catch (error) {
-    return responderError(res, 500, error.message);
+    return errorInterno(res, error);
   }
 };
 
-// ======================================
+// =====================================
 // GET /categorias/mis-categorias
-// ======================================
+// Generales + personalizadas propias
+// =====================================
 
 const obtenerMisCategorias = async (req, res) => {
   try {
-    const id_usuario = req.usuario.id_usuario;
+    const usuario = await obtenerUsuarioActual(req);
+
+    if (!usuario) {
+      return responderError(
+        res,
+        401,
+        "Usuario no encontrado o sesión inválida"
+      );
+    }
 
     const { data, error } = await supabase
       .from("categorias")
       .select(SELECT_CATEGORIA)
-      .or(`id_usuario.is.null,id_usuario.eq.${id_usuario}`)
-      .order("id_categorias", { ascending: true });
+      .or(
+        `id_usuario.is.null,id_usuario.eq.${usuario.id_usuario}`
+      )
+      .order("id_categorias", {
+        ascending: true
+      });
 
-    if (error) {
-      return responderError(res, 500, error.message);
-    }
+    if (error) return errorInterno(res, error);
 
-    return res.json({
-      data,
-      error: null
-    });
+    // Defensa adicional ante categorías mal configuradas.
+    const visibles = (data || []).filter(
+      (categoria) =>
+        esCategoriaGeneral(categoria) ||
+        esCategoriaPropia(
+          categoria,
+          usuario.id_usuario
+        )
+    );
+
+    return responderOk(res, visibles);
 
   } catch (error) {
-    return responderError(res, 500, error.message);
+    return errorInterno(res, error);
   }
 };
 
-// ======================================
+// =====================================
 // GET /categorias/:id_categoria
-// ======================================
+// =====================================
 
 const obtenerCategoriaPorId = async (req, res) => {
   try {
-    const id_usuario = req.usuario?.id_usuario || null;
     const id_categoria = validarIdCategoria(
       req.params.id_categoria
     );
 
     if (!id_categoria) {
-      return responderError(res, 400, "ID de categoría inválido");
-    }
-
-    const { data: categoria, error } = await supabase
-      .from("categorias")
-      .select(SELECT_CATEGORIA)
-      .eq("id_categorias", id_categoria)
-      .maybeSingle();
-
-    if (error) {
-      return responderError(res, 500, error.message);
-    }
-
-    if (!categoria) {
-      return responderError(res, 404, "Categoría no encontrada");
-    }
-
-    const esGeneral = categoria.id_usuario === null;
-
-    const esPropia =
-      id_usuario !== null &&
-      Number(categoria.id_usuario) === Number(id_usuario);
-
-    if (!esGeneral && !esPropia) {
-      return responderError(
-        res,
-        403,
-        "No tenés permiso para ver esta categoría"
-      );
-    }
-
-    return res.json({
-      data: categoria,
-      error: null
-    });
-
-  } catch (error) {
-    return responderError(res, 500, error.message);
-  }
-};
-
-// ======================================
-// POST /categorias
-// ======================================
-
-const crearCategoria = async (req, res) => {
-  try {
-    const id_usuario = req.usuario.id_usuario;
-    const { nombre, color } = req.body;
-
-    if (!nombre) {
       return responderError(
         res,
         400,
-        "Falta el nombre de la categoría"
+        "ID de categoría inválido"
       );
     }
 
+    const categoria = await buscarCategoria(
+      id_categoria
+    );
+
+    if (!categoria) {
+      return responderError(
+        res,
+        404,
+        "Categoría no encontrada"
+      );
+    }
+
+    // Esta ruta no tiene autenticación obligatoria.
+    // Solo se muestran categorías generales.
+    if (!esCategoriaGeneral(categoria)) {
+      return responderError(
+        res,
+        404,
+        "Categoría no encontrada"
+      );
+    }
+
+    return responderOk(res, categoria);
+
+  } catch (error) {
+    return errorInterno(res, error);
+  }
+};
+
+// =====================================
+// POST /categorias
+// =====================================
+
+const crearCategoria = async (req, res) => {
+  try {
+    const usuario = await obtenerUsuarioActual(req);
+
+    if (!usuario) {
+      return responderError(
+        res,
+        401,
+        "Usuario no encontrado o sesión inválida"
+      );
+    }
+
+    const { nombre, color } = req.body || {};
+
     const nombreLimpio = normalizarTexto(nombre);
-    const errorNombre = validarNombreCategoria(nombreLimpio);
+    const errorNombre = validarNombreCategoria(
+      nombreLimpio
+    );
 
     if (errorNombre) {
-      return responderError(res, 400, errorNombre);
+      return responderError(
+        res,
+        400,
+        errorNombre
+      );
     }
 
     const duplicada = await existeCategoriaDuplicada({
-      id_usuario,
+      id_usuario: usuario.id_usuario,
       nombre: nombreLimpio
     });
 
@@ -285,7 +370,7 @@ const crearCategoria = async (req, res) => {
         {
           nombre: nombreLimpio,
           color: color || null,
-          id_usuario,
+          id_usuario: usuario.id_usuario,
           es_personalizada: true,
           imagen_url: null
         }
@@ -293,63 +378,62 @@ const crearCategoria = async (req, res) => {
       .select(SELECT_CATEGORIA)
       .single();
 
-    if (error) {
-      return responderError(res, 500, error.message);
-    }
+    if (error) return errorInterno(res, error);
 
-    await supabase.from("historial_uso").insert([
-      {
-        id_usuario,
-        accion: "crear_categoria",
-        detalle: `Categoría creada: ${nombreLimpio}`
-      }
-    ]);
+    await registrarHistorial(
+      usuario.id_usuario,
+      "crear_categoria",
+      `Categoría creada: ${nombreLimpio}`
+    );
 
-    return res.status(201).json({
-      data,
-      error: null
-    });
+    return responderOk(res, data, 201);
 
   } catch (error) {
-    return responderError(res, 500, error.message);
+    return errorInterno(res, error);
   }
 };
 
-// ======================================
+// =====================================
 // PUT /categorias/:id_categoria
-// ======================================
+// =====================================
 
 const actualizarCategoria = async (req, res) => {
   try {
-    const id_usuario = req.usuario.id_usuario;
+    const usuario = await obtenerUsuarioActual(req);
+
+    if (!usuario) {
+      return responderError(
+        res,
+        401,
+        "Usuario no encontrado o sesión inválida"
+      );
+    }
+
     const id_categoria = validarIdCategoria(
       req.params.id_categoria
     );
-    const { nombre, color } = req.body;
 
     if (!id_categoria) {
-      return responderError(res, 400, "ID de categoría inválido");
+      return responderError(
+        res,
+        400,
+        "ID de categoría inválido"
+      );
     }
 
-    const { data: categoria, error: categoriaError } =
-      await supabase
-        .from("categorias")
-        .select(SELECT_CATEGORIA)
-        .eq("id_categorias", id_categoria)
-        .maybeSingle();
-
-    if (categoriaError) {
-      return responderError(res, 500, categoriaError.message);
-    }
+    const categoria = await buscarCategoria(
+      id_categoria
+    );
 
     if (!categoria) {
-      return responderError(res, 404, "Categoría no encontrada");
+      return responderError(
+        res,
+        404,
+        "Categoría no encontrada"
+      );
     }
 
-    if (
-      categoria.id_usuario === null ||
-      categoria.es_personalizada === false
-    ) {
+    if (esCategoriaGeneral(categoria)) {
       return responderError(
         res,
         403,
@@ -357,7 +441,13 @@ const actualizarCategoria = async (req, res) => {
       );
     }
 
-    if (Number(categoria.id_usuario) !== Number(id_usuario)) {
+    if (
+      !categoria.es_personalizada ||
+      !esCategoriaPropia(
+        categoria,
+        usuario.id_usuario
+      )
+    ) {
       return responderError(
         res,
         403,
@@ -365,21 +455,29 @@ const actualizarCategoria = async (req, res) => {
       );
     }
 
-    const camposActualizar = {};
+    const { nombre, color } = req.body || {};
+    const cambios = {};
 
     if (nombre !== undefined) {
       const nombreLimpio = normalizarTexto(nombre);
-      const errorNombre = validarNombreCategoria(nombreLimpio);
+      const errorNombre = validarNombreCategoria(
+        nombreLimpio
+      );
 
       if (errorNombre) {
-        return responderError(res, 400, errorNombre);
+        return responderError(
+          res,
+          400,
+          errorNombre
+        );
       }
 
-      const duplicada = await existeCategoriaDuplicada({
-        id_usuario,
-        nombre: nombreLimpio,
-        excluirId: id_categoria
-      });
+      const duplicada =
+        await existeCategoriaDuplicada({
+          id_usuario: usuario.id_usuario,
+          nombre: nombreLimpio,
+          excluirId: id_categoria
+        });
 
       if (duplicada) {
         return responderError(
@@ -389,14 +487,14 @@ const actualizarCategoria = async (req, res) => {
         );
       }
 
-      camposActualizar.nombre = nombreLimpio;
+      cambios.nombre = nombreLimpio;
     }
 
     if (color !== undefined) {
-      camposActualizar.color = color;
+      cambios.color = color;
     }
 
-    if (Object.keys(camposActualizar).length === 0) {
+    if (Object.keys(cambios).length === 0) {
       return responderError(
         res,
         400,
@@ -406,205 +504,229 @@ const actualizarCategoria = async (req, res) => {
 
     const { data, error } = await supabase
       .from("categorias")
-      .update(camposActualizar)
+      .update(cambios)
       .eq("id_categorias", id_categoria)
-      .eq("id_usuario", id_usuario)
+      .eq("id_usuario", usuario.id_usuario)
+      .eq("es_personalizada", true)
       .select(SELECT_CATEGORIA)
-      .single();
+      .maybeSingle();
 
-    if (error) {
-      return responderError(res, 500, error.message);
+    if (error) return errorInterno(res, error);
+
+    if (!data) {
+      return responderError(
+        res,
+        404,
+        "Categoría no encontrada"
+      );
     }
 
-    await supabase.from("historial_uso").insert([
-      {
-        id_usuario,
-        accion: "actualizar_categoria",
-        detalle: `Categoría actualizada: ${data.nombre}`
-      }
-    ]);
+    await registrarHistorial(
+      usuario.id_usuario,
+      "actualizar_categoria",
+      `Categoría actualizada: ${data.nombre}`
+    );
 
-    return res.json({
-      data,
-      error: null
-    });
+    return responderOk(res, data);
 
   } catch (error) {
-    return responderError(res, 500, error.message);
+    return errorInterno(res, error);
   }
 };
 
-// ======================================
+// =====================================
 // PUT /categorias/:id_categoria/imagen
-// ======================================
+// =====================================
 
 const actualizarImagenCategoria = async (req, res) => {
   let rutaArchivo = null;
 
   try {
+    const usuario = await obtenerUsuarioActual(req);
+
+    if (!usuario) {
+      return responderError(
+        res,
+        401,
+        "Usuario no encontrado o sesión inválida"
+      );
+    }
+
     const id_categoria = validarIdCategoria(
       req.params.id_categoria
     );
 
-    const id_usuario = req.usuario.id_usuario;
-
     if (!id_categoria) {
-      return responderError(res, 400, "ID de categoría inválido");
+      return responderError(
+        res,
+        400,
+        "ID de categoría inválido"
+      );
     }
 
     const errorImagen = validarImagen(req.file);
 
     if (errorImagen) {
-      return responderError(res, 400, errorImagen);
+      return responderError(
+        res,
+        400,
+        errorImagen
+      );
     }
 
-    // Consultar categoría
-    const { data: categoria, error: buscarError } =
-      await supabaseAdmin
-        .from("categorias")
-        .select(
-          "id_categorias, id_usuario, es_personalizada"
-        )
-        .eq("id_categorias", id_categoria)
-        .maybeSingle();
-
-    if (buscarError) {
-      return responderError(res, 500, buscarError.message);
-    }
+    const categoria = await buscarCategoria(
+      id_categoria
+    );
 
     if (!categoria) {
-      return responderError(res, 404, "Categoría no encontrada");
+      return responderError(
+        res,
+        404,
+        "Categoría no encontrada"
+      );
     }
 
-    // Validar permisos
-    const esAdmin = req.usuario.rol === "admin";
+    const esGeneral = esCategoriaGeneral(categoria);
 
     const esPropia =
-      categoria.id_usuario !== null &&
-      Number(categoria.id_usuario) === Number(id_usuario);
+      categoria.es_personalizada === true &&
+      esCategoriaPropia(
+        categoria,
+        usuario.id_usuario
+      );
 
-    const esGeneral =
-      categoria.id_usuario === null &&
-      categoria.es_personalizada === false;
+    const esAdmin = usuario.rol === "admin";
 
-    if (esGeneral && !esAdmin) {
+    // Admin puede cambiar imágenes generales.
+    // Usuario puede cambiar las de sus categorías.
+    if (
+      !(esGeneral && esAdmin) &&
+      !esPropia
+    ) {
       return responderError(
         res,
         403,
-        "Solo un administrador puede cambiar imágenes generales"
+        "No tenés permiso para modificar esta imagen"
       );
     }
 
-    if (!esGeneral && !esPropia && !esAdmin) {
-      return responderError(
-        res,
-        403,
-        "No tenés permiso para modificar esta categoría"
-      );
-    }
-
-    // Determinar extensión
-    const extensiones = {
+    const extensionPorTipo = {
       "image/png": "png",
       "image/jpeg": "jpg",
       "image/webp": "webp"
     };
 
-    const extension = extensiones[req.file.mimetype];
+    const extension =
+      extensionPorTipo[req.file.mimetype];
 
     rutaArchivo =
-      `categorias/${id_categoria}/${crypto.randomUUID()}.${extension}`;
+      `categorias/${id_categoria}/` +
+      `${crypto.randomUUID()}.${extension}`;
 
-    // Subir imagen a Supabase Storage
-    const { error: subirError } = await supabaseAdmin.storage
-      .from(BUCKET_CATEGORIAS)
-      .upload(rutaArchivo, req.file.buffer, {
-        contentType: req.file.mimetype,
-        upsert: false
-      });
+    const { error: subirError } =
+      await supabase.storage
+        .from(BUCKET_CATEGORIAS)
+        .upload(
+          rutaArchivo,
+          req.file.buffer,
+          {
+            contentType: req.file.mimetype,
+            upsert: false
+          }
+        );
 
     if (subirError) {
-      return responderError(res, 500, subirError.message);
+      return errorInterno(res, subirError);
     }
 
-    // Obtener URL pública
-    const { data: urlData } = supabaseAdmin.storage
-      .from(BUCKET_CATEGORIAS)
-      .getPublicUrl(rutaArchivo);
+    const { data: urlData } =
+      supabase.storage
+        .from(BUCKET_CATEGORIAS)
+        .getPublicUrl(rutaArchivo);
 
     const imagen_url = urlData.publicUrl;
 
-    // Guardar la URL en la categoría
-    const { data, error: actualizarError } =
-      await supabaseAdmin
-        .from("categorias")
-        .update({ imagen_url })
-        .eq("id_categorias", id_categoria)
-        .select(SELECT_CATEGORIA)
-        .single();
+    const { data, error } = await supabase
+      .from("categorias")
+      .update({ imagen_url })
+      .eq("id_categorias", id_categoria)
+      .select(SELECT_CATEGORIA)
+      .maybeSingle();
 
-    if (actualizarError) {
-      await supabaseAdmin.storage
+    if (error || !data) {
+      await supabase.storage
         .from(BUCKET_CATEGORIAS)
         .remove([rutaArchivo]);
 
-      return responderError(
-        res,
-        500,
-        actualizarError.message
-      );
+      return error
+        ? errorInterno(res, error)
+        : responderError(
+            res,
+            404,
+            "Categoría no encontrada"
+          );
     }
 
-    return res.json({
-      data,
-      error: null
-    });
+    await registrarHistorial(
+      usuario.id_usuario,
+      "actualizar_imagen_categoria",
+      `Imagen actualizada: ${data.nombre}`
+    );
+
+    return responderOk(res, data);
 
   } catch (error) {
-    console.error("Error imagen categoría:", error);
+    if (rutaArchivo) {
+      await supabase.storage
+        .from(BUCKET_CATEGORIAS)
+        .remove([rutaArchivo]);
+    }
 
-    return responderError(
-      res,
-      500,
-      "No se pudo actualizar la imagen de la categoría"
-    );
+    return errorInterno(res, error);
   }
 };
 
-// ======================================
+// =====================================
 // DELETE /categorias/:id_categoria
-// ======================================
+// =====================================
 
 const eliminarCategoria = async (req, res) => {
   try {
-    const id_usuario = req.usuario.id_usuario;
+    const usuario = await obtenerUsuarioActual(req);
+
+    if (!usuario) {
+      return responderError(
+        res,
+        401,
+        "Usuario no encontrado o sesión inválida"
+      );
+    }
+
     const id_categoria = validarIdCategoria(
       req.params.id_categoria
     );
 
     if (!id_categoria) {
-      return responderError(res, 400, "ID de categoría inválido");
+      return responderError(
+        res,
+        400,
+        "ID de categoría inválido"
+      );
     }
 
-    const { data: categoria, error: categoriaError } =
-      await supabase
-        .from("categorias")
-        .select(SELECT_CATEGORIA)
-        .eq("id_categorias", id_categoria)
-        .maybeSingle();
-
-    if (categoriaError) {
-      return responderError(res, 500, categoriaError.message);
-    }
+    const categoria = await buscarCategoria(
+      id_categoria
+    );
 
     if (!categoria) {
-      return responderError(res, 404, "Categoría no encontrada");
+      return responderError(
+        res,
+        404,
+        "Categoría no encontrada"
+      );
     }
 
-    if (
-      categoria.id_usuario === null ||
-      categoria.es_personalizada === false
-    ) {
+    if (esCategoriaGeneral(categoria)) {
       return responderError(
         res,
         403,
@@ -612,7 +734,13 @@ const eliminarCategoria = async (req, res) => {
       );
     }
 
-    if (Number(categoria.id_usuario) !== Number(id_usuario)) {
+    if (
+      !categoria.es_personalizada ||
+      !esCategoriaPropia(
+        categoria,
+        usuario.id_usuario
+      )
+    ) {
       return responderError(
         res,
         403,
@@ -620,14 +748,16 @@ const eliminarCategoria = async (req, res) => {
       );
     }
 
-    const { data: pictogramasCategoria, error: pictogramasError } =
-      await supabase
-        .from("pictogramas")
-        .select("id_pictogramas")
-        .eq("id_categorias", id_categoria);
+    const {
+      data: pictogramasCategoria,
+      error: pictogramasError
+    } = await supabase
+      .from("pictogramas")
+      .select("id_pictogramas")
+      .eq("id_categorias", id_categoria);
 
     if (pictogramasError) {
-      return responderError(res, 500, pictogramasError.message);
+      return errorInterno(res, pictogramasError);
     }
 
     const idsPictogramas =
@@ -635,8 +765,8 @@ const eliminarCategoria = async (req, res) => {
         (p) => p.id_pictogramas
       );
 
-    // Evitar eliminar pictogramas que se estén utilizando
     if (idsPictogramas.length > 0) {
+      // No eliminar pictogramas que tengan relaciones.
       const tablasRelacionadas = [
         "frase_pictogramas",
         "tableros_pictogramas",
@@ -646,11 +776,14 @@ const eliminarCategoria = async (req, res) => {
       for (const tabla of tablasRelacionadas) {
         const { count, error } = await supabase
           .from(tabla)
-          .select("*", { count: "exact", head: true })
+          .select("*", {
+            count: "exact",
+            head: true
+          })
           .in("id_pictogramas", idsPictogramas);
 
         if (error) {
-          return responderError(res, 500, error.message);
+          return errorInterno(res, error);
         }
 
         if (count > 0) {
@@ -662,60 +795,61 @@ const eliminarCategoria = async (req, res) => {
         }
       }
 
-      const { error: borrarPictogramasError } =
-        await supabase
-          .from("pictogramas")
-          .delete()
-          .in("id_pictogramas", idsPictogramas);
+      const { error } = await supabase
+        .from("pictogramas")
+        .delete()
+        .in("id_pictogramas", idsPictogramas);
 
-      if (borrarPictogramasError) {
-        return responderError(
-          res,
-          500,
-          borrarPictogramasError.message
-        );
+      if (error) {
+        return errorInterno(res, error);
       }
     }
 
-    const { error } = await supabase
-      .from("categorias")
-      .delete()
-      .eq("id_categorias", id_categoria)
-      .eq("id_usuario", id_usuario);
+    const { data: eliminada, error } =
+      await supabase
+        .from("categorias")
+        .delete()
+        .eq("id_categorias", id_categoria)
+        .eq("id_usuario", usuario.id_usuario)
+        .eq("es_personalizada", true)
+        .select("id_categorias")
+        .maybeSingle();
 
-    if (error) {
-      return responderError(res, 500, error.message);
+    if (error) return errorInterno(res, error);
+
+    if (!eliminada) {
+      return responderError(
+        res,
+        404,
+        "Categoría no encontrada"
+      );
     }
 
-    await supabase.from("historial_uso").insert([
-      {
-        id_usuario,
-        accion: "eliminar_categoria",
-        detalle: `Categoría eliminada: ${categoria.nombre}`
-      }
-    ]);
+    await registrarHistorial(
+      usuario.id_usuario,
+      "eliminar_categoria",
+      `Categoría eliminada: ${categoria.nombre}`
+    );
 
-    return res.json({
-      data: {
-        mensaje: "Categoría eliminada correctamente",
-        pictogramas_eliminados: idsPictogramas.length
-      },
-      error: null
+    return responderOk(res, {
+      mensaje: "Categoría eliminada correctamente",
+      pictogramas_eliminados:
+        idsPictogramas.length
     });
 
   } catch (error) {
-    return responderError(res, 500, error.message);
+    return errorInterno(res, error);
   }
 };
 
-// ======================================
+// =====================================
 // EXPORTACIONES
-// ======================================
+// =====================================
 
 module.exports = {
   obtenerCategorias,
-  obtenerCategoriaPorId,
   obtenerMisCategorias,
+  obtenerCategoriaPorId,
   crearCategoria,
   actualizarCategoria,
   actualizarImagenCategoria,

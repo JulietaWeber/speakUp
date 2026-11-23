@@ -1,7 +1,8 @@
 
 const crypto = require("crypto");
-const supabase = require("../config/Supabase");
 const supabaseAdmin = require("../config/SupabaseAdmin");
+
+const supabase = supabaseAdmin;
 
 const CAMPOS =
   "id_pictogramas, id_categorias, nombre, imagen_url, audio_url, es_personalizado";
@@ -51,10 +52,67 @@ const validarNombre = (nombre) => {
 
 const manejarError = (res, error) => {
   console.error("Error pictogramas:", error);
-  return fallo(res, 500, "Error interno al procesar el pictograma");
+
+  return fallo(
+    res,
+    500,
+    "Error interno al procesar el pictograma"
+  );
 };
 
-const registrarHistorial = async (id_usuario, accion, detalle) => {
+// =====================================
+// SEGURIDAD
+// =====================================
+
+// Consultar el rol actual en la base de datos.
+// No confiar en un rol admin de un JWT antiguo.
+
+const verificarAdministradorActual = async (req) => {
+  const id_usuario = Number(req.usuario?.id_usuario);
+
+  if (
+    !Number.isSafeInteger(id_usuario) ||
+    id_usuario <= 0
+  ) {
+    return false;
+  }
+
+  const { data: usuario, error } = await supabaseAdmin
+    .from("usuarios")
+    .select("rol")
+    .eq("id_usuario", id_usuario)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  return usuario?.rol === "admin";
+};
+
+const exigirAdministrador = async (req, res) => {
+  const esAdmin = await verificarAdministradorActual(req);
+
+  if (!esAdmin) {
+    fallo(
+      res,
+      403,
+      "Solo un administrador puede modificar pictogramas generales"
+    );
+
+    return false;
+  }
+
+  return true;
+};
+
+// =====================================
+// HISTORIAL
+// =====================================
+
+const registrarHistorial = async (
+  id_usuario,
+  accion,
+  detalle
+) => {
   const { error } = await supabase
     .from("historial_uso")
     .insert([{ id_usuario, accion, detalle }]);
@@ -71,7 +129,9 @@ const registrarHistorial = async (id_usuario, accion, detalle) => {
 const buscarCategoria = async (id_categorias) => {
   const { data, error } = await supabase
     .from("categorias")
-    .select("id_categorias, nombre, id_usuario, es_personalizada")
+    .select(
+      "id_categorias, nombre, id_usuario, es_personalizada"
+    )
     .eq("id_categorias", id_categorias)
     .maybeSingle();
 
@@ -94,23 +154,33 @@ const comprobarCategoria = async (
   personalizado
 ) => {
   if (!idValido(id_categorias)) {
-    return { status: 400, error: "ID de categoría inválido" };
+    return {
+      status: 400,
+      error: "ID de categoría inválido"
+    };
   }
 
   const categoria = await buscarCategoria(id_categorias);
 
   if (!categoria) {
-    return { status: 404, error: "Categoría no encontrada" };
+    return {
+      status: 404,
+      error: "Categoría no encontrada"
+    };
   }
 
   if (!personalizado && !categoriaGeneral(categoria)) {
     return {
       status: 403,
-      error: "Los pictogramas generales requieren una categoría general"
+      error:
+        "Los pictogramas generales requieren una categoría general"
     };
   }
 
-  if (personalizado && !puedeUsarCategoria(categoria, id_usuario)) {
+  if (
+    personalizado &&
+    !puedeUsarCategoria(categoria, id_usuario)
+  ) {
     return {
       status: 403,
       error: "No tenés permiso para utilizar esta categoría"
@@ -132,6 +202,7 @@ const buscarPictograma = async (id) => {
     .maybeSingle();
 
   if (error) throw error;
+
   return data;
 };
 
@@ -141,7 +212,11 @@ const buscarPersonalizadoPropio = async (
 ) => {
   const { data, error } = await supabase
     .from("usuarios_pictogramas")
-    .select(`id_usuario, id_pictogramas, pictogramas (${CAMPOS})`)
+    .select(`
+      id_usuario,
+      id_pictogramas,
+      pictogramas (${CAMPOS})
+    `)
     .eq("id_usuario", id_usuario)
     .eq("id_pictogramas", id_pictograma)
     .maybeSingle();
@@ -150,7 +225,9 @@ const buscarPersonalizadoPropio = async (
 
   const pictograma = data?.pictogramas;
 
-  return pictograma?.es_personalizado ? pictograma : null;
+  return pictograma?.es_personalizado
+    ? pictograma
+    : null;
 };
 
 const tieneOtrosUsuarios = async (
@@ -204,7 +281,10 @@ const duplicadoGeneral = async (
     .eq("es_personalizado", false);
 
   if (excluirId) {
-    consulta = consulta.neq("id_pictogramas", excluirId);
+    consulta = consulta.neq(
+      "id_pictogramas",
+      excluirId
+    );
   }
 
   const { data, error } = await consulta;
@@ -212,7 +292,8 @@ const duplicadoGeneral = async (
   if (error) throw error;
 
   return data.some(
-    (p) => compararNombre(p.nombre) === compararNombre(nombre)
+    (p) =>
+      compararNombre(p.nombre) === compararNombre(nombre)
   );
 };
 
@@ -268,10 +349,45 @@ const obtenerExtension = (archivo) => {
     throw new Error("Formato de imagen no permitido");
   }
 
+  // Validar firma del contenido, no solo MIME.
+  const buffer = archivo?.buffer;
+
+  if (!Buffer.isBuffer(buffer)) {
+    throw new Error("Archivo de imagen inválido");
+  }
+
+  const esPNG =
+    extension === "png" &&
+    buffer.length >= 8 &&
+    buffer.subarray(0, 8).equals(
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+    );
+
+  const esJPG =
+    extension === "jpg" &&
+    buffer.length >= 3 &&
+    buffer[0] === 0xff &&
+    buffer[1] === 0xd8 &&
+    buffer[2] === 0xff;
+
+  const esWEBP =
+    extension === "webp" &&
+    buffer.length >= 12 &&
+    buffer.toString("ascii", 0, 4) === "RIFF" &&
+    buffer.toString("ascii", 8, 12) === "WEBP";
+
+  if (!esPNG && !esJPG && !esWEBP) {
+    throw new Error("El contenido de la imagen no es válido");
+  }
+
   return extension;
 };
 
-const subirImagen = async (archivo, carpeta, prefijo) => {
+const subirImagen = async (
+  archivo,
+  carpeta,
+  prefijo
+) => {
   const extension = obtenerExtension(archivo);
 
   const ruta =
@@ -280,7 +396,10 @@ const subirImagen = async (archivo, carpeta, prefijo) => {
   const { error } = await supabaseAdmin.storage
     .from(BUCKET)
     .upload(ruta, archivo.buffer, {
-      contentType: archivo.mimetype,
+      contentType:
+        extension === "jpg"
+          ? "image/jpeg"
+          : archivo.mimetype,
       upsert: false
     });
 
@@ -304,7 +423,10 @@ const limpiarImagen = async (ruta) => {
     .remove([ruta]);
 
   if (error) {
-    console.error("Error limpiando imagen:", error.message);
+    console.error(
+      "Error limpiando imagen:",
+      error.message
+    );
   }
 };
 
@@ -313,37 +435,59 @@ const limpiarImagen = async (ruta) => {
 // GET /pictogramas/categoria/:id_categoria
 // =====================================
 
-const listarPictogramas = async (req, res, id_categoria = null) => {
+const listarPictogramas = async (
+  req,
+  res,
+  id_categoria = null
+) => {
   try {
     const id_usuario = req.usuario?.id_usuario || null;
-    const esAdmin = req.usuario?.rol === "admin";
+
+    const esAdmin = id_usuario
+      ? await verificarAdministradorActual(req)
+      : false;
 
     let consulta = supabase
       .from("pictogramas")
       .select(CAMPOS);
 
     if (!esAdmin) {
-      consulta = consulta.eq("es_personalizado", false);
+      consulta = consulta.eq(
+        "es_personalizado",
+        false
+      );
     }
 
     if (id_categoria !== null) {
-      consulta = consulta.eq("id_categorias", id_categoria);
+      consulta = consulta.eq(
+        "id_categorias",
+        id_categoria
+      );
     }
 
-    const { data: generales, error } = await consulta
-      .order("id_pictogramas", { ascending: true });
+    const {
+      data: generales,
+      error
+    } = await consulta.order(
+      "id_pictogramas",
+      { ascending: true }
+    );
 
-    if (error) return manejarError(res, error);
+    if (error) {
+      return manejarError(res, error);
+    }
 
     if (!id_usuario || esAdmin) {
       return ok(res, generales);
     }
 
-    const { data: relaciones, error: errorRelaciones } =
-      await supabase
-        .from("usuarios_pictogramas")
-        .select(`pictogramas (${CAMPOS})`)
-        .eq("id_usuario", id_usuario);
+    const {
+      data: relaciones,
+      error: errorRelaciones
+    } = await supabase
+      .from("usuarios_pictogramas")
+      .select(`pictogramas (${CAMPOS})`)
+      .eq("id_usuario", id_usuario);
 
     if (errorRelaciones) {
       return manejarError(res, errorRelaciones);
@@ -351,13 +495,15 @@ const listarPictogramas = async (req, res, id_categoria = null) => {
 
     const propios = relaciones
       .map((item) => item.pictogramas)
-      .filter((p) =>
-        p &&
-        p.es_personalizado === true &&
-        (
-          id_categoria === null ||
-          Number(p.id_categorias) === Number(id_categoria)
-        )
+      .filter(
+        (p) =>
+          p &&
+          p.es_personalizado === true &&
+          (
+            id_categoria === null ||
+            Number(p.id_categorias) ===
+              Number(id_categoria)
+          )
       );
 
     return ok(res, [...generales, ...propios]);
@@ -370,25 +516,51 @@ const listarPictogramas = async (req, res, id_categoria = null) => {
 const obtenerPictogramas = (req, res) =>
   listarPictogramas(req, res);
 
-const obtenerPictogramasPorCategoria = (req, res) => {
+const obtenerPictogramasPorCategoria = (
+  req,
+  res
+) => {
   const { id_categoria } = req.params;
 
   if (!idValido(id_categoria)) {
-    return fallo(res, 400, "ID de categoría inválido");
+    return fallo(
+      res,
+      400,
+      "ID de categoría inválido"
+    );
   }
 
-  return listarPictogramas(req, res, id_categoria);
+  return listarPictogramas(
+    req,
+    res,
+    id_categoria
+  );
 };
 
 // =====================================
 // CREAR PICTOGRAMA
 // =====================================
 
-const crear = async (req, res, personalizado, conImagen) => {
+const crear = async (
+  req,
+  res,
+  personalizado,
+  conImagen
+) => {
   let imagenNueva = null;
 
   try {
     const id_usuario = req.usuario.id_usuario;
+
+    // Solo administradores pueden crear
+    // pictogramas generales.
+    if (!personalizado) {
+      if (
+        !(await exigirAdministrador(req, res))
+      ) {
+        return;
+      }
+    }
 
     const {
       id_categorias,
@@ -426,7 +598,11 @@ const crear = async (req, res, personalizado, conImagen) => {
     );
 
     if (categoria.error) {
-      return fallo(res, categoria.status, categoria.error);
+      return fallo(
+        res,
+        categoria.status,
+        categoria.error
+      );
     }
 
     const existe = personalizado
@@ -453,22 +629,31 @@ const crear = async (req, res, personalizado, conImagen) => {
     if (conImagen) {
       imagenNueva = await subirImagen(
         req.file,
-        personalizado ? String(id_usuario) : "generales",
-        personalizado ? `pictograma-${id_usuario}` : "general"
+        personalizado
+          ? String(id_usuario)
+          : "generales",
+        personalizado
+          ? `pictograma-${id_usuario}`
+          : "general"
       );
     }
 
-    const { data: pictograma, error } = await supabase
+    const {
+      data: pictograma,
+      error
+    } = await supabase
       .from("pictogramas")
-      .insert([{
-        id_categorias,
-        nombre: normalizar(nombre),
-        imagen_url: conImagen
-          ? imagenNueva.imagen_url
-          : (imagen_url || null),
-        audio_url: audio_url || null,
-        es_personalizado: personalizado
-      }])
+      .insert([
+        {
+          id_categorias,
+          nombre: normalizar(nombre),
+          imagen_url: conImagen
+            ? imagenNueva.imagen_url
+            : imagen_url || null,
+          audio_url: audio_url || null,
+          es_personalizado: personalizado
+        }
+      ])
       .select(CAMPOS)
       .single();
 
@@ -478,26 +663,44 @@ const crear = async (req, res, personalizado, conImagen) => {
     }
 
     if (personalizado) {
-      const { error: relacionError } = await supabase
+      const {
+        error: relacionError
+      } = await supabase
         .from("usuarios_pictogramas")
-        .insert([{
-          id_usuario,
-          id_pictogramas: pictograma.id_pictogramas
-        }]);
+        .insert([
+          {
+            id_usuario,
+            id_pictogramas:
+              pictograma.id_pictogramas
+          }
+        ]);
 
       if (relacionError) {
-        const { error: rollbackError } = await supabase
+        const {
+          error: rollbackError
+        } = await supabase
           .from("pictogramas")
           .delete()
-          .eq("id_pictogramas", pictograma.id_pictogramas);
+          .eq(
+            "id_pictogramas",
+            pictograma.id_pictogramas
+          );
 
         if (!rollbackError) {
-          await limpiarImagen(imagenNueva?.ruta);
+          await limpiarImagen(
+            imagenNueva?.ruta
+          );
         } else {
-          console.error("Falló reversión:", rollbackError.message);
+          console.error(
+            "Falló reversión:",
+            rollbackError.message
+          );
         }
 
-        return manejarError(res, relacionError);
+        return manejarError(
+          res,
+          relacionError
+        );
       }
 
       await registrarHistorial(
@@ -519,6 +722,10 @@ const crear = async (req, res, personalizado, conImagen) => {
     return ok(res, pictograma, 201);
 
   } catch (error) {
+    if (imagenNueva?.ruta) {
+      await limpiarImagen(imagenNueva.ruta);
+    }
+
     return manejarError(res, error);
   }
 };
@@ -526,38 +733,74 @@ const crear = async (req, res, personalizado, conImagen) => {
 const crearPictograma = (req, res) =>
   crear(req, res, false, false);
 
-const crearPictogramaPersonalizado = (req, res) =>
-  crear(req, res, true, false);
+const crearPictogramaPersonalizado = (
+  req,
+  res
+) => crear(req, res, true, false);
 
-const crearPictogramaConImagen = (req, res) =>
-  crear(req, res, false, true);
+const crearPictogramaConImagen = (
+  req,
+  res
+) => crear(req, res, false, true);
 
-const crearPictogramaPersonalizadoConImagen = (req, res) =>
-  crear(req, res, true, true);
+const crearPictogramaPersonalizadoConImagen = (
+  req,
+  res
+) => crear(req, res, true, true);
 
 // =====================================
 // ACTUALIZAR PICTOGRAMA
 // =====================================
 
-const actualizar = async (req, res, personalizado) => {
+const actualizar = async (
+  req,
+  res,
+  personalizado
+) => {
   try {
     const id_usuario = req.usuario.id_usuario;
     const { id_pictograma } = req.params;
 
+    if (!personalizado) {
+      if (
+        !(await exigirAdministrador(req, res))
+      ) {
+        return;
+      }
+    }
+
     if (!idValido(id_pictograma)) {
-      return fallo(res, 400, "ID de pictograma inválido");
+      return fallo(
+        res,
+        400,
+        "ID de pictograma inválido"
+      );
     }
 
     const pictograma = personalizado
-      ? await buscarPersonalizadoPropio(id_usuario, id_pictograma)
+      ? await buscarPersonalizadoPropio(
+          id_usuario,
+          id_pictograma
+        )
       : await buscarPictograma(id_pictograma);
 
     if (!pictograma) {
-      return fallo(res, 404, "Pictograma no encontrado");
+      return fallo(
+        res,
+        404,
+        "Pictograma no encontrado"
+      );
     }
 
-    if (pictograma.es_personalizado !== personalizado) {
-      return fallo(res, 403, "Endpoint incorrecto para este pictograma");
+    if (
+      pictograma.es_personalizado !==
+      personalizado
+    ) {
+      return fallo(
+        res,
+        403,
+        "Endpoint incorrecto para este pictograma"
+      );
     }
 
     const {
@@ -577,7 +820,11 @@ const actualizar = async (req, res, personalizado) => {
       );
 
       if (categoria.error) {
-        return fallo(res, categoria.status, categoria.error);
+        return fallo(
+          res,
+          categoria.status,
+          categoria.error
+        );
       }
 
       cambios.id_categorias = id_categorias;
@@ -587,7 +834,11 @@ const actualizar = async (req, res, personalizado) => {
       const errorNombre = validarNombre(nombre);
 
       if (errorNombre) {
-        return fallo(res, 400, errorNombre);
+        return fallo(
+          res,
+          400,
+          errorNombre
+        );
       }
 
       cambios.nombre = normalizar(nombre);
@@ -601,13 +852,20 @@ const actualizar = async (req, res, personalizado) => {
       cambios.audio_url = audio_url;
     }
 
-    if (Object.keys(cambios).length === 0) {
-      return fallo(res, 400, "No enviaste campos para actualizar");
+    if (!Object.keys(cambios).length) {
+      return fallo(
+        res,
+        400,
+        "No enviaste campos para actualizar"
+      );
     }
 
     if (
       personalizado &&
-      await tieneOtrosUsuarios(id_pictograma, id_usuario)
+      await tieneOtrosUsuarios(
+        id_pictograma,
+        id_usuario
+      )
     ) {
       return fallo(
         res,
@@ -616,9 +874,12 @@ const actualizar = async (req, res, personalizado) => {
       );
     }
 
-    const nombreFinal = cambios.nombre ?? pictograma.nombre;
+    const nombreFinal =
+      cambios.nombre ?? pictograma.nombre;
+
     const categoriaFinal =
-      cambios.id_categorias ?? pictograma.id_categorias;
+      cambios.id_categorias ??
+      pictograma.id_categorias;
 
     const existe = personalizado
       ? await duplicadoPersonalizado(
@@ -649,10 +910,16 @@ const actualizar = async (req, res, personalizado) => {
       .select(CAMPOS)
       .maybeSingle();
 
-    if (error) return manejarError(res, error);
+    if (error) {
+      return manejarError(res, error);
+    }
 
     if (!data) {
-      return fallo(res, 404, "Pictograma no encontrado");
+      return fallo(
+        res,
+        404,
+        "Pictograma no encontrado"
+      );
     }
 
     if (personalizado) {
@@ -670,25 +937,45 @@ const actualizar = async (req, res, personalizado) => {
   }
 };
 
-const actualizarPictograma = (req, res) =>
-  actualizar(req, res, false);
+const actualizarPictograma = (
+  req,
+  res
+) => actualizar(req, res, false);
 
-const actualizarPictogramaPersonalizado = (req, res) =>
-  actualizar(req, res, true);
+const actualizarPictogramaPersonalizado = (
+  req,
+  res
+) => actualizar(req, res, true);
 
 // =====================================
 // ACTUALIZAR IMAGEN
 // =====================================
 
-const actualizarImagen = async (req, res, personalizado) => {
+const actualizarImagen = async (
+  req,
+  res,
+  personalizado
+) => {
   let imagenNueva = null;
 
   try {
     const id_usuario = req.usuario.id_usuario;
     const { id_pictograma } = req.params;
 
+    if (!personalizado) {
+      if (
+        !(await exigirAdministrador(req, res))
+      ) {
+        return;
+      }
+    }
+
     if (!idValido(id_pictograma)) {
-      return fallo(res, 400, "ID de pictograma inválido");
+      return fallo(
+        res,
+        400,
+        "ID de pictograma inválido"
+      );
     }
 
     if (!req.file) {
@@ -700,20 +987,37 @@ const actualizarImagen = async (req, res, personalizado) => {
     }
 
     const pictograma = personalizado
-      ? await buscarPersonalizadoPropio(id_usuario, id_pictograma)
+      ? await buscarPersonalizadoPropio(
+          id_usuario,
+          id_pictograma
+        )
       : await buscarPictograma(id_pictograma);
 
     if (!pictograma) {
-      return fallo(res, 404, "Pictograma no encontrado");
+      return fallo(
+        res,
+        404,
+        "Pictograma no encontrado"
+      );
     }
 
-    if (pictograma.es_personalizado !== personalizado) {
-      return fallo(res, 403, "Endpoint incorrecto para este pictograma");
+    if (
+      pictograma.es_personalizado !==
+      personalizado
+    ) {
+      return fallo(
+        res,
+        403,
+        "Endpoint incorrecto para este pictograma"
+      );
     }
 
     if (
       personalizado &&
-      await tieneOtrosUsuarios(id_pictograma, id_usuario)
+      await tieneOtrosUsuarios(
+        id_pictograma,
+        id_usuario
+      )
     ) {
       return fallo(
         res,
@@ -724,15 +1028,22 @@ const actualizarImagen = async (req, res, personalizado) => {
 
     imagenNueva = await subirImagen(
       req.file,
-      personalizado ? String(id_usuario) : "generales",
+      personalizado
+        ? String(id_usuario)
+        : "generales",
       personalizado
         ? `pictograma-${id_usuario}-${id_pictograma}`
         : `general-${id_pictograma}`
     );
 
-    const { data, error } = await supabase
+    const {
+      data,
+      error
+    } = await supabase
       .from("pictogramas")
-      .update({ imagen_url: imagenNueva.imagen_url })
+      .update({
+        imagen_url: imagenNueva.imagen_url
+      })
       .eq("id_pictogramas", id_pictograma)
       .eq("es_personalizado", personalizado)
       .select(CAMPOS)
@@ -740,9 +1051,14 @@ const actualizarImagen = async (req, res, personalizado) => {
 
     if (error || !data) {
       await limpiarImagen(imagenNueva.ruta);
+
       return error
         ? manejarError(res, error)
-        : fallo(res, 404, "Pictograma no encontrado");
+        : fallo(
+            res,
+            404,
+            "Pictograma no encontrado"
+          );
     }
 
     await registrarHistorial(
@@ -756,21 +1072,32 @@ const actualizarImagen = async (req, res, personalizado) => {
     return ok(res, data);
 
   } catch (error) {
+    if (imagenNueva?.ruta) {
+      await limpiarImagen(imagenNueva.ruta);
+    }
+
     return manejarError(res, error);
   }
 };
 
-const actualizarImagenPictogramaPersonalizado = (req, res) =>
-  actualizarImagen(req, res, true);
+const actualizarImagenPictogramaPersonalizado = (
+  req,
+  res
+) => actualizarImagen(req, res, true);
 
-const actualizarImagenPictogramaGeneral = (req, res) =>
-  actualizarImagen(req, res, false);
+const actualizarImagenPictogramaGeneral = (
+  req,
+  res
+) => actualizarImagen(req, res, false);
 
 // =====================================
 // GET /pictogramas/mis-personalizados
 // =====================================
 
-const obtenerMisPictogramasPersonalizados = async (req, res) => {
+const obtenerMisPictogramasPersonalizados = async (
+  req,
+  res
+) => {
   try {
     const { data, error } = await supabase
       .from("usuarios_pictogramas")
@@ -781,16 +1108,28 @@ const obtenerMisPictogramasPersonalizados = async (req, res) => {
         fecha_creacion,
         pictogramas (${CAMPOS})
       `)
-      .eq("id_usuario", req.usuario.id_usuario)
-      .order("fecha_creacion", { ascending: false });
+      .eq(
+        "id_usuario",
+        req.usuario.id_usuario
+      )
+      .order(
+        "fecha_creacion",
+        { ascending: false }
+      );
 
-    if (error) return manejarError(res, error);
+    if (error) {
+      return manejarError(res, error);
+    }
 
     return ok(
       res,
       data
-        .map((relacion) => relacion.pictogramas)
-        .filter((p) => p && p.es_personalizado)
+        .map(
+          (relacion) => relacion.pictogramas
+        )
+        .filter(
+          (p) => p && p.es_personalizado
+        )
     );
 
   } catch (error) {
@@ -799,29 +1138,58 @@ const obtenerMisPictogramasPersonalizados = async (req, res) => {
 };
 
 // =====================================
-// ELIMINAR
-// OPCIÓN A: BLOQUEAR SI ESTÁ EN USO
+// ELIMINAR PICTOGRAMA
 // =====================================
 
-const eliminar = async (req, res, personalizado) => {
+const eliminar = async (
+  req,
+  res,
+  personalizado
+) => {
   try {
     const id_usuario = req.usuario.id_usuario;
     const { id_pictograma } = req.params;
 
+    if (!personalizado) {
+      if (
+        !(await exigirAdministrador(req, res))
+      ) {
+        return;
+      }
+    }
+
     if (!idValido(id_pictograma)) {
-      return fallo(res, 400, "ID de pictograma inválido");
+      return fallo(
+        res,
+        400,
+        "ID de pictograma inválido"
+      );
     }
 
     const pictograma = personalizado
-      ? await buscarPersonalizadoPropio(id_usuario, id_pictograma)
+      ? await buscarPersonalizadoPropio(
+          id_usuario,
+          id_pictograma
+        )
       : await buscarPictograma(id_pictograma);
 
     if (!pictograma) {
-      return fallo(res, 404, "Pictograma no encontrado");
+      return fallo(
+        res,
+        404,
+        "Pictograma no encontrado"
+      );
     }
 
-    if (pictograma.es_personalizado !== personalizado) {
-      return fallo(res, 403, "Endpoint incorrecto para este pictograma");
+    if (
+      pictograma.es_personalizado !==
+      personalizado
+    ) {
+      return fallo(
+        res,
+        403,
+        "Endpoint incorrecto para este pictograma"
+      );
     }
 
     if (await estaEnUso(id_pictograma)) {
@@ -833,7 +1201,12 @@ const eliminar = async (req, res, personalizado) => {
     }
 
     if (personalizado) {
-      if (await tieneOtrosUsuarios(id_pictograma, id_usuario)) {
+      if (
+        await tieneOtrosUsuarios(
+          id_pictograma,
+          id_usuario
+        )
+      ) {
         return fallo(
           res,
           409,
@@ -841,23 +1214,34 @@ const eliminar = async (req, res, personalizado) => {
         );
       }
 
-      const { error: relacionError } = await supabase
+      const {
+        error: relacionError
+      } = await supabase
         .from("usuarios_pictogramas")
         .delete()
         .eq("id_usuario", id_usuario)
         .eq("id_pictogramas", id_pictograma);
 
       if (relacionError) {
-        return manejarError(res, relacionError);
+        return manejarError(
+          res,
+          relacionError
+        );
       }
+
     } else {
-      const { data: relaciones, error } = await supabase
+      const {
+        data: relaciones,
+        error
+      } = await supabase
         .from("usuarios_pictogramas")
         .select("id_pictogramas")
         .eq("id_pictogramas", id_pictograma)
         .limit(1);
 
-      if (error) return manejarError(res, error);
+      if (error) {
+        return manejarError(res, error);
+      }
 
       if (relaciones.length > 0) {
         return fallo(
@@ -868,7 +1252,10 @@ const eliminar = async (req, res, personalizado) => {
       }
     }
 
-    const { data, error } = await supabase
+    const {
+      data,
+      error
+    } = await supabase
       .from("pictogramas")
       .delete()
       .eq("id_pictogramas", id_pictograma)
@@ -889,7 +1276,11 @@ const eliminar = async (req, res, personalizado) => {
     }
 
     if (!data) {
-      return fallo(res, 404, "Pictograma no encontrado");
+      return fallo(
+        res,
+        404,
+        "Pictograma no encontrado"
+      );
     }
 
     if (personalizado) {
@@ -911,14 +1302,18 @@ const eliminar = async (req, res, personalizado) => {
   }
 };
 
-const eliminarPictograma = (req, res) =>
-  eliminar(req, res, false);
+const eliminarPictograma = (
+  req,
+  res
+) => eliminar(req, res, false);
 
-const eliminarPictogramaPersonalizado = (req, res) =>
-  eliminar(req, res, true);
+const eliminarPictogramaPersonalizado = (
+  req,
+  res
+) => eliminar(req, res, true);
 
 // =====================================
-// EXPORTS
+// EXPORTACIONES
 // =====================================
 
 module.exports = {

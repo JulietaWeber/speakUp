@@ -1,9 +1,9 @@
 
-const supabase = require("../config/Supabase");
+const supabase = require("../config/SupabaseAdmin");
 
-// =====================
+// =====================================
 // HELPERS
-// =====================
+// =====================================
 
 const responderOk = (res, data, status = 200) => {
   return res.status(status).json({
@@ -31,7 +31,11 @@ const responderErrorInterno = (res, error) => {
 
 const esIdValido = (id) => {
   const numero = Number(id);
-  return Number.isSafeInteger(numero) && numero > 0;
+
+  return (
+    Number.isSafeInteger(numero) &&
+    numero > 0
+  );
 };
 
 const guardarHistorial = async (
@@ -41,21 +45,35 @@ const guardarHistorial = async (
 ) => {
   const { error } = await supabase
     .from("historial_uso")
-    .insert([{ id_usuario, accion, detalle }]);
+    .insert([
+      {
+        id_usuario,
+        accion,
+        detalle
+      }
+    ]);
 
   if (error) {
-    console.error("Error guardando historial:", error.message);
+    console.error(
+      "Error guardando historial:",
+      error.message
+    );
   }
 };
 
-// Busca una frase y comprueba su propietario.
+// =====================================
+// VERIFICAR PROPIEDAD DE FRASE
+// =====================================
+
 const verificarFrasePropia = async (
   id_frase,
   id_usuario
 ) => {
   const { data: frase, error } = await supabase
     .from("frases")
-    .select("id_frase, id_usuario, texto, fecha_creacion")
+    .select(
+      "id_frase, id_usuario, texto, fecha_creacion"
+    )
     .eq("id_frase", id_frase)
     .maybeSingle();
 
@@ -70,26 +88,33 @@ const verificarFrasePropia = async (
     };
   }
 
-  if (Number(frase.id_usuario) !== Number(id_usuario)) {
+  if (
+    Number(frase.id_usuario) !==
+    Number(id_usuario)
+  ) {
     return {
       status: 403,
-      mensaje: "No tenés permiso para acceder a esta frase"
+      mensaje:
+        "No tenés permiso para acceder a esta frase"
     };
   }
 
   return { frase };
 };
 
-// =====================
+// =====================================
 // POST /frases/armar
-// =====================
+// =====================================
 
 const armarFrase = async (req, res) => {
   try {
     const id_usuario = req.usuario.id_usuario;
     const { pictogramas } = req.body || {};
 
-    if (!Array.isArray(pictogramas) || pictogramas.length === 0) {
+    if (
+      !Array.isArray(pictogramas) ||
+      pictogramas.length === 0
+    ) {
       return responderError(
         res,
         400,
@@ -105,28 +130,36 @@ const armarFrase = async (req, res) => {
       );
     }
 
-    // Convertimos los IDs a números para evitar problemas
-    // al comparar strings con números.
+    // Conservar orden y pictogramas repetidos.
     const ids = pictogramas.map(Number);
     const idsUnicos = [...new Set(ids)];
 
-    const { data: pictogramasData, error: pictogramasError } =
-      await supabase
-        .from("pictogramas")
-        .select(`
-          id_pictogramas,
-          nombre,
-          imagen_url,
-          audio_url,
-          es_personalizado
-        `)
-        .in("id_pictogramas", idsUnicos);
+    // Buscar pictogramas.
+    const {
+      data: pictogramasData,
+      error: pictogramasError
+    } = await supabase
+      .from("pictogramas")
+      .select(`
+        id_pictogramas,
+        nombre,
+        imagen_url,
+        audio_url,
+        es_personalizado
+      `)
+      .in("id_pictogramas", idsUnicos);
 
     if (pictogramasError) {
-      return responderErrorInterno(res, pictogramasError);
+      return responderErrorInterno(
+        res,
+        pictogramasError
+      );
     }
 
-    if (pictogramasData.length !== idsUnicos.length) {
+    if (
+      pictogramasData.length !==
+      idsUnicos.length
+    ) {
       return responderError(
         res,
         404,
@@ -134,30 +167,44 @@ const armarFrase = async (req, res) => {
       );
     }
 
-    // Verificamos la pertenencia de los personalizados.
+    // =====================================
+    // VERIFICAR PICTOGRAMAS PERSONALIZADOS
+    // =====================================
+
     const idsPersonalizados = pictogramasData
       .filter((p) => p.es_personalizado)
       .map((p) => Number(p.id_pictogramas));
 
     if (idsPersonalizados.length > 0) {
-      const { data: asociaciones, error: asociacionesError } =
-        await supabase
-          .from("usuarios_pictogramas")
-          .select("id_pictogramas")
-          .eq("id_usuario", id_usuario)
-          .in("id_pictogramas", idsPersonalizados);
+      const {
+        data: asociaciones,
+        error: asociacionesError
+      } = await supabase
+        .from("usuarios_pictogramas")
+        .select("id_pictogramas")
+        .eq("id_usuario", id_usuario)
+        .in(
+          "id_pictogramas",
+          idsPersonalizados
+        );
 
       if (asociacionesError) {
-        return responderErrorInterno(res, asociacionesError);
+        return responderErrorInterno(
+          res,
+          asociacionesError
+        );
       }
 
       const permitidos = new Set(
-        asociaciones.map((a) => Number(a.id_pictogramas))
+        asociaciones.map(
+          (a) => Number(a.id_pictogramas)
+        )
       );
 
-      const sinPermiso = idsPersonalizados.some(
-        (id) => !permitidos.has(id)
-      );
+      const sinPermiso =
+        idsPersonalizados.some(
+          (id) => !permitidos.has(id)
+        );
 
       if (sinPermiso) {
         return responderError(
@@ -168,6 +215,10 @@ const armarFrase = async (req, res) => {
       }
     }
 
+    // =====================================
+    // ARMAR TEXTO EN EL ORDEN ORIGINAL
+    // =====================================
+
     const pictogramasPorId = new Map(
       pictogramasData.map((p) => [
         Number(p.id_pictogramas),
@@ -175,47 +226,75 @@ const armarFrase = async (req, res) => {
       ])
     );
 
-    // Respetamos el orden original e IDs repetidos.
-    const pictogramasOrdenados = ids.map(
-      (id) => pictogramasPorId.get(id)
-    );
+    const pictogramasOrdenados =
+      ids.map((id) =>
+        pictogramasPorId.get(id)
+      );
 
     const texto = pictogramasOrdenados
       .map((p) => p.nombre)
       .join(" ");
 
-    // Crear frase.
-    const { data: fraseCreada, error: fraseError } =
-      await supabase
-        .from("frases")
-        .insert([{ id_usuario, texto }])
-        .select()
-        .single();
+    // =====================================
+    // CREAR FRASE
+    // =====================================
+
+    const {
+      data: fraseCreada,
+      error: fraseError
+    } = await supabase
+      .from("frases")
+      .insert([
+        {
+          id_usuario,
+          texto
+        }
+      ])
+      .select()
+      .single();
 
     if (fraseError) {
-      return responderErrorInterno(res, fraseError);
+      return responderErrorInterno(
+        res,
+        fraseError
+      );
     }
 
-    const relaciones = pictogramasOrdenados.map(
-      (pictograma, index) => ({
-        id_frase: fraseCreada.id_frase,
-        id_pictogramas: pictograma.id_pictogramas,
-        orden: index + 1
-      })
-    );
+    // =====================================
+    // GUARDAR RELACIONES
+    // =====================================
 
-    const { error: relacionesError } = await supabase
+    const relaciones =
+      pictogramasOrdenados.map(
+        (pictograma, index) => ({
+          id_frase: fraseCreada.id_frase,
+          id_pictogramas:
+            pictograma.id_pictogramas,
+          orden: index + 1
+        })
+      );
+
+    const {
+      error: relacionesError
+    } = await supabase
       .from("frase_pictogramas")
       .insert(relaciones);
 
     if (relacionesError) {
-      // Intentamos revertir la frase recién creada.
-      // Esta compensación no reemplaza una transacción SQL.
-      const { error: limpiezaError } = await supabase
+      // Revertir la frase si falla la relación.
+      const {
+        error: limpiezaError
+      } = await supabase
         .from("frases")
         .delete()
-        .eq("id_frase", fraseCreada.id_frase)
-        .eq("id_usuario", id_usuario);
+        .eq(
+          "id_frase",
+          fraseCreada.id_frase
+        )
+        .eq(
+          "id_usuario",
+          id_usuario
+        );
 
       if (limpiezaError) {
         console.error(
@@ -224,8 +303,15 @@ const armarFrase = async (req, res) => {
         );
       }
 
-      return responderErrorInterno(res, relacionesError);
+      return responderErrorInterno(
+        res,
+        relacionesError
+      );
     }
+
+    // =====================================
+    // HISTORIAL
+    // =====================================
 
     await guardarHistorial(
       id_usuario,
@@ -233,16 +319,24 @@ const armarFrase = async (req, res) => {
       texto
     );
 
-    // Conservamos los campos originales de cada
-    // pictograma que recibía el frontend.
-    const pictogramasRespuesta = pictogramasOrdenados.map(
-      ({ id_pictogramas, nombre, imagen_url, audio_url }) => ({
-        id_pictogramas,
-        nombre,
-        imagen_url,
-        audio_url
-      })
-    );
+    // =====================================
+    // RESPUESTA PARA EL FRONTEND
+    // =====================================
+
+    const pictogramasRespuesta =
+      pictogramasOrdenados.map(
+        ({
+          id_pictogramas,
+          nombre,
+          imagen_url,
+          audio_url
+        }) => ({
+          id_pictogramas,
+          nombre,
+          imagen_url,
+          audio_url
+        })
+      );
 
     return responderOk(res, {
       id_frase: fraseCreada.id_frase,
@@ -252,19 +346,25 @@ const armarFrase = async (req, res) => {
     });
 
   } catch (error) {
-    return responderErrorInterno(res, error);
+    return responderErrorInterno(
+      res,
+      error
+    );
   }
 };
 
-// =====================
+// =====================================
 // GET /frases/mis-frases
-// =====================
+// =====================================
 
 const obtenerMisFrases = async (req, res) => {
   try {
     const id_usuario = req.usuario.id_usuario;
 
-    const { data: frases, error } = await supabase
+    const {
+      data: frases,
+      error
+    } = await supabase
       .from("frases")
       .select(`
         id_frase,
@@ -283,29 +383,44 @@ const obtenerMisFrases = async (req, res) => {
         )
       `)
       .eq("id_usuario", id_usuario)
-      .order("fecha_creacion", { ascending: false });
+      .order(
+        "fecha_creacion",
+        { ascending: false }
+      );
 
     if (error) {
-      return responderErrorInterno(res, error);
+      return responderErrorInterno(
+        res,
+        error
+      );
     }
 
-    const frasesOrdenadas = frases.map((frase) => ({
-      ...frase,
-      frase_pictogramas: [
-        ...(frase.frase_pictogramas || [])
-      ].sort((a, b) => a.orden - b.orden)
-    }));
+    const frasesOrdenadas =
+      frases.map((frase) => ({
+        ...frase,
+        frase_pictogramas: [
+          ...(frase.frase_pictogramas || [])
+        ].sort(
+          (a, b) => a.orden - b.orden
+        )
+      }));
 
-    return responderOk(res, frasesOrdenadas);
+    return responderOk(
+      res,
+      frasesOrdenadas
+    );
 
   } catch (error) {
-    return responderErrorInterno(res, error);
+    return responderErrorInterno(
+      res,
+      error
+    );
   }
 };
 
-// =====================
+// =====================================
 // GET /frases/:id_frase
-// =====================
+// =====================================
 
 const obtenerFrasePorId = async (req, res) => {
   try {
@@ -313,16 +428,24 @@ const obtenerFrasePorId = async (req, res) => {
     const { id_frase } = req.params;
 
     if (!esIdValido(id_frase)) {
-      return responderError(res, 400, "ID de frase inválido");
+      return responderError(
+        res,
+        400,
+        "ID de frase inválido"
+      );
     }
 
-    const verificacion = await verificarFrasePropia(
-      id_frase,
-      id_usuario
-    );
+    const verificacion =
+      await verificarFrasePropia(
+        id_frase,
+        id_usuario
+      );
 
     if (verificacion.error) {
-      return responderErrorInterno(res, verificacion.error);
+      return responderErrorInterno(
+        res,
+        verificacion.error
+      );
     }
 
     if (verificacion.mensaje) {
@@ -333,7 +456,10 @@ const obtenerFrasePorId = async (req, res) => {
       );
     }
 
-    const { data: relaciones, error } = await supabase
+    const {
+      data: relaciones,
+      error
+    } = await supabase
       .from("frase_pictogramas")
       .select(`
         id_frase_pictogramas,
@@ -350,20 +476,27 @@ const obtenerFrasePorId = async (req, res) => {
         )
       `)
       .eq("id_frase", id_frase)
-      .order("orden", { ascending: true });
+      .order(
+        "orden",
+        { ascending: true }
+      );
 
     if (error) {
-      return responderErrorInterno(res, error);
+      return responderErrorInterno(
+        res,
+        error
+      );
     }
 
-    const pictogramasFormateados = relaciones.map(
-      (item) => ({
-        id_frase_pictograma: item.id_frase_pictogramas,
-        id_pictogramas: item.id_pictogramas,
+    const pictogramasFormateados =
+      relaciones.map((item) => ({
+        id_frase_pictograma:
+          item.id_frase_pictogramas,
+        id_pictogramas:
+          item.id_pictogramas,
         orden: item.orden,
         ...(item.pictogramas || {})
-      })
-    );
+      }));
 
     return responderOk(res, {
       ...verificacion.frase,
@@ -371,13 +504,16 @@ const obtenerFrasePorId = async (req, res) => {
     });
 
   } catch (error) {
-    return responderErrorInterno(res, error);
+    return responderErrorInterno(
+      res,
+      error
+    );
   }
 };
 
-// =====================
+// =====================================
 // DELETE /frases/:id_frase
-// =====================
+// =====================================
 
 const eliminarFrase = async (req, res) => {
   try {
@@ -385,16 +521,24 @@ const eliminarFrase = async (req, res) => {
     const { id_frase } = req.params;
 
     if (!esIdValido(id_frase)) {
-      return responderError(res, 400, "ID de frase inválido");
+      return responderError(
+        res,
+        400,
+        "ID de frase inválido"
+      );
     }
 
-    const verificacion = await verificarFrasePropia(
-      id_frase,
-      id_usuario
-    );
+    const verificacion =
+      await verificarFrasePropia(
+        id_frase,
+        id_usuario
+      );
 
     if (verificacion.error) {
-      return responderErrorInterno(res, verificacion.error);
+      return responderErrorInterno(
+        res,
+        verificacion.error
+      );
     }
 
     if (verificacion.mensaje) {
@@ -405,36 +549,62 @@ const eliminarFrase = async (req, res) => {
       );
     }
 
-    // Conservamos el orden original de borrado.
-    const { error: audiosError } = await supabase
+    // =====================================
+    // BORRAR AUDIOS ASOCIADOS
+    // =====================================
+
+    const {
+      error: audiosError
+    } = await supabase
       .from("audios")
       .delete()
       .eq("id_frase", id_frase);
 
     if (audiosError) {
-      return responderErrorInterno(res, audiosError);
+      return responderErrorInterno(
+        res,
+        audiosError
+      );
     }
 
-    const { error: relacionesError } = await supabase
+    // =====================================
+    // BORRAR RELACIONES
+    // =====================================
+
+    const {
+      error: relacionesError
+    } = await supabase
       .from("frase_pictogramas")
       .delete()
       .eq("id_frase", id_frase);
 
     if (relacionesError) {
-      return responderErrorInterno(res, relacionesError);
+      return responderErrorInterno(
+        res,
+        relacionesError
+      );
     }
 
-    const { data: eliminada, error: eliminarError } =
-      await supabase
-        .from("frases")
-        .delete()
-        .eq("id_frase", id_frase)
-        .eq("id_usuario", id_usuario)
-        .select("id_frase")
-        .maybeSingle();
+    // =====================================
+    // BORRAR FRASE
+    // =====================================
+
+    const {
+      data: eliminada,
+      error: eliminarError
+    } = await supabase
+      .from("frases")
+      .delete()
+      .eq("id_frase", id_frase)
+      .eq("id_usuario", id_usuario)
+      .select("id_frase")
+      .maybeSingle();
 
     if (eliminarError) {
-      return responderErrorInterno(res, eliminarError);
+      return responderErrorInterno(
+        res,
+        eliminarError
+      );
     }
 
     if (!eliminada) {
@@ -452,17 +622,21 @@ const eliminarFrase = async (req, res) => {
     );
 
     return responderOk(res, {
-      mensaje: "Frase eliminada correctamente"
+      mensaje:
+        "Frase eliminada correctamente"
     });
 
   } catch (error) {
-    return responderErrorInterno(res, error);
+    return responderErrorInterno(
+      res,
+      error
+    );
   }
 };
 
-// =====================
-// EXPORTS
-// =====================
+// =====================================
+// EXPORTACIONES
+// =====================================
 
 module.exports = {
   armarFrase,

@@ -1,5 +1,5 @@
 
-const supabase = require("../config/Supabase");
+const supabase = require("../config/SupabaseAdmin");
 
 const CAMPOS_TABLERO =
   "id_tablero, id_usuario, nombre, color, icono, es_publico, fecha_creacion";
@@ -30,8 +30,10 @@ const ok = (res, data, status = 200) =>
 const fallo = (res, status, mensaje) =>
   res.status(status).json({ data: null, error: mensaje });
 
-const errorInterno = (res, error) =>
-  fallo(res, 500, error.message);
+const errorInterno = (res, error) => {
+  console.error("Error en tableros:", error);
+  return fallo(res, 500, "Ocurrió un error interno");
+};
 
 const idValido = (valor) => {
   const numero = Number(valor);
@@ -44,7 +46,10 @@ const registrarAccion = async (id_usuario, accion, detalle) => {
     .insert([{ id_usuario, accion, detalle }]);
 
   if (error) {
-    console.error("No se pudo registrar historial_uso:", error.message);
+    console.error(
+      "No se pudo registrar historial_uso:",
+      error.message
+    );
   }
 };
 
@@ -61,11 +66,18 @@ const buscarTableroPropio = async (
     .maybeSingle();
 
   if (error) {
-    return { status: 500, mensaje: error.message };
+    console.error("Error buscando tablero:", error);
+    return {
+      status: 500,
+      mensaje: "No se pudo consultar el tablero"
+    };
   }
 
   if (!data) {
-    return { status: 404, mensaje: "Tablero no encontrado" };
+    return {
+      status: 404,
+      mensaje: "Tablero no encontrado"
+    };
   }
 
   if (Number(data.id_usuario) !== Number(id_usuario)) {
@@ -116,11 +128,22 @@ const crearTablero = async (req, res) => {
     const { nombre, color, icono, es_publico } = req.body || {};
 
     if (typeof nombre !== "string" || !nombre.trim()) {
-      return fallo(res, 400, "El nombre del tablero es obligatorio");
+      return fallo(
+        res,
+        400,
+        "El nombre del tablero es obligatorio"
+      );
     }
 
-    if (es_publico !== undefined && typeof es_publico !== "boolean") {
-      return fallo(res, 400, "es_publico debe ser verdadero o falso");
+    if (
+      es_publico !== undefined &&
+      typeof es_publico !== "boolean"
+    ) {
+      return fallo(
+        res,
+        400,
+        "es_publico debe ser verdadero o falso"
+      );
     }
 
     const { data, error } = await supabase
@@ -172,7 +195,8 @@ const obtenerPictogramasDeTablero = async (req, res) => {
       return fallo(res, acceso.status, acceso.mensaje);
     }
 
-    const { data, error } = await obtenerRelaciones(id_tablero);
+    const { data, error } =
+      await obtenerRelaciones(id_tablero);
 
     if (error) return errorInterno(res, error);
 
@@ -190,14 +214,23 @@ const agregarPictogramaATablero = async (req, res) => {
   try {
     const id_usuario = req.usuario.id_usuario;
     const { id_tablero } = req.params;
-    const { id_pictogramas, posicion_x, posicion_y } = req.body || {};
+
+    const {
+      id_pictogramas,
+      posicion_x,
+      posicion_y
+    } = req.body || {};
 
     if (!idValido(id_tablero)) {
       return fallo(res, 400, "ID de tablero inválido");
     }
 
     if (!idValido(id_pictogramas)) {
-      return fallo(res, 400, "Falta id_pictogramas válido");
+      return fallo(
+        res,
+        400,
+        "Falta id_pictogramas válido"
+      );
     }
 
     for (const posicion of [posicion_x, posicion_y]) {
@@ -213,15 +246,23 @@ const agregarPictogramaATablero = async (req, res) => {
       }
     }
 
-    const acceso = await buscarTableroPropio(id_tablero, id_usuario);
+    const acceso = await buscarTableroPropio(
+      id_tablero,
+      id_usuario
+    );
 
     if (acceso.mensaje) {
       return fallo(res, acceso.status, acceso.mensaje);
     }
 
-    const { data: pictograma, error: pictogramaError } = await supabase
+    const {
+      data: pictograma,
+      error: pictogramaError
+    } = await supabase
       .from("pictogramas")
-      .select("id_pictogramas, nombre, es_personalizado")
+      .select(
+        "id_pictogramas, nombre, es_personalizado"
+      )
       .eq("id_pictogramas", id_pictogramas)
       .maybeSingle();
 
@@ -230,12 +271,20 @@ const agregarPictogramaATablero = async (req, res) => {
     }
 
     if (!pictograma) {
-      return fallo(res, 404, "Pictograma no encontrado");
+      return fallo(
+        res,
+        404,
+        "Pictograma no encontrado"
+      );
     }
 
-    // Los pictogramas personales deben pertenecer al usuario.
+    // Verificar que los pictogramas personales
+    // pertenezcan al usuario.
     if (pictograma.es_personalizado) {
-      const { data: asociacion, error: asociacionError } = await supabase
+      const {
+        data: asociacion,
+        error: asociacionError
+      } = await supabase
         .from("usuarios_pictogramas")
         .select("id_pictogramas")
         .eq("id_usuario", id_usuario)
@@ -289,9 +338,16 @@ const agregarPictogramaATablero = async (req, res) => {
 const eliminarPictogramaDeTablero = async (req, res) => {
   try {
     const id_usuario = req.usuario.id_usuario;
-    const { id_tablero, id_pictogramas } = req.params;
 
-    if (!idValido(id_tablero) || !idValido(id_pictogramas)) {
+    const {
+      id_tablero,
+      id_pictogramas
+    } = req.params;
+
+    if (
+      !idValido(id_tablero) ||
+      !idValido(id_pictogramas)
+    ) {
       return fallo(
         res,
         400,
@@ -299,7 +355,10 @@ const eliminarPictogramaDeTablero = async (req, res) => {
       );
     }
 
-    const acceso = await buscarTableroPropio(id_tablero, id_usuario);
+    const acceso = await buscarTableroPropio(
+      id_tablero,
+      id_usuario
+    );
 
     if (acceso.mensaje) {
       return fallo(res, acceso.status, acceso.mensaje);
@@ -336,7 +395,11 @@ const obtenerTableroCompleto = async (req, res) => {
     const { id_tablero } = req.params;
 
     if (!idValido(id_tablero)) {
-      return fallo(res, 400, "ID de tablero inválido");
+      return fallo(
+        res,
+        400,
+        "ID de tablero inválido"
+      );
     }
 
     const acceso = await buscarTableroPropio(
@@ -345,21 +408,31 @@ const obtenerTableroCompleto = async (req, res) => {
     );
 
     if (acceso.mensaje) {
-      return fallo(res, acceso.status, acceso.mensaje);
+      return fallo(
+        res,
+        acceso.status,
+        acceso.mensaje
+      );
     }
 
-    const { data: relaciones, error } =
-      await obtenerRelaciones(id_tablero);
+    const {
+      data: relaciones,
+      error
+    } = await obtenerRelaciones(id_tablero);
 
     if (error) return errorInterno(res, error);
 
-    const pictogramas = relaciones.map((relacion) => ({
-      id_tablero_pictogramas: relacion.id_tablero_pictogramas,
-      id_pictogramas: relacion.id_pictogramas,
-      posicion_x: relacion.posicion_x,
-      posicion_y: relacion.posicion_y,
-      ...(relacion.pictogramas || {})
-    }));
+    const pictogramas = relaciones.map(
+      (relacion) => ({
+        id_tablero_pictogramas:
+          relacion.id_tablero_pictogramas,
+        id_pictogramas:
+          relacion.id_pictogramas,
+        posicion_x: relacion.posicion_x,
+        posicion_y: relacion.posicion_y,
+        ...(relacion.pictogramas || {})
+      })
+    );
 
     return ok(res, {
       ...acceso.tablero,
@@ -380,20 +453,40 @@ const actualizarTablero = async (req, res) => {
     const { id_tablero } = req.params;
 
     if (!idValido(id_tablero)) {
-      return fallo(res, 400, "ID de tablero inválido");
+      return fallo(
+        res,
+        400,
+        "ID de tablero inválido"
+      );
     }
 
-    const acceso = await buscarTableroPropio(id_tablero, id_usuario);
+    const acceso = await buscarTableroPropio(
+      id_tablero,
+      id_usuario
+    );
 
     if (acceso.mensaje) {
-      return fallo(res, acceso.status, acceso.mensaje);
+      return fallo(
+        res,
+        acceso.status,
+        acceso.mensaje
+      );
     }
 
-    const { nombre, color, icono, es_publico } = req.body || {};
+    const {
+      nombre,
+      color,
+      icono,
+      es_publico
+    } = req.body || {};
+
     const cambios = {};
 
     if (nombre !== undefined) {
-      if (typeof nombre !== "string" || !nombre.trim()) {
+      if (
+        typeof nombre !== "string" ||
+        !nombre.trim()
+      ) {
         return fallo(
           res,
           400,
@@ -404,8 +497,13 @@ const actualizarTablero = async (req, res) => {
       cambios.nombre = nombre.trim();
     }
 
-    if (color !== undefined) cambios.color = color;
-    if (icono !== undefined) cambios.icono = icono;
+    if (color !== undefined) {
+      cambios.color = color;
+    }
+
+    if (icono !== undefined) {
+      cambios.icono = icono;
+    }
 
     if (es_publico !== undefined) {
       if (typeof es_publico !== "boolean") {
@@ -420,7 +518,11 @@ const actualizarTablero = async (req, res) => {
     }
 
     if (!Object.keys(cambios).length) {
-      return fallo(res, 400, "No enviaste campos para actualizar");
+      return fallo(
+        res,
+        400,
+        "No enviaste campos para actualizar"
+      );
     }
 
     const { data, error } = await supabase
@@ -463,7 +565,11 @@ const eliminarTablero = async (req, res) => {
     const { id_tablero } = req.params;
 
     if (!idValido(id_tablero)) {
-      return fallo(res, 400, "ID de tablero inválido");
+      return fallo(
+        res,
+        400,
+        "ID de tablero inválido"
+      );
     }
 
     const acceso = await buscarTableroPropio(
@@ -473,10 +579,14 @@ const eliminarTablero = async (req, res) => {
     );
 
     if (acceso.mensaje) {
-      return fallo(res, acceso.status, acceso.mensaje);
+      return fallo(
+        res,
+        acceso.status,
+        acceso.mensaje
+      );
     }
 
-    // Primero eliminar las relaciones del tablero.
+    // Primero eliminar las relaciones.
     const { error: relacionesError } = await supabase
       .from("tableros_pictogramas")
       .delete()
@@ -486,7 +596,10 @@ const eliminarTablero = async (req, res) => {
       return errorInterno(res, relacionesError);
     }
 
-    const { data: eliminado, error } = await supabase
+    const {
+      data: eliminado,
+      error
+    } = await supabase
       .from("tableros")
       .delete()
       .eq("id_tablero", id_tablero)
