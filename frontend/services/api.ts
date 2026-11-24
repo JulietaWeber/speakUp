@@ -52,6 +52,23 @@ export const login = async (
   return response.data.data;
 };
 
+export const loginGoogle = async (
+  nombre: string,
+  email: string,
+  googleId: string
+) => {
+  const response = await axios.post(
+    `${API_URL}/auth/google`,
+    {
+      nombre,
+      email,
+      google_id: googleId,
+    }
+  );
+
+  return response.data.data;
+};
+
 export const register = async (
   nombre: string,
   email: string,
