@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import {
   View,
@@ -9,9 +10,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  login,
-} from "../services/api";
+import { login } from "../services/api";
 import KeyboardScreen, {
   KeyboardWhiteContainer,
 } from "../components/KeyboardScreen";
@@ -40,10 +39,7 @@ export default function Login() {
 
       console.log("Login exitoso:", data);
 
-      await AsyncStorage.setItem(
-        "token",
-        data.token
-      );
+      await AsyncStorage.setItem("token", data.token);
 
       await AsyncStorage.setItem(
         "usuario",
@@ -103,7 +99,7 @@ export default function Login() {
           </Text>
         </View>
 
-        {/* BLOQUE BLANCO QUE SE LEVANTA CON EL TECLADO */}
+        {/* BLOQUE BLANCO */}
         <KeyboardWhiteContainer>
           <View
             style={{
@@ -204,7 +200,7 @@ export default function Login() {
             <View
               style={{
                 flexDirection: "row",
-                marginBottom: 30,
+                marginBottom: 10,
               }}
             >
               <TextInput
@@ -251,6 +247,25 @@ export default function Login() {
                 />
               </TouchableOpacity>
             </View>
+
+            {/* RECUPERAR CONTRASEÑA */}
+            <TouchableOpacity
+              onPress={() => router.push("/forgot-password")}
+              style={{
+                alignSelf: "flex-end",
+                marginBottom: 25,
+              }}
+            >
+              <Text
+                style={{
+                  color: "#356071",
+                  fontSize: 14,
+                  textDecorationLine: "underline",
+                }}
+              >
+                ¿Olvidaste tu contraseña?
+              </Text>
+            </TouchableOpacity>
 
             {/* BOTÓN INICIAR SESIÓN */}
             <TouchableOpacity

@@ -83,6 +83,34 @@ export const register = async (
 };
 
 // =========================
+// RECUPERACIÓN DE CONTRASEÑA
+// =========================
+
+export const forgotPassword = async (email: string) => {
+  const response = await axios.post(
+    `${API_URL}/auth/forgot-password`,
+    { email }
+  );
+
+  return response.data;
+};
+
+export const resetPassword = async (
+  token: string,
+  nuevaPassword: string
+) => {
+  const response = await axios.post(
+    `${API_URL}/auth/reset-password`,
+    {
+      token,
+      nueva_password: nuevaPassword,
+    }
+  );
+
+  return response.data;
+};
+
+// =========================
 // CATEGORÍAS
 // =========================
 

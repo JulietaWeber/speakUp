@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import {
   View,
@@ -51,6 +52,18 @@ export default function Categories() {
   const [tamanoPictogramas, setTamanoPictogramas] = useState(1);
   const [tamanoTexto, setTamanoTexto] = useState(1);
 
+  // PERFIL
+  const [editandoPerfil, setEditandoPerfil] = useState(false);
+  const [nuevoNombrePerfil, setNuevoNombrePerfil] = useState("");
+  const [guardandoPerfil, setGuardandoPerfil] = useState(false);
+
+  // CAMBIO DE CONTRASEÑA
+  const [mostrarCambioPassword, setMostrarCambioPassword] = useState(false);
+  const [passwordActual, setPasswordActual] = useState("");
+  const [passwordNueva, setPasswordNueva] = useState("");
+  const [confirmarPassword, setConfirmarPassword] = useState("");
+  const [guardandoPassword, setGuardandoPassword] = useState(false);
+
   const [sugerenciasIA, setSugerenciasIA] = useState<any[]>([]);
   const [fraseCorregidaIA, setFraseCorregidaIA] = useState<string | null>(null);
   const [consultandoFraseIA, setConsultandoFraseIA] = useState(false);
@@ -89,15 +102,124 @@ export default function Categories() {
         const usuarioGuardado = await AsyncStorage.getItem("usuario");
         const pictogramasGuardados = await AsyncStorage.getItem("tamano_pictogramas");
         const textoGuardado = await AsyncStorage.getItem("tamano_texto");
-        if (usuarioGuardado) setUsuario(JSON.parse(usuarioGuardado));
-        if (pictogramasGuardados) setTamanoPictogramas(Number(pictogramasGuardados));
-        if (textoGuardado) setTamanoTexto(Number(textoGuardado));
+
+        if (usuarioGuardado) {
+          const datosUsuario = JSON.parse(usuarioGuardado);
+          setUsuario(datosUsuario);
+          setNuevoNombrePerfil(
+            datosUsuario?.nombre ||
+            datosUsuario?.nombre_usuario ||
+            datosUsuario?.name ||
+            ""
+          );
+        }
+
+        if (pictogramasGuardados) {
+          setTamanoPictogramas(Number(pictogramasGuardados));
+        }
+
+        if (textoGuardado) {
+          setTamanoTexto(Number(textoGuardado));
+        }
       } catch (error) {
         console.error("Error cargando perfil o preferencias:", error);
       }
     };
+
     cargarPreferencias();
   }, []);
+
+  // EDITAR PERFIL
+  const editarPerfil = () => {
+    setNuevoNombrePerfil(
+      usuario?.nombre ||
+      usuario?.nombre_usuario ||
+      usuario?.name ||
+      ""
+    );
+    setEditandoPerfil(true);
+  };
+
+  const guardarNombrePerfil = async () => {
+    const nombre = nuevoNombrePerfil.trim();
+
+    if (!nombre) {
+      Alert.alert("Nombre inválido", "El nombre no puede estar vacío.");
+      return;
+    }
+
+    try {
+      setGuardandoPerfil(true);
+
+      const usuarioActualizado = {
+        ...usuario,
+        nombre,
+      };
+
+      await AsyncStorage.setItem(
+        "usuario",
+        JSON.stringify(usuarioActualizado)
+      );
+
+      setUsuario(usuarioActualizado);
+      setEditandoPerfil(false);
+
+      Alert.alert(
+        "Perfil actualizado",
+        "Tu nombre se guardó en este dispositivo."
+      );
+    } catch (error) {
+      console.error("Error guardando el perfil:", error);
+      Alert.alert("Error", "No se pudo guardar tu nombre.");
+    } finally {
+      setGuardandoPerfil(false);
+    }
+  };
+
+  // CAMBIAR CONTRASEÑA
+  const validarNuevaPassword = (password: string) => {
+    return (
+      password.length >= 8 &&
+      /[A-Z]/.test(password) &&
+      /[^A-Za-z0-9]/.test(password)
+    );
+  };
+
+  const cambiarPassword = async () => {
+    if (!passwordActual || !passwordNueva || !confirmarPassword) {
+      Alert.alert("Campos incompletos", "Completá todos los campos.");
+      return;
+    }
+
+    if (!validarNuevaPassword(passwordNueva)) {
+      Alert.alert(
+        "Contraseña no válida",
+        "La nueva contraseña debe tener al menos 8 caracteres, una mayúscula y un carácter especial."
+      );
+      return;
+    }
+
+    if (passwordNueva !== confirmarPassword) {
+      Alert.alert(
+        "Las contraseñas no coinciden",
+        "Revisá la confirmación de tu nueva contraseña."
+      );
+      return;
+    }
+
+    try {
+      setGuardandoPassword(true);
+
+      // El backend compartido hasta ahora no tiene un endpoint
+      // implementado para cambiar la contraseña con sesión iniciada.
+      Alert.alert(
+        "Función pendiente",
+        "El formulario está listo, pero falta implementar el cambio de contraseña en el servidor. Todavía no se modificó tu contraseña."
+      );
+    } finally {
+      setGuardandoPassword(false);
+    }
+  };
 
   const cambiarTamanoPictogramas = async (valor: number) => {
     setTamanoPictogramas(valor);
@@ -112,16 +234,19 @@ export default function Categories() {
   const cerrarSesion = async () => {
     Alert.alert("Cerrar sesión", "¿Querés salir de tu cuenta?", [
       { text: "Cancelar", style: "cancel" },
-      { text: "Cerrar sesión", style: "destructive", onPress: async () => {
-        await AsyncStorage.multiRemove(["token", "usuario", "voz_preferida"]);
-        setMostrarConfiguracion(false);
-        router.replace("/login");
-      } },
+      {
+        text: "Cerrar sesión",
+        style: "destructive",
+        onPress: async () => {
+          await AsyncStorage.multiRemove(["token", "usuario", "voz_preferida"]);
+          setMostrarConfiguracion(false);
+          router.replace("/login");
+        },
+      },
     ]);
   };
 
   // RECUPERAR SUGERENCIAS Y FRASE CORREGIDA GUARDADAS
-
   useEffect(() => {
     const cargarDatosIA = async () => {
       try {
@@ -164,7 +289,6 @@ export default function Categories() {
   }, []);
 
   // GUARDAR SUGERENCIAS Y FRASE CORREGIDA CADA VEZ QUE CAMBIAN
-
   useEffect(() => {
     if (!sugerenciasCargadas) return;
 
@@ -186,7 +310,6 @@ export default function Categories() {
   }, [sugerenciasIA, fraseCorregidaIA, sugerenciasCargadas]);
 
   // CONFIGURACIÓN DE VOZ
-
   const abrirConfiguracion = async () => {
     setMostrarConfiguracion(true);
     setCargandoVoces(true);
@@ -273,7 +396,6 @@ export default function Categories() {
   };
 
   // CARGAR CATEGORÍAS
-
   useEffect(() => {
     const cargarCategorias = async () => {
       try {
@@ -297,7 +419,6 @@ export default function Categories() {
   }, []);
 
   // CARGAR PICTOGRAMAS DE LA CATEGORÍA SELECCIONADA
-
   useEffect(() => {
     const cargarPictogramas = async () => {
       if (!selectedCategory) {
@@ -332,7 +453,6 @@ export default function Categories() {
   }, [selectedCategory]);
 
   // COLOR SUAVE PARA LA VISTA PREVIA
-
   const getBackgroundColor = (color: string) => {
     if (!color) return "#F2F6F7";
 
@@ -352,8 +472,111 @@ export default function Categories() {
     return "#F2F6F7";
   };
 
-  // ENTRAR A UNA CATEGORÍA
+  // COLORES INDIVIDUALES DE LAS PALABRAS YA CARGADAS
+  // Los colores se asignan por nombre de palabra, sin modificar las categorías.
+  const coloresDePalabras: { [key: string]: string } = {
+    // Charla rápida
+    "hola": "#F7D9D9",
+    "chau": "#F7D9D9",
+    "bien": "#D9F0DF",
+    "mal": "#F5D1D1",
+    "por favor": "#F5C9C9",
+    "gracias": "#F5C9C9",
+    "no puedo hablar": "#F5C9C9",
+    "ayuda": "#F5C9C9",
 
+    // Tiempo
+    "ahora": "#FFE2C2",
+    "ayer": "#FFE2C2",
+    "hoy": "#FFE2C2",
+    "mañana": "#FFE2C2",
+    "tarde": "#FFE2C2",
+    "noche": "#FFE2C2",
+    "día": "#FFE2C2",
+    "semana": "#FFE2C2",
+    "fin de semana": "#FFE2C2",
+    "próxima semana": "#FFE2C2",
+    "este mes": "#FFE2C2",
+    "próximo mes": "#FFE2C2",
+    "mes anterior": "#FFE2C2",
+    "minuto": "#FFE2C2",
+    "segundo": "#FFE2C2",
+    "hora": "#FFE2C2",
+
+    // Comida
+    "quiero": "#FFE0B5",
+    "tengo hambre": "#FFE0B5",
+    "y": "#FFE0B5",
+    "no me gusta": "#FFE0B5",
+    "me gusta": "#FFE0B5",
+    "pizza": "#F8EDC5",
+    "pasta": "#F8EDC5",
+    "pan": "#F8EDC5",
+    "manzana": "#F8EDC5",
+    "banana": "#F8EDC5",
+    "uva": "#F8EDC5",
+    "cereal": "#F8EDC5",
+    "hamburguesa": "#F8EDC5",
+    "desayuno": "#F8EDC5",
+    "almuerzo": "#F8EDC5",
+    "cena": "#F8EDC5",
+
+    // Bebidas
+    "jugo": "#F8EDC5",
+    "agua": "#F8EDC5",
+    "gaseosa": "#F8EDC5",
+    "tengo sed": "#F8EDC5",
+    "café": "#D8EDF4",
+    "cafe": "#D8EDF4",
+    "té": "#D8EDF4",
+    "te": "#D8EDF4",
+    "licuado": "#D8EDF4",
+
+    // Actividades
+    "correr": "#D8EAF0",
+    "trabajar": "#D8EAF0",
+    "jugar juegos": "#D8EAF0",
+    "mirar tv": "#D8EAF0",
+    "voy a": "#D8EAF0",
+    "quiero": "#D8EAF0",
+    "bañarme": "#D8EAF0",
+    "cocinar": "#D8EAF0",
+    "celebrar": "#D8EAF0",
+    "nadar": "#D8EAF0",
+    "jugar a las cartas": "#D8EAF0",
+    "hacer ejercicio": "#D8EAF0",
+    "usar internet": "#D8EAF0",
+
+    // Emociones
+    "yo soy": "#FFE2C2",
+    "vos sos": "#FFE2C2",
+    "feliz": "#F7D1D1",
+    "triste": "#F7D1D1",
+    "enojado": "#F7D1D1",
+    "asustado": "#F7D1D1",
+    "confundido": "#F7D1D1",
+    "emocionado": "#F7D1D1",
+    "relajado": "#F7D1D1",
+    "acalorado": "#F7D1D1",
+    "con frío": "#F7D1D1",
+  };
+
+  const obtenerColorDePalabra = (nombre: string) => {
+    const palabra = String(nombre || "")
+      .toLocaleLowerCase()
+      .trim();
+    return coloresDePalabras[palabra] || "#FFFFFF";
+  };
+
+  const oscurecerBordePalabra = (color: string) => {
+    const hex = color.replace("#", "");
+    const r = Math.max(0, parseInt(hex.substring(0, 2), 16) - 25);
+    const g = Math.max(0, parseInt(hex.substring(2, 4), 16) - 25);
+    const b = Math.max(0, parseInt(hex.substring(4, 6), 16) - 25);
+    return `rgb(${r}, ${g}, ${b})`;
+  };
+
+  // ENTRAR A UNA CATEGORÍA
   const seleccionarCategoria = (category: any) => {
     setSelectedCategory(category);
     setMostrarAgregarPalabra(false);
@@ -365,7 +588,6 @@ export default function Categories() {
   };
 
   // VOLVER A LA GRILLA DE CATEGORÍAS
-
   const volverACategorias = () => {
     setSelectedCategory(null);
     setPictograms([]);
@@ -377,7 +599,6 @@ export default function Categories() {
   };
 
   // AGREGAR PICTOGRAMA A LA FRASE Y CONSULTAR LA IA
-
   const agregarPictograma = async (pictogram: any) => {
     const palabrasActualizadas = [...palabras, pictogram];
 
@@ -465,7 +686,6 @@ export default function Categories() {
   };
 
   // ELEGIR FOTO PARA UNA PALABRA
-
   const elegirFoto = async () => {
     try {
       const permiso = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -504,7 +724,6 @@ export default function Categories() {
   const quitarFoto = () => setImagenNuevaPalabra(null);
 
   // CREAR NUEVA PALABRA
-
   const guardarNuevaPalabra = async () => {
     if (!nuevoNombre.trim()) {
       Alert.alert("Falta el nombre", "Escribí el nombre de la nueva palabra.");
@@ -568,7 +787,6 @@ export default function Categories() {
   };
 
   // CREAR NUEVA CATEGORÍA
-
   const guardarNuevaCategoria = async () => {
     if (!nuevoNombreCategoria.trim()) {
       Alert.alert("Falta el nombre", "Escribí el nombre de la nueva categoría.");
@@ -622,7 +840,6 @@ export default function Categories() {
     >
       <View style={styles.container}>
         {/* HEADER */}
-
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Speak Up</Text>
 
@@ -667,89 +884,333 @@ export default function Categories() {
                   </TouchableOpacity>
                 </View>
 
+                {/* PERFIL */}
                 <View style={styles.perfilContainer}>
-                  <View style={styles.avatar}>
+                  <TouchableOpacity
+                    style={styles.avatar}
+                    onPress={editarPerfil}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Editar nombre de perfil"
+                  >
                     <Ionicons name="person" size={30} color="#356879" />
-                  </View>
+                  </TouchableOpacity>
+
                   <View style={styles.perfilDatos}>
-                    <Text style={styles.perfilNombre} numberOfLines={1}>
-                      {usuario?.nombre || usuario?.nombre_usuario || usuario?.name || "Mi perfil"}
-                    </Text>
-                    <Text style={styles.perfilEmail} numberOfLines={1}>
-                      {usuario?.email || usuario?.correo || "Tu cuenta de Speak Up"}
+                    {editandoPerfil ? (
+                      <>
+                        <TextInput
+                          value={nuevoNombrePerfil}
+                          onChangeText={setNuevoNombrePerfil}
+                          placeholder="Tu nombre"
+                          placeholderTextColor="#9AA8AD"
+                          style={styles.inputPerfil}
+                          autoFocus
+                          maxLength={60}
+                        />
+
+                        <View style={styles.botonesEditarPerfil}>
+                          <TouchableOpacity
+                            onPress={() => setEditandoPerfil(false)}
+                            disabled={guardandoPerfil}
+                          >
+                            <Text style={styles.cancelarEditarTexto}>
+                              Cancelar
+                            </Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            onPress={guardarNombrePerfil}
+                            disabled={guardandoPerfil}
+                          >
+                            <Text style={styles.guardarEditarTexto}>
+                              {guardandoPerfil ? "Guardando..." : "Guardar"}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    ) : (
+                      <TouchableOpacity
+                        onPress={editarPerfil}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.nombrePerfilFila}>
+                          <Text style={styles.perfilNombre} numberOfLines={1}>
+                            {usuario?.nombre ||
+                              usuario?.nombre_usuario ||
+                              usuario?.name ||
+                              "Mi perfil"}
+                          </Text>
+                          <Ionicons
+                            name="create-outline"
+                            size={17}
+                            color="#356879"
+                          />
+                        </View>
+                      </TouchableOpacity>
+                    )}
+
+                    <View style={styles.emailPerfilFila}>
+                      <Text style={styles.perfilEmail} numberOfLines={1}>
+                        {usuario?.email ||
+                          usuario?.correo ||
+                          "Tu cuenta de Speak Up"}
+                      </Text>
+                      <Ionicons
+                        name="lock-closed-outline"
+                        size={12}
+                        color="#8A999E"
+                      />
+                    </View>
+                    <Text style={styles.emailNoEditable}>
+                      El correo no se puede modificar
                     </Text>
                   </View>
                 </View>
 
-                <Text style={styles.seccionTitulo}>Tamaño de los pictogramas</Text>
-                <Text style={styles.seccionDescripcion}>Adaptá el tamaño de las imágenes para que sean más fáciles de ver.</Text>
+                {/* CAMBIAR CONTRASEÑA */}
+                <TouchableOpacity
+                  style={styles.cambiarPasswordButton}
+                  onPress={() => {
+                    setMostrarCambioPassword(!mostrarCambioPassword);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons
+                    name="lock-closed-outline"
+                    size={20}
+                    color="#356879"
+                  />
+                  <Text style={styles.cambiarPasswordTexto}>
+                    Cambiar contraseña
+                  </Text>
+                  <Ionicons
+                    name={
+                      mostrarCambioPassword ? "chevron-up" : "chevron-down"
+                    }
+                    size={19}
+                    color="#356879"
+                  />
+                </TouchableOpacity>
+
+                {mostrarCambioPassword && (
+                  <View style={styles.passwordContainer}>
+                    <Text style={styles.passwordTitulo}>
+                      Actualizá tu contraseña
+                    </Text>
+
+                    <TextInput
+                      style={styles.inputPerfil}
+                      placeholder="Contraseña actual"
+                      placeholderTextColor="#9AA8AD"
+                      secureTextEntry
+                      value={passwordActual}
+                      onChangeText={setPasswordActual}
+                      autoCapitalize="none"
+                    />
+
+                    <TextInput
+                      style={styles.inputPerfil}
+                      placeholder="Nueva contraseña"
+                      placeholderTextColor="#9AA8AD"
+                      secureTextEntry
+                      value={passwordNueva}
+                      onChangeText={setPasswordNueva}
+                      autoCapitalize="none"
+                    />
+
+                    <TextInput
+                      style={styles.inputPerfil}
+                      placeholder="Confirmar nueva contraseña"
+                      placeholderTextColor="#9AA8AD"
+                      secureTextEntry
+                      value={confirmarPassword}
+                      onChangeText={setConfirmarPassword}
+                      autoCapitalize="none"
+                    />
+
+                    <Text style={styles.passwordAyuda}>
+                      Usá al menos 8 caracteres, una mayúscula y un carácter
+                      especial.
+                    </Text>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.guardarPasswordButton,
+                        guardandoPassword && styles.disabledButton,
+                      ]}
+                      onPress={cambiarPassword}
+                      disabled={guardandoPassword}
+                      activeOpacity={0.75}
+                    >
+                      {guardandoPassword ? (
+                        <ActivityIndicator color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.guardarPasswordTexto}>
+                          Guardar contraseña
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                <Text style={styles.seccionTitulo}>
+                  Tamaño de los pictogramas
+                </Text>
+                <Text style={styles.seccionDescripcion}>
+                  Adaptá el tamaño de las imágenes para que sean más fáciles de
+                  ver.
+                </Text>
+
                 <View style={styles.tamanoOpciones}>
                   {[0, 1, 2].map((valor) => (
                     <TouchableOpacity
                       key={valor}
-                      style={[styles.tamanoOpcion, tamanoPictogramas === valor && styles.tamanoOpcionActiva]}
+                      style={[
+                        styles.tamanoOpcion,
+                        tamanoPictogramas === valor &&
+                          styles.tamanoOpcionActiva,
+                      ]}
                       onPress={() => cambiarTamanoPictogramas(valor)}
                       accessibilityRole="button"
                       accessibilityLabel={`Pictogramas ${["pequeños", "medianos", "grandes"][valor]}`}
                     >
-                      <Ionicons name="image-outline" size={[20, 26, 32][valor]} color={tamanoPictogramas === valor ? "#FFFFFF" : "#356879"} />
-                      <Text style={[styles.tamanoOpcionTexto, tamanoPictogramas === valor && styles.tamanoOpcionTextoActiva]}>{["Pequeño", "Mediano", "Grande"][valor]}</Text>
+                      <Ionicons
+                        name="image-outline"
+                        size={[20, 26, 32][valor]}
+                        color={
+                          tamanoPictogramas === valor ? "#FFFFFF" : "#356879"
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.tamanoOpcionTexto,
+                          tamanoPictogramas === valor &&
+                            styles.tamanoOpcionTextoActiva,
+                        ]}
+                      >
+                        {["Pequeño", "Mediano", "Grande"][valor]}
+                      </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
 
                 <Text style={styles.seccionTitulo}>Tamaño del texto</Text>
-                <Text style={styles.seccionDescripcion}>Elegí el tamaño de letra que te resulte más cómodo.</Text>
+                <Text style={styles.seccionDescripcion}>
+                  Elegí el tamaño de letra que te resulte más cómodo.
+                </Text>
+
                 <View style={styles.tamanoOpciones}>
                   {[0, 1, 2].map((valor) => (
                     <TouchableOpacity
                       key={valor}
-                      style={[styles.tamanoOpcion, tamanoTexto === valor && styles.tamanoOpcionActiva]}
+                      style={[
+                        styles.tamanoOpcion,
+                        tamanoTexto === valor && styles.tamanoOpcionActiva,
+                      ]}
                       onPress={() => cambiarTamanoTexto(valor)}
                       accessibilityRole="button"
                       accessibilityLabel={`Texto ${["pequeño", "mediano", "grande"][valor]}`}
                     >
-                      <Text style={[styles.muestraTexto, { fontSize: [12, 16, 20][valor] }, tamanoTexto === valor && styles.tamanoOpcionTextoActiva]}>Aa</Text>
-                      <Text style={[styles.tamanoOpcionTexto, tamanoTexto === valor && styles.tamanoOpcionTextoActiva]}>{["Pequeño", "Mediano", "Grande"][valor]}</Text>
+                      <Text
+                        style={[
+                          styles.muestraTexto,
+                          { fontSize: [12, 16, 20][valor] },
+                          tamanoTexto === valor &&
+                            styles.tamanoOpcionTextoActiva,
+                        ]}
+                      >
+                        Aa
+                      </Text>
+                      <Text
+                        style={[
+                          styles.tamanoOpcionTexto,
+                          tamanoTexto === valor &&
+                            styles.tamanoOpcionTextoActiva,
+                        ]}
+                      >
+                        {["Pequeño", "Mediano", "Grande"][valor]}
+                      </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
 
                 <Text style={styles.seccionTitulo}>Voz de Speak Up</Text>
-                <Text style={styles.modalSubtitulo}>Elegí la voz con la que Speak Up leerá tus frases.</Text>
+                <Text style={styles.modalSubtitulo}>
+                  Elegí la voz con la que Speak Up leerá tus frases.
+                </Text>
+
                 {cargandoVoces ? (
                   <View style={styles.modalCargando}>
                     <ActivityIndicator size="large" color="#356879" />
-                    <Text style={styles.modalCargandoTexto}>Cargando voces...</Text>
+                    <Text style={styles.modalCargandoTexto}>
+                      Cargando voces...
+                    </Text>
                   </View>
                 ) : voces.length === 0 ? (
                   <View style={styles.modalVacio}>
-                    <Text style={styles.modalVacioTexto}>No se pudieron mostrar las voces.</Text>
-                    <TouchableOpacity style={styles.reintentarButton} onPress={abrirConfiguracion} disabled={guardandoVoz}>
-                      <Text style={styles.reintentarTexto}>Intentar nuevamente</Text>
+                    <Text style={styles.modalVacioTexto}>
+                      No se pudieron mostrar las voces.
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.reintentarButton}
+                      onPress={abrirConfiguracion}
+                      disabled={guardandoVoz}
+                    >
+                      <Text style={styles.reintentarTexto}>
+                        Intentar nuevamente
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
                   voces.map((voz) => (
                     <TouchableOpacity
                       key={voz.id}
-                      style={[styles.opcionVoz, vozSeleccionada === voz.id && styles.opcionVozSeleccionada]}
+                      style={[
+                        styles.opcionVoz,
+                        vozSeleccionada === voz.id &&
+                          styles.opcionVozSeleccionada,
+                      ]}
                       disabled={guardandoVoz}
                       activeOpacity={0.75}
                       onPress={() => guardarVoz(voz.id)}
                     >
                       <View style={styles.opcionVozTexto}>
                         <Text style={styles.nombreVoz}>{voz.nombre}</Text>
-                        <Text style={styles.descripcionVoz}>{voz.descripcion}</Text>
+                        <Text style={styles.descripcionVoz}>
+                          {voz.descripcion}
+                        </Text>
                       </View>
-                      {vozSeleccionada === voz.id && <Ionicons name="checkmark-circle" size={24} color="#356879" />}
+                      {vozSeleccionada === voz.id && (
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={24}
+                          color="#356879"
+                        />
+                      )}
                     </TouchableOpacity>
                   ))
                 )}
-                {guardandoVoz && <View style={styles.guardandoVoz}><ActivityIndicator color="#356879" /><Text style={styles.guardandoVozTexto}>Guardando tu elección...</Text></View>}
 
-                <TouchableOpacity style={styles.cerrarSesionButton} onPress={cerrarSesion} activeOpacity={0.75}>
-                  <Ionicons name="log-out-outline" size={20} color="#C94F4F" />
+                {guardandoVoz && (
+                  <View style={styles.guardandoVoz}>
+                    <ActivityIndicator color="#356879" />
+                    <Text style={styles.guardandoVozTexto}>
+                      Guardando tu elección...
+                    </Text>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={styles.cerrarSesionButton}
+                  onPress={cerrarSesion}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons
+                    name="log-out-outline"
+                    size={20}
+                    color="#C94F4F"
+                  />
                   <Text style={styles.cerrarSesionTexto}>Cerrar sesión</Text>
                 </TouchableOpacity>
               </View>
@@ -758,7 +1219,6 @@ export default function Categories() {
         </Modal>
 
         {/* CONTENIDO */}
-
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.content}
@@ -776,7 +1236,9 @@ export default function Categories() {
 
           {fraseCorregidaIA && (
             <View style={styles.fraseIASugerida}>
-              <Text style={styles.fraseIATitulo}>Sugerencia de Speak Up</Text>
+              <Text style={styles.fraseIATitulo}>
+                Sugerencia de Speak Up
+              </Text>
               <Text style={styles.fraseIATexto}>{fraseCorregidaIA}</Text>
 
               <View style={styles.fraseIABotones}>
@@ -806,7 +1268,6 @@ export default function Categories() {
           )}
 
           {/* SUGERENCIAS DE LA IA */}
-
           {sugerenciasIA.length > 0 && (
             <View style={styles.sugerenciasContainer}>
               <Text style={styles.sugerenciasTitulo}>
@@ -850,7 +1311,13 @@ export default function Categories() {
                         size={17}
                         color="#356879"
                       />
-                      <Text style={[styles.sugerenciaTexto, { fontSize: [11, 12, 15][tamanoTexto] }]} numberOfLines={1}>
+                      <Text
+                        style={[
+                          styles.sugerenciaTexto,
+                          { fontSize: [11, 12, 15][tamanoTexto] },
+                        ]}
+                        numberOfLines={1}
+                      >
                         {sugerencia.palabra}
                       </Text>
                     </TouchableOpacity>
@@ -861,7 +1328,6 @@ export default function Categories() {
           )}
 
           {/* PANTALLA PRINCIPAL: CATEGORÍAS */}
-
           {!selectedCategory && (
             <>
               <Text style={styles.categoriesTitle}>Categorías</Text>
@@ -925,10 +1391,11 @@ export default function Categories() {
               </View>
 
               {/* FORMULARIO DE NUEVA CATEGORÍA */}
-
               {mostrarAgregarCategoria && (
                 <View style={styles.newCategoryContainer}>
-                  <Text style={styles.newCategoryTitle}>Nueva categoría</Text>
+                  <Text style={styles.newCategoryTitle}>
+                    Nueva categoría
+                  </Text>
 
                   <TextInput
                     value={nuevoNombreCategoria}
@@ -974,7 +1441,8 @@ export default function Categories() {
                       style={[
                         styles.previewCategory,
                         {
-                          backgroundColor: getBackgroundColor(colorSeleccionado),
+                          backgroundColor:
+                            getBackgroundColor(colorSeleccionado),
                           borderColor: colorSeleccionado,
                         },
                       ]}
@@ -1038,7 +1506,6 @@ export default function Categories() {
           )}
 
           {/* PANTALLA INTERNA DE LA CATEGORÍA */}
-
           {selectedCategory && (
             <>
               <View style={styles.selectedCategoryContainer}>
@@ -1058,7 +1525,6 @@ export default function Categories() {
               </View>
 
               {/* PICTOGRAMAS DE LA CATEGORÍA */}
-
               {loadingPictograms ? (
                 <View style={styles.loadingContainer}>
                   <ActivityIndicator size="large" color="#356879" />
@@ -1073,13 +1539,29 @@ export default function Categories() {
                       <TouchableOpacity
                         key={pictogram.id_pictogramas}
                         activeOpacity={0.75}
-                        style={[styles.pictogramButton, { minHeight: [110, 125, 145][tamanoPictogramas] }]}
+                        style={[
+                          styles.pictogramButton,
+                          {
+                            minHeight: [110, 125, 145][tamanoPictogramas],
+                            backgroundColor: obtenerColorDePalabra(pictogram.nombre),
+                            borderWidth: 1.5,
+                            borderColor: oscurecerBordePalabra(
+                              obtenerColorDePalabra(pictogram.nombre)
+                            ),
+                          },
+                        ]}
                         onPress={() => agregarPictograma(pictogram)}
                       >
                         {pictogram.imagen_url ? (
                           <Image
                             source={{ uri: pictogram.imagen_url }}
-                            style={[styles.pictogramImage, { width: [58, 75, 92][tamanoPictogramas], height: [58, 75, 92][tamanoPictogramas] }]}
+                            style={[
+                              styles.pictogramImage,
+                              {
+                                width: [58, 75, 92][tamanoPictogramas],
+                                height: [58, 75, 92][tamanoPictogramas],
+                              },
+                            ]}
                             resizeMode="contain"
                           />
                         ) : (
@@ -1092,7 +1574,13 @@ export default function Categories() {
                           </View>
                         )}
 
-                        <Text style={[styles.pictogramText, { fontSize: [11, 12, 15][tamanoTexto] }]} numberOfLines={2}>
+                        <Text
+                          style={[
+                            styles.pictogramText,
+                            { fontSize: [11, 12, 15][tamanoTexto] },
+                          ]}
+                          numberOfLines={2}
+                        >
                           {pictogram.nombre}
                         </Text>
                       </TouchableOpacity>
@@ -1128,7 +1616,6 @@ export default function Categories() {
                   )}
 
                   {/* FORMULARIO DE NUEVA PALABRA */}
-
                   {mostrarAgregarPalabra && (
                     <View style={styles.newWordContainer}>
                       <Text style={styles.newWordTitle}>Nueva palabra</Text>
@@ -1277,23 +1764,191 @@ const styles = StyleSheet.create({
   },
 
   modalScroll: { width: "100%" },
-  modalScrollContent: { flexGrow: 1, justifyContent: "center", paddingVertical: 18 },
+  modalScrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingVertical: 18,
+  },
   cerrarModalButton: { padding: 2 },
-  perfilContainer: { flexDirection: "row", alignItems: "center", padding: 14, borderRadius: 14, backgroundColor: "#F1F6F7", marginBottom: 20 },
-  avatar: { width: 54, height: 54, borderRadius: 27, backgroundColor: "#DCEBED", alignItems: "center", justifyContent: "center", marginRight: 12 },
+
+  perfilContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: "#F1F6F7",
+    marginBottom: 16,
+  },
+  avatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: "#DCEBED",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
   perfilDatos: { flex: 1 },
-  perfilNombre: { color: "#294F5A", fontSize: 16, fontWeight: "700" },
-  perfilEmail: { color: "#718187", fontSize: 12, marginTop: 4 },
-  seccionTitulo: { fontSize: 15, color: "#356879", fontWeight: "700", marginTop: 4, marginBottom: 5 },
-  seccionDescripcion: { fontSize: 12, lineHeight: 17, color: "#718187", marginBottom: 10 },
-  tamanoOpciones: { flexDirection: "row", gap: 8, marginBottom: 18 },
-  tamanoOpcion: { flex: 1, minHeight: 68, alignItems: "center", justifyContent: "center", borderRadius: 12, borderWidth: 1, borderColor: "#D9E2E5", backgroundColor: "#FFFFFF", paddingVertical: 8, paddingHorizontal: 3, gap: 4 },
-  tamanoOpcionActiva: { backgroundColor: "#356879", borderColor: "#356879" },
-  tamanoOpcionTexto: { color: "#5F6B70", fontSize: 10, fontWeight: "600" },
+  perfilNombre: {
+    color: "#294F5A",
+    fontSize: 16,
+    fontWeight: "700",
+    flexShrink: 1,
+  },
+  perfilEmail: {
+    color: "#718187",
+    fontSize: 12,
+    marginTop: 4,
+    flexShrink: 1,
+  },
+  nombrePerfilFila: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  emailPerfilFila: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  emailNoEditable: {
+    color: "#9AA8AD",
+    fontSize: 10,
+    marginTop: 2,
+  },
+  inputPerfil: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D9E2E5",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: "#294F5A",
+    fontSize: 14,
+    width: "100%",
+  },
+  botonesEditarPerfil: {
+    flexDirection: "row",
+    gap: 14,
+    marginTop: 8,
+  },
+  cancelarEditarTexto: {
+    color: "#718187",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  guardarEditarTexto: {
+    color: "#356879",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  cambiarPasswordButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: "#EEF5F6",
+    marginBottom: 16,
+  },
+  cambiarPasswordTexto: {
+    flex: 1,
+    color: "#356879",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  passwordContainer: {
+    gap: 10,
+    marginBottom: 18,
+    padding: 13,
+    backgroundColor: "#F8FAFB",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E1E9EB",
+  },
+  passwordTitulo: {
+    color: "#356879",
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  passwordAyuda: {
+    color: "#718187",
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  guardarPasswordButton: {
+    backgroundColor: "#356879",
+    padding: 13,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  guardarPasswordTexto: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  seccionTitulo: {
+    fontSize: 15,
+    color: "#356879",
+    fontWeight: "700",
+    marginTop: 4,
+    marginBottom: 5,
+  },
+  seccionDescripcion: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: "#718187",
+    marginBottom: 10,
+  },
+  tamanoOpciones: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 18,
+  },
+  tamanoOpcion: {
+    flex: 1,
+    minHeight: 68,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#D9E2E5",
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 8,
+    paddingHorizontal: 3,
+    gap: 4,
+  },
+  tamanoOpcionActiva: {
+    backgroundColor: "#356879",
+    borderColor: "#356879",
+  },
+  tamanoOpcionTexto: {
+    color: "#5F6B70",
+    fontSize: 10,
+    fontWeight: "600",
+  },
   tamanoOpcionTextoActiva: { color: "#FFFFFF" },
   muestraTexto: { color: "#356879", fontWeight: "700" },
-  cerrarSesionButton: { marginTop: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 13, borderRadius: 12, borderWidth: 1, borderColor: "#F0CACA", backgroundColor: "#FFF7F7" },
-  cerrarSesionTexto: { color: "#C94F4F", fontSize: 14, fontWeight: "700" },
+  cerrarSesionButton: {
+    marginTop: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 13,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#F0CACA",
+    backgroundColor: "#FFF7F7",
+  },
+  cerrarSesionTexto: {
+    color: "#C94F4F",
+    fontSize: 14,
+    fontWeight: "700",
+  },
 
   modalFondo: {
     flex: 1,
